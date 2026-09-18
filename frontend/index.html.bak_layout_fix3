@@ -233,6 +233,16 @@
             
             <aside class="sidebar" id="sidebar">
                 <div class="sidebar-upper" id="sidebar-upper">
+                    <div class="panel-toggles">
+                        <label class="panel-toggle">
+                            <input type="checkbox" id="toggle-watchlist" checked onchange="window.toggleSidebarPanel('watchlist', this.checked)">
+                            <span>İzleme Listesi</span>
+                        </label>
+                        <label class="panel-toggle">
+                            <input type="checkbox" id="toggle-signals" checked onchange="window.toggleSidebarPanel('signals', this.checked)">
+                            <span>Sinyaller</span>
+                        </label>
+                    </div>
                     <div class="sidebar-panels-row">
                     <div class="module watchlist-module" id="watchlist-module">
                         <h3>İzleme Listesi</h3>

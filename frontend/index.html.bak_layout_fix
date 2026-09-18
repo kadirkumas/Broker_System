@@ -152,8 +152,8 @@
                         <table class="btp-table" id="table-positions">
                             <thead>
                                 <tr>
-                                    <th class="left sortable" style="width:10%;" onclick="window.togglePosSort('symbol')">Sembol <span class="sort-icon" id="psort-symbol"></span></th>
-                                    <th class="left sortable" style="width:6%;" onclick="window.togglePosSort('type')">Yön <span class="sort-icon" id="psort-type"></span></th>
+                                    <th class="left sortable" style="width:12%;" onclick="window.togglePosSort('symbol')">Sembol <span class="sort-icon" id="psort-symbol"></span></th>
+                                    <th class="left sortable" style="width:8%;" onclick="window.togglePosSort('type')">Yön <span class="sort-icon" id="psort-type"></span></th>
                                     <th class="right sortable" style="width:16%;" onclick="window.togglePosSort('totalVol')">
                                         <div style="font-size: 11px; color: #848e9c; margin-bottom: 4px;">Toplam Hacim <span class="sort-icon" id="psort-totalVol"></span></div>
                                         <div style="display:flex; justify-content:flex-end; align-items:baseline; gap:8px; white-space:nowrap;">
@@ -163,10 +163,10 @@
                                             <span id="pos-total-margin" style="font-size: 12px; font-weight: bold; color: #0ECB81;">0.00 USDT</span>
                                         </div>
                                     </th>
-                                    <th class="right sortable" style="width:9%;" onclick="window.togglePosSort('avgPrice')">Giriş Fiyatı <span class="sort-icon" id="psort-avgPrice"></span></th>
+                                    <th class="right sortable" style="width:11%;" onclick="window.togglePosSort('avgPrice')">Giriş Fiyatı <span class="sort-icon" id="psort-avgPrice"></span></th>
                                     <th class="right sortable" style="width:10%;" onclick="window.togglePosSort('currentPrice')">Anlık Fiyat <span class="sort-icon" id="psort-currentPrice"></span></th>
-                                    <th class="right" style="width:9%; color:#F6465D;">💥 LIQ Fiyatı</th>
-                                    <th class="right sortable" style="width:13%;" onclick="window.togglePosSort('pnl')">
+                                    <th class="right" style="width:11%; color:#F6465D;">💥 LIQ Fiyatı</th>
+                                    <th class="right sortable" style="width:14%;" onclick="window.togglePosSort('pnl')">
                                         <div style="font-size: 11px; color: #848e9c; margin-bottom: 4px;">Kâr / Zarar <span class="sort-icon" id="psort-pnl"></span></div>
                                         <div style="font-size: 14px; font-weight: bold; white-space: nowrap;">
                                             <span id="pos-gross-profit" style="color:#0ECB81;">+0.00$</span>
@@ -175,7 +175,7 @@
                                         </div>
                                     </th>
                                     <th class="right" style="width:9%;">Komisyon (-%0.1)</th>
-                                    <th class="right sortable" style="width:12%;" onclick="window.togglePosSort('entryTime')">İşlem Baş. Tar. <span class="sort-icon" id="psort-entryTime"></span></th>
+                                    <th class="right sortable" style="width:13%;" onclick="window.togglePosSort('entryTime')">İşlem Baş. Tar. <span class="sort-icon" id="psort-entryTime"></span></th>
                                     <th class="right" style="width:8%;">Süre</th>
                                 </tr>
                             </thead>
@@ -233,6 +233,16 @@
             
             <aside class="sidebar" id="sidebar">
                 <div class="sidebar-upper" id="sidebar-upper">
+                    <div class="panel-toggles">
+                        <label class="panel-toggle">
+                            <input type="checkbox" id="toggle-watchlist" checked onchange="window.toggleSidebarPanel('watchlist', this.checked)">
+                            <span>İzleme Listesi</span>
+                        </label>
+                        <label class="panel-toggle">
+                            <input type="checkbox" id="toggle-signals" checked onchange="window.toggleSidebarPanel('signals', this.checked)">
+                            <span>Sinyaller</span>
+                        </label>
+                    </div>
                     <div class="sidebar-panels-row">
                     <div class="module watchlist-module" id="watchlist-module">
                         <h3>İzleme Listesi</h3>
@@ -251,7 +261,7 @@
                             <span onclick="sortBy('symbol')">Sembol <span class="sort-icon" id="sort-symbol"></span></span>
                             <span class="right-align" onclick="sortBy('price')">Son <span class="sort-icon" id="sort-price"></span></span>
                             <span class="right-align" onclick="sortBy('change')">Değ% <span class="sort-icon" id="sort-change">↓</span></span>
-                            
+                            <span class="right-align" onclick="sortBy('change03')">D%(03:00) <span class="sort-icon" id="sort-change03"></span></span>
                         </div>
                         
                         <ul id="watchlist-futures" class="watchlist active-list">
