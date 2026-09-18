@@ -94,8 +94,6 @@ class StrategyEngine:
         # ⚡ Delist cache
         self._delisted_symbols_cache = set()
         self._delisted_cache_time = 0
-        # ⚡ Duplicate prevention: sembol bazlı kilit
-        self._symbol_locks = {}
 
     # ------------------------------------------------------------------
     # Sembol listesi
@@ -198,7 +196,7 @@ class StrategyEngine:
 
         interval = strat_cfg.get("interval", "5m")
 
-        BATCH_SIZE = 1
+        BATCH_SIZE = 2
         for batch_start in range(0, len(self.symbols), BATCH_SIZE):
             if not self.is_running:
                 return
@@ -207,19 +205,12 @@ class StrategyEngine:
                 self._process_symbol(sym, strategy_name, strategy, strat_cfg, interval, candle_cache)
                 for sym in batch
             ], return_exceptions=True)
-            await asyncio.sleep(1.2)
+            await asyncio.sleep(0.8)
 
     # ------------------------------------------------------------------
     # Tek sembol işleme
     # ------------------------------------------------------------------
     async def _process_symbol(self, symbol, strategy_name, strategy, strat_cfg, interval, candle_cache):
-        # ⚡ SEMBOL BAZLI KİLİT (race condition engeli)
-        lock = self._get_symbol_lock(symbol)
-        
-        async with lock:
-            await self._process_symbol_locked(symbol, strategy_name, strategy, strat_cfg, interval, candle_cache)
-    
-    async def _process_symbol_locked(self, symbol, strategy_name, strategy, strat_cfg, interval, candle_cache):
         try:
             cache_key = f"{symbol}_{interval}"
             if cache_key in candle_cache:
@@ -367,12 +358,6 @@ class StrategyEngine:
     # ------------------------------------------------------------------
     # DÖNGÜ 2: Pozisyon izleme
     # ------------------------------------------------------------------
-    def _get_symbol_lock(self, symbol: str):
-        """Sembol bazlı asyncio.Lock döner (thread-safe)."""
-        if symbol not in self._symbol_locks:
-            self._symbol_locks[symbol] = asyncio.Lock()
-        return self._symbol_locks[symbol]
-
     # ------------------------------------------------------------------
     # DELIST KONTROLU - acik pozisyonu olan delist sembolleri kapatir
     # ------------------------------------------------------------------
@@ -384,7 +369,7 @@ class StrategyEngine:
         if not cfg.get("auto_close_delisted", True):
             return
         
-        if _time.time() - getattr(self, '_delisted_cache_time', 0) > 1800:
+        if _time.time() - getattr(self, '_delisted_cache_time', 0) > 300:
             try:
                 info = await asyncio.to_thread(self.client.futures_exchange_info)
                 new_cache = set()

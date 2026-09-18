@@ -100,28 +100,6 @@ def init_db():
             except Exception as e:
                 print(f"[DB] Migration hatası ({col}): {e}")
 
-    # ⚡ DUPLICATE PREVENTION: symbol bazlı UNIQUE index
-    # Önce mevcut duplicate'leri temizle (en eskisini tut)
-    try:
-        cursor.execute("""
-            DELETE FROM active_trades
-            WHERE id NOT IN (
-                SELECT MIN(id) FROM active_trades GROUP BY symbol
-            )
-        """)
-        deleted = cursor.rowcount
-        if deleted > 0:
-            print(f"[DB] {deleted} duplicate aktif pozisyon temizlendi")
-    except Exception as e:
-        print(f"[DB] Duplicate temizleme hatası: {e}")
-    
-    # UNIQUE index ekle (varsa atla)
-    try:
-        cursor.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_active_symbol ON active_trades(symbol)")
-        print("[DB] UNIQUE index aktif: symbol")
-    except Exception as e:
-        print(f"[DB] UNIQUE index hatası: {e}")
-    
     conn.commit()
     conn.close()
 

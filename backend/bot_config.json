@@ -1,6 +1,6 @@
 {
   "active": true,
-  "scan_interval_seconds": 400,
+  "scan_interval_seconds": 900,
   "position_check_seconds": 6,
   "max_symbols": 300,
   "auto_close_delisted": true,

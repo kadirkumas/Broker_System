@@ -1610,7 +1610,7 @@ window.updateSingleChart = async function(i) {
     let bInt = window.getBinanceInterval(dataObj.interval);
 
     try {
-        const res = await fetch(`${baseUrl}?symbol=${apiSymbol}&interval=${bInt}&limit=1500`); if (!res.ok) throw new Error("REST API Hatası"); const data = await res.json();
+        const res = await fetch(`${baseUrl}?symbol=${apiSymbol}&interval=${bInt}&limit=500`); if (!res.ok) throw new Error("REST API Hatası"); const data = await res.json();
         dataObj.candleMap.clear(); dataObj.rawCandles = []; dataObj.haCandles = [];
         if (Array.isArray(data) && data.length > 0) {
             const cData = data.map(d => { const t = Math.floor(d[0]/1000), o = parseFloat(d[1]), h = parseFloat(d[2]), l = parseFloat(d[3]), c = parseFloat(d[4]), v = parseFloat(d[5]); dataObj.candleMap.set(t, {o, h, l, c, v}); return { time: t, open: o, high: h, low: l, close: c, volume: v }; });

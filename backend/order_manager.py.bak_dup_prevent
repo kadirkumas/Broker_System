@@ -70,21 +70,6 @@ class OrderManager:
         """
         İlk pozisyonu açar. DCA kademeleri position_manager tarafından yönetilir.
         """
-        # ⚡ SON KONTROL: Aynı sembolde zaten pozisyon var mı? (race condition son savunma)
-        conn = get_db_connection()
-        existing = conn.execute(
-            "SELECT id FROM active_trades WHERE symbol = ?", (self.symbol,)
-        ).fetchone()
-        conn.close()
-        
-        if existing:
-            print(f"[DUP-PREVENT] {self.symbol} zaten açık pozisyonda! Yeni emir reddedildi.")
-            return {
-                "status": "duplicate",
-                "symbol": self.symbol,
-                "message": "Aynı sembolde açık pozisyon var"
-            }
-        
         price_prec, qty_prec = self.get_symbol_precision(self.symbol)
         ticker = self.client.futures_symbol_ticker(symbol=self.symbol)
         current_price = float(ticker['price'])
