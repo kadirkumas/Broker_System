@@ -1,0 +1,39 @@
+{
+  "active": true,
+  "scan_interval_seconds": 30,
+  "max_symbols": 50,
+  "strategies": {
+    "RSI_SCALPER": {
+      "enabled": true,
+      "interval": "1m",
+      "period": 7,
+      "longOp": "<",
+      "longVal": 40,
+      "shortOp": ">",
+      "shortVal": 60,
+      "baseOrder": 100,
+      "useDCA": false,
+      "takeProfit": 0.5,
+      "trailing": 0.1
+    },
+    "HULL_SRP": {
+      "enabled": true,
+      "interval": "1m",
+      "period": 10,
+      "source": "hl2",
+      "longTrade": true,
+      "shortTrade": false,
+      "baseOrder": 100,
+      "takeProfit": 0.5,
+      "trailing": 0.1
+    },
+    "GRIDBOT": {
+      "enabled": true,
+      "interval": "1m",
+      "lookback": 8,
+      "baseOrder": 100,
+      "takeProfit": 0.5,
+      "trailing": 0.1
+    }
+  }
+}

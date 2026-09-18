@@ -1,0 +1,769 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Broker System (Live)</title>
+    <link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
+    <link rel="stylesheet" href="/static/style.css">
+    <script src="https://unpkg.com/lightweight-charts@4.1.1/dist/lightweight-charts.standalone.production.js"></script>
+</head>
+<body>
+    <div class="app-container">
+        <header class="top-bar">
+            <div class="logo">Broker System</div>
+            <div style="display: flex; align-items: center; gap: 15px;">
+                <div id="scanner-status" style="display:none; align-items:center; gap:8px; background:rgba(41, 98, 255, 0.15); border:1px solid rgba(41, 98, 255, 0.4); padding:5px 12px; border-radius:20px; font-size:11px; font-weight:600; color:#79a0ff;">
+                    <span id="scanner-dot" style="width:7px; height:7px; border-radius:50%; background:#2962ff; box-shadow:0 0 8px #2962ff; display:inline-block; animation:scannerPulse 1.5s infinite;"></span>
+                    <span style="color:#EAECEF;">Tarayıcı Aktif</span>
+                    <span style="color:#5d6471;">|</span>
+                    <span id="scanner-symbols" style="color:#d1d4dc;">0 sembol</span>
+                    <span style="color:#5d6471;">|</span>
+                    <span id="scanner-last-scan" style="color:#848e9c;">--</span>
+                    <span id="scanner-signals-sep" style="color:#5d6471; display:none;">|</span>
+                    <span id="scanner-signals" style="color:#fcd535; display:none;">0 sinyal</span>
+                </div>
+                
+                <button class="bot-settings-btn" style="border-color: #089981; color: #089981;" onclick="openWalletModal()">👛 Cüzdan</button>
+                <button class="bot-settings-btn" onclick="openBotConfigModal()">🤖 Bot Ayarları</button>
+                <button class="bot-settings-btn" onclick="openChartSettingsModal()" title="Grafik Ayarları">⚙️ Ayarlar</button>
+                <button class="bot-settings-btn" style="border-color: #f23645; color: #f23645;" onclick="resetAllData()" title="Tüm test verilerini sıfırla">🗑️ Sıfırla</button>
+                
+                <div class="status-indicator">
+                    <span class="dot green"></span> Canlı Veri
+                </div>
+            </div>
+        </header>
+
+        <main class="main-content">
+            <div class="chart-section">
+                <div class="chart-header">
+                    <div class="header-left">
+                        <div class="timeframes" id="timeframe-box">
+                            <span class="tf-btn" data-tf="1m" onclick="changeTimeframe('1m')">1d</span>
+                            <span class="tf-btn" data-tf="3m" onclick="changeTimeframe('3m')">3d</span>
+                            <span class="tf-btn" data-tf="5m" onclick="changeTimeframe('5m')">5d</span>
+                            <span class="tf-btn" data-tf="15m" onclick="changeTimeframe('15m')">15d</span>
+                            <span class="tf-btn" data-tf="30m" onclick="changeTimeframe('30m')">30d</span>
+                            <span class="tf-btn" data-tf="1h" onclick="changeTimeframe('1h')">1S</span>
+                            <span class="tf-btn active" data-tf="4h" onclick="changeTimeframe('4h')">4S</span>
+                            <span class="tf-btn" data-tf="1d" onclick="changeTimeframe('1d')">1G</span>
+                            <span class="tf-btn" data-tf="1w" onclick="changeTimeframe('1w')">1H</span>
+                        </div>
+                        
+                        <span class="divider">|</span>
+                        
+                        <div class="chart-types">
+                            <span class="type-btn active" data-type="candles" onclick="changeChartType('candles')">📊 Mum</span>
+                            <span class="type-btn" data-type="heikin" onclick="changeChartType('heikin')">📈 H.Ashi</span>
+                        </div>
+
+                        <span class="divider">|</span>
+                        
+                        <div class="indicators-btn-container">
+                            <span class="type-btn indicator-btn" onclick="toggleIndicatorModal()">fx Göstergeler</span>
+                        </div>
+                    </div>
+                    
+                    <div class="chart-header-right">
+                        <span id="main-candle-timer" class="main-candle-timer">--:--</span>
+                        <div class="layout-controls">
+                            <span class="layout-btn active" id="btn-layout-1" onclick="setLayout(1)">🔲 1</span>
+                            <span class="layout-btn" id="btn-layout-2" onclick="setLayout(2)">⊟ 2</span>
+                            <span class="layout-btn" id="btn-layout-4" onclick="setLayout(4)">⊞ 4</span>
+                        </div>
+                    </div>
+                </div>
+
+                <div id="charts-grid" class="charts-grid layout-1">
+                    <div id="chart-wrapper-0" class="single-chart-wrap" onclick="setActiveChart(0)">
+                        <div class="chart-overlay">
+                            <span class="live-dot" id="live-dot-0"></span>
+                            <span id="overlay-sym-0" class="overlay-symbol">Yükleniyor...</span>
+                            <span id="overlay-int-0" class="overlay-interval">-</span>
+                            <span class="reset-btn" onclick="resetChart(0)" title="Grafiği Sıfırla">⟲</span>
+                            <div id="ohlcv-0" class="ohlcv-data"></div>
+                            <div id="active-inds-0" class="active-indicators-log"></div>
+                        </div>
+                        <div id="tvchart-0" class="tvchart-container"></div>
+                        <div id="labels-container-0" class="trade-labels-container"></div>
+                    </div>
+
+                    <div id="chart-wrapper-1" class="single-chart-wrap" onclick="setActiveChart(1)">
+                        <div class="chart-overlay">
+                            <span class="live-dot" id="live-dot-1"></span>
+                            <span id="overlay-sym-1" class="overlay-symbol">Yükleniyor...</span>
+                            <span id="overlay-int-1" class="overlay-interval">-</span>
+                            <span class="reset-btn" onclick="resetChart(1)" title="Grafiği Sıfırla">⟲</span>
+                            <div id="ohlcv-1" class="ohlcv-data"></div>
+                            <div id="active-inds-1" class="active-indicators-log"></div>
+                        </div>
+                        <div id="tvchart-1" class="tvchart-container"></div>
+                        <div id="labels-container-1" class="trade-labels-container"></div>
+                    </div>
+
+                    <div id="chart-wrapper-2" class="single-chart-wrap" onclick="setActiveChart(2)">
+                        <div class="chart-overlay">
+                            <span class="live-dot" id="live-dot-2"></span>
+                            <span id="overlay-sym-2" class="overlay-symbol">Yükleniyor...</span>
+                            <span id="overlay-int-2" class="overlay-interval">-</span>
+                            <span class="reset-btn" onclick="resetChart(2)" title="Grafiği Sıfırla">⟲</span>
+                            <div id="ohlcv-2" class="ohlcv-data"></div>
+                            <div id="active-inds-2" class="active-indicators-log"></div>
+                        </div>
+                        <div id="tvchart-2" class="tvchart-container"></div>
+                        <div id="labels-container-2" class="trade-labels-container"></div>
+                    </div>
+
+                    <div id="chart-wrapper-3" class="single-chart-wrap" onclick="setActiveChart(3)">
+                        <div class="chart-overlay">
+                            <span class="live-dot" id="live-dot-3"></span>
+                            <span id="overlay-sym-3" class="overlay-symbol">Yükleniyor...</span>
+                            <span id="overlay-int-3" class="overlay-interval">-</span>
+                            <span class="reset-btn" onclick="resetChart(3)" title="Grafiği Sıfırla">⟲</span>
+                            <div id="ohlcv-3" class="ohlcv-data"></div>
+                            <div id="active-inds-3" class="active-indicators-log"></div>
+                        </div>
+                        <div id="tvchart-3" class="tvchart-container"></div>
+                        <div id="labels-container-3" class="trade-labels-container"></div>
+                    </div>
+                </div>
+
+                <div id="bottom-trade-panel" class="bottom-trade-panel">
+                    <div class="btp-header">
+                        <div class="btp-tabs">
+                            <div class="btp-tab active" id="tab-positions" onclick="switchBtpTab('positions')">Pozisyonlar(<span id="btp-count">0</span>)</div>
+                            <div class="btp-tab" id="tab-history" onclick="switchBtpTab('history')">İşlem Geçmişi(<span id="btp-hist-count">0</span>)</div>
+                            <div class="btp-tab" id="tab-daily" onclick="switchBtpTab('daily')">Günlük İşlemler(<span id="btp-daily-count">0</span>)</div>
+                        </div>
+                        <div class="btp-controls">
+                            <span id="daily-pnl-header" onclick="openDailyReportModal()" style="display: inline-block; cursor: pointer; background: rgba(41, 98, 255, 0.1); border: 1px solid #2962ff; padding: 3px 8px; border-radius: 4px; color: #EAECEF; font-weight: bold; font-size: 12px; margin-right: 15px;">
+                                Bugün: <span id="daily-total-pnl">0.00$</span> 📅
+                            </span>
+                            
+                            <input type="text" id="btp-search-input" placeholder="Sembol Ara..." class="search-input" style="width: 120px; padding: 4px 8px; font-size: 11px; margin-right: 15px;" oninput="refreshBottomPanel()">
+                            
+                            <label class="btp-hide-other"><input type="checkbox" style="accent-color:#fcd535;"> Sadece Mevcut Sembol</label>
+                            <span class="btp-btn" id="btp-toggle-btn" onclick="toggleBottomTradePanel()" style="border: 1px solid #2b3139; padding: 4px 10px; border-radius: 4px; background: #131722; margin-left:10px;">▼ Gizle</span>
+                        </div>
+                    </div>
+                    <div class="btp-content">
+                        <table class="btp-table" id="table-positions">
+                            <thead>
+                                <tr>
+                                    <th class="left sortable" style="width:12%;" onclick="window.togglePosSort('symbol')">Sembol <span class="sort-icon" id="psort-symbol"></span></th>
+                                    <th class="left sortable" style="width:8%;" onclick="window.togglePosSort('type')">Yön <span class="sort-icon" id="psort-type"></span></th>
+                                    <th class="right sortable" style="width:14%;" onclick="window.togglePosSort('totalVol')">
+                                        <div style="font-size: 11px; color: #848e9c; margin-bottom: 4px;">Toplam Hacim <span class="sort-icon" id="psort-totalVol"></span></div>
+                                        <div id="pos-total-vol" style="font-size: 14px; font-weight: bold; color: #fcd535;">0.00 USDT</div>
+                                    </th>
+                                    <th class="right sortable" style="width:11%;" onclick="window.togglePosSort('avgPrice')">Giriş Fiyatı <span class="sort-icon" id="psort-avgPrice"></span></th>
+                                    <th class="right sortable" style="width:11%;" onclick="window.togglePosSort('currentPrice')">Anlık Fiyat <span class="sort-icon" id="psort-currentPrice"></span></th>
+                                    <th class="right sortable" style="width:14%;" onclick="window.togglePosSort('pnl')">
+                                        <div style="font-size: 11px; color: #848e9c; margin-bottom: 4px;">Kâr / Zarar <span class="sort-icon" id="psort-pnl"></span></div>
+                                        <div style="font-size: 14px; font-weight: bold; white-space: nowrap;">
+                                            <span id="pos-gross-profit" style="color:#0ECB81;">+0.00$</span>
+                                            <span style="color: #2a2e39; margin: 0 4px;">|</span>
+                                            <span id="pos-gross-loss" style="color:#F6465D;">0.00$</span>
+                                        </div>
+                                    </th>
+                                    <th class="right" style="width:9%;">Komisyon (-%0.1)</th>
+                                    <th class="right sortable" style="width:13%;" onclick="window.togglePosSort('entryTime')">İşlem Baş. Tar. <span class="sort-icon" id="psort-entryTime"></span></th>
+                                    <th class="right" style="width:8%;">Süre</th>
+                                </tr>
+                            </thead>
+                            <tbody id="btp-tbody-positions">
+                                <tr><td colspan="9" style="text-align:center; color:#848e9c; padding:30px; border:none;">Açık işlem bulunmuyor.</td></tr>
+                            </tbody>
+                        </table>
+                        
+                        <table class="btp-table" id="table-history" style="display: none;">
+                            <thead>
+                                <tr>
+                                    <th class="center" style="width:3%;">İşlem</th>
+                                    <th class="left" style="width:10%;">Sembol</th>
+                                    <th class="left" style="width:7%;">Yön</th>
+                                    <th class="right" style="width:10%;">Büyüklük</th>
+                                    <th class="right" style="width:10%;">Giriş Fiyatı</th>
+                                    <th class="right" style="width:10%;">Çıkış Fiyatı</th>
+                                    <th class="right" style="width:13%;">Kâr / Zarar (ROE%)</th>
+                                    <th class="right" style="width:10%;">Komisyon</th>
+                                    <th class="right sort-header" style="width:17%;" onclick="toggleHistorySort()">Baş. Tar. - Bit. Tarihi <span id="hist-sort-icon">↓</span></th>
+                                    <th class="right" style="width:10%;">Süre</th>
+                                </tr>
+                            </thead>
+                            <tbody id="btp-tbody-history">
+                                <tr><td colspan="10" style="text-align:center; color:#848e9c; padding:30px; border:none;">Geçmiş işlem bulunmuyor.</td></tr>
+                            </tbody>
+                        </table>
+
+                        <table class="btp-table" id="table-daily" style="display: none;">
+                            <thead>
+                                <tr>
+                                    <th class="left sortable" style="width:12%;" onclick="window.toggleDailySort('symbol')">Sembol <span class="sort-icon" id="dsort-symbol"></span></th>
+                                    <th class="left sortable" style="width:8%;" onclick="window.toggleDailySort('type')">Yön <span class="sort-icon" id="dsort-type"></span></th>
+                                    <th class="right sortable" style="width:10%;" onclick="window.toggleDailySort('totalVol')">Büyüklük <span class="sort-icon" id="dsort-totalVol"></span></th>
+                                    <th class="right sortable" style="width:12%;" onclick="window.toggleDailySort('entryPrice')">Giriş Fiyatı <span class="sort-icon" id="dsort-entryPrice"></span></th>
+                                    <th class="right sortable" style="width:12%;" onclick="window.toggleDailySort('exitPrice')">Çıkış Fiyatı <span class="sort-icon" id="dsort-exitPrice"></span></th>
+                                    <th class="right sortable" style="width:15%;" onclick="window.toggleDailySort('pnl')">Kâr / Zarar (ROE%) <span class="sort-icon" id="dsort-pnl"></span></th>
+                                    <th class="right" style="width:10%;">Komisyon (-%0.1)</th>
+                                    <th class="right sortable" style="width:13%;" onclick="window.toggleDailySort('exitTime')">Baş. Tar. - Bit. Tarihi <span class="sort-icon" id="dsort-exitTime"></span></th>
+                                    <th class="right" style="width:8%;">Süre</th>
+                                </tr>
+                            </thead>
+                            <tbody id="btp-tbody-daily">
+                                <tr><td colspan="9" style="text-align:center; color:#848e9c; padding:30px; border:none;">Bugün kapalı işlem bulunmuyor.</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="resizer" id="drag-me">
+                <div class="sidebar-toggle" id="sidebar-toggle" onclick="toggleSidebar()" title="Sekmeyi Gizle">〉</div>
+            </div>
+            
+            <aside class="sidebar" id="sidebar">
+                <div class="sidebar-upper">
+                    <div class="module watchlist-module" id="watchlist-module">
+                        <h3>İzleme Listesi</h3>
+                        
+                        <div class="tabs">
+                            <button class="tab-btn active" onclick="switchTab('futures')">Vadeli <span id="count-futures" class="count-badge">-</span></button>
+                            <button class="tab-btn" onclick="switchTab('spot')">Spot <span id="count-spot" class="count-badge">-</span></button>
+                        </div>
+                        
+                        <div class="search-box" style="display: flex; gap: 5px;">
+                            <input type="text" id="ws-search" class="search-input" placeholder="Sembol Ara..." oninput="filterWatchlist(this.value)">
+                            <button id="radar-toggle-btn" class="tab-btn" style="flex: 0 0 auto; width: auto; padding: 0 10px; font-size: 13px;" onclick="toggleRadarMode()">🔥 Radar</button>
+                        </div>
+
+                        <div class="list-header">
+                            <span onclick="sortBy('symbol')">Sembol <span class="sort-icon" id="sort-symbol"></span></span>
+                            <span class="right-align" onclick="sortBy('price')">Son <span class="sort-icon" id="sort-price"></span></span>
+                            <span class="right-align" onclick="sortBy('change')">Değ% <span class="sort-icon" id="sort-change">↓</span></span>
+                            <span class="right-align" onclick="sortBy('change03')">D%(03:00) <span class="sort-icon" id="sort-change03"></span></span>
+                        </div>
+                        
+                        <ul id="watchlist-futures" class="watchlist active-list">
+                            <li class="loading">Bağlantı Kuruluyor...</li>
+                        </ul>
+                        <ul id="watchlist-spot" class="watchlist" style="display: none;">
+                            <li class="loading">Bağlantı Kuruluyor...</li>
+                        </ul>
+                    </div>
+
+                    <div class="module signal-panel-module" id="signal-panel-module">
+                        <h3>
+                            <span>Canlı Bildirimler</span>
+                            <div class="signal-controls">
+                                <button class="signal-filter-btn" id="sig-filter-open" onclick="window.toggleSignalFilter('signal')">Açılan</button>
+                                <button class="signal-filter-btn" id="sig-filter-close" onclick="window.toggleSignalFilter('close')">Kapanan</button>
+                                <button class="signal-clear-btn" onclick="window.clearSignals()" title="Tüm bildirimleri temizle">🧹 Temizle</button>
+                            </div>
+                        </h3>
+                        <ul id="signal-log" class="signal-list"></ul>
+                    </div>
+                </div>
+            </aside>
+        </main>
+    </div>
+
+    <div id="wallet-modal" class="modal-overlay">
+        <div class="modal-content" style="width: 700px; height: 500px; background: #0b0e14; border: 1px solid #2b3139;">
+            <div class="modal-header" style="background: #181a20;">
+                <h2>💼 Vadeli ve Spot Cüzdanı</h2>
+                <span class="modal-close" onclick="closeWalletModal()">✕</span>
+            </div>
+            <div class="modal-body" style="padding: 0; display: flex; flex-direction: column;">
+                <div style="padding: 15px; background: #181a20; border-bottom: 1px solid #2b3139; display: flex; gap: 10px; align-items: center;">
+                    <div style="position: relative;">
+                        <span style="position: absolute; left: 10px; top: 7px; color: #848e9c; font-size: 12px;">🔍</span>
+                        <input type="text" id="wallet-search" class="search-input" placeholder="Coin Ara..." style="width: 200px; padding-left: 30px;">
+                    </div>
+                    <div style="margin-left: auto; font-size: 11px; color: #848e9c; font-style: italic;">
+                        * Binance canlı hesap bakiyeleri
+                    </div>
+                </div>
+                <div style="overflow-y: auto; flex: 1; background: #0b0e14;">
+                    <table class="btp-table" id="wallet-table" style="width: 100%;">
+                        <thead style="position: sticky; top: 0; z-index: 5;">
+                            <tr>
+                                <th class="left" style="background: #0b0e14;">Coin ↓</th>
+                                <th class="right" style="background: #0b0e14;">Bakiye</th>
+                                <th class="right" style="background: #0b0e14;">Kullanılabilir Bakiye</th>
+                            </tr>
+                        </thead>
+                        <tbody id="wallet-tbody"></tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div id="daily-report-modal" class="modal-overlay">
+        <div class="modal-content" style="width: 450px; height: 500px; background: #0b0e14; border: 1px solid #2b3139;">
+            <div class="modal-header" style="background: #181a20;">
+                <h2>📅 Günlük Kâr / Zarar Takvimi</h2>
+                <span class="modal-close" onclick="closeDailyReportModal()">✕</span>
+            </div>
+            <div class="modal-body" style="padding: 0; display: flex; flex-direction: column; overflow-y: auto;">
+                <table class="btp-table" style="width: 100%;">
+                    <thead style="position: sticky; top: 0; z-index: 5;">
+                        <tr>
+                            <th class="left" style="background: #181a20;">Tarih</th>
+                            <th class="center" style="background: #181a20;">İşlem Sayısı</th>
+                            <th class="right" style="background: #181a20;">Net Kâr / Zarar</th>
+                        </tr>
+                    </thead>
+                    <tbody id="daily-report-tbody"></tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <div id="indicator-modal" class="modal-overlay">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2>Göstergeler, metrikler ve stratejiler</h2>
+                <span class="modal-close" onclick="toggleIndicatorModal()">✕</span>
+            </div>
+            <div class="modal-search">
+                <input type="text" placeholder="Ara" id="ind-search-input">
+            </div>
+            <div class="modal-body">
+                <div class="modal-sidebar">
+                    <div class="ms-title">KİŞİSEL</div>
+                    <div class="ms-item">Favorilerim</div>
+                    <div class="ms-title" style="margin-top:15px;">YERLEŞİK</div>
+                    <div class="ms-item active">Teknikler</div>
+                    <div class="ms-item">Temel Veriler</div>
+                </div>
+                <div class="modal-list">
+                    <div class="list-tabs">
+                        <span class="l-tab active">Tümü</span>
+                        <span class="l-tab">Göstergeler</span>
+                        <span class="l-tab">Stratejiler</span>
+                    </div>
+                    <ul class="indicator-ul">
+                        <li class="ind-li" onclick="openIndConfig('SMA')">
+                            <span class="ind-name">Simple Moving Average (SMA)</span>
+                            <span class="ind-author">Yerleşik</span>
+                        </li>
+                        <li class="ind-li" onclick="openIndConfig('EMA')">
+                            <span class="ind-name">Exponential Moving Average (EMA)</span>
+                            <span class="ind-author">Yerleşik</span>
+                        </li>
+                        <li class="ind-li" onclick="openIndConfig('HULL_SRP')">
+                            <span class="ind-name">HULL/Hl2 - SRP EXIT</span>
+                            <span class="ind-author">by_kadir</span>
+                        </li>
+                        <li class="ind-li" onclick="openIndConfig('GRIDBOT')">
+                            <span class="ind-name">GRIDBOT Scalper</span>
+                            <span class="ind-author">Kullanıcı Stratejisi</span>
+                        </li>
+                        <li class="ind-li" onclick="openIndConfig('RSI_SCALPER')">
+                            <span class="ind-name">RSI Scalper</span>
+                            <span class="ind-author">Kullanıcı Stratejisi</span>
+                        </li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div id="ind-config-modal" class="modal-overlay">
+        <div class="modal-content" style="width: 350px; height: auto;">
+            <div class="modal-header">
+                <h2 id="config-title">Ayarlar</h2>
+                <span class="modal-close" onclick="closeConfigModal()">✕</span>
+            </div>
+            <div class="modal-body" style="padding: 15px; display: flex; flex-direction: column; gap: 12px; overflow:visible;" id="config-body">
+            </div>
+            <div style="padding: 15px; text-align: right; border-top: 1px solid #2a2e39;">
+                <button class="tab-btn active" style="width: 100px; display: inline-block; background: #2962ff; color: #fff; border-color:#2962ff;" onclick="saveConfig()">Uygula</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="bot-config-modal" class="modal-overlay">
+        <div class="modal-content modal-wide">
+            <div class="modal-header">
+                <h2>🤖 Bot Ayarları</h2>
+                <div style="display: flex; align-items: center; gap: 12px;">
+                    <span class="bot-status-pill" id="bot-modal-status-pill">
+                        <span class="dot" id="bot-modal-status-dot" style="background:#f23645;"></span>
+                        <span id="bot-modal-status-text">KAPALI</span>
+                    </span>
+                    <span class="modal-close" onclick="closeBotConfigModal()">✕</span>
+                </div>
+            </div>
+
+            <div class="modal-body bot-config-body">
+                <div class="bot-global-row">
+                    <div class="bot-global-item">
+                        <span class="cfg-label">⏱️ Tarama Süresi (sn)</span>
+                        <input type="number" id="cfg-scan-interval" class="search-input" min="5" max="600" value="30">
+                    </div>
+                    <div class="bot-global-item">
+                        <span class="cfg-label">👁️ Pozisyon Kontrol (sn)</span>
+                        <input type="number" id="cfg-position-interval" class="search-input" min="1" max="60" value="3">
+                    </div>
+                    <div class="bot-global-item">
+                        <span class="cfg-label">📊 Maks Sembol</span>
+                        <input type="number" id="cfg-max-symbols" class="search-input" min="5" max="500" value="30">
+                    </div>
+                    <div class="bot-global-item">
+                        <button class="btn-secondary btn-small" onclick="refreshSymbolsFromModal()">🔄 Sembolleri Yenile</button>
+                    </div>
+                </div>
+
+                <div class="strategies-grid">
+                    <div class="strategy-panel" data-strategy="RSI_SCALPER">
+                        <div class="strategy-header">
+                            <div class="strategy-title">
+                                <span class="strategy-dot" style="background:#2962ff;"></span>
+                                RSI Scalper
+                            </div>
+                            <label class="switch">
+                                <input type="checkbox" class="strat-enabled" data-strategy="RSI_SCALPER">
+                                <span class="slider round"></span>
+                            </label>
+                        </div>
+                        <div class="strategy-body">
+                            <div class="cfg-row">
+                                <span class="cfg-label">Zaman Dilimi</span>
+                                <select class="search-input strat-interval" data-strategy="RSI_SCALPER">
+                                    <option value="1m">1m</option>
+                                    <option value="5m">5m</option>
+                                    <option value="15m">15m</option>
+                                    <option value="1h">1h</option>
+                                    <option value="4h">4h</option>
+                                </select>
+                            </div>
+                            <div class="cfg-row">
+                                <span class="cfg-label">RSI Period</span>
+                                <input type="number" class="search-input strat-param" data-strategy="RSI_SCALPER" data-param="period" value="7" min="2" max="50">
+                            </div>
+                            <div class="cfg-subtitle">LONG Koşulu</div>
+                            <div class="cfg-row-3">
+                                <select class="search-input strat-param" data-strategy="RSI_SCALPER" data-param="longOp">
+                                    <option value="<">&lt;</option>
+                                    <option value=">">&gt;</option>
+                                </select>
+                                <input type="number" class="search-input strat-param" data-strategy="RSI_SCALPER" data-param="longVal" value="40" min="1" max="99">
+                                <span class="cfg-hint">RSI eşiği</span>
+                            </div>
+                            <div class="cfg-subtitle">SHORT Koşulu</div>
+                            <div class="cfg-row-3">
+                                <select class="search-input strat-param" data-strategy="RSI_SCALPER" data-param="shortOp">
+                                    <option value="<">&lt;</option>
+                                    <option value=">" selected>&gt;</option>
+                                </select>
+                                <input type="number" class="search-input strat-param" data-strategy="RSI_SCALPER" data-param="shortVal" value="60" min="1" max="99">
+                                <span class="cfg-hint">RSI eşiği</span>
+                            </div>
+                        </div>
+                        <div class="strategy-body strategy-trade-section">
+                            <div class="cfg-subtitle">💰 İşlem Ayarları</div>
+                            <div class="cfg-row">
+                                <span class="cfg-label">İlk İşlem (USDT)</span>
+                                <input type="number" class="search-input strat-param" data-strategy="RSI_SCALPER" data-param="baseOrder" value="10" min="1" step="1" oninput="window.updateMarginPreview('RSI_SCALPER')">
+                            </div>
+                            <div class="cfg-row">
+                                <span class="cfg-label">Kaldıraç <span class="lev-badge">X</span></span>
+                                <input type="number" class="search-input strat-param" data-strategy="RSI_SCALPER" data-param="leverage" value="1" min="1" max="125" step="1" oninput="window.updateMarginPreview('RSI_SCALPER')">
+                            </div>
+                            <div class="cfg-row margin-row">
+                                <span class="cfg-label">💵 Marjin (Kilitlenen)</span>
+                                <span id="margin-preview-RSI_SCALPER" class="margin-preview">10.00 USDT</span>
+                            </div>
+                            <div class="cfg-row">
+                                <span class="cfg-label">Hedef Kâr (%)</span>
+                                <input type="number" class="search-input strat-param" data-strategy="RSI_SCALPER" data-param="takeProfit" value="1.5" min="0.1" step="0.1">
+                            </div>
+                            <div class="cfg-row">
+                                <span class="cfg-label">İzleyen Stop (%)</span>
+                                <input type="number" class="search-input strat-param" data-strategy="RSI_SCALPER" data-param="trailing" value="0.3" min="0.1" step="0.1">
+                            </div>
+                            <div class="cfg-row">
+                                <span class="cfg-label">Stop Loss (%)</span>
+                                <input type="number" class="search-input strat-param" data-strategy="RSI_SCALPER" data-param="stopLoss" value="2.0" min="0.1" step="0.1">
+                            </div>
+                            <div class="cfg-subtitle">🔁 DCA (Kademeli Alım)</div>
+                            <div class="cfg-row">
+                                <span class="cfg-label">DCA Aktif</span>
+                                <label class="switch switch-small">
+                                    <input type="checkbox" class="strat-param" data-strategy="RSI_SCALPER" data-param="useDCA">
+                                    <span class="slider round"></span>
+                                </label>
+                            </div>
+                            <div class="cfg-row">
+                                <span class="cfg-label">Hacim Çarpanı</span>
+                                <input type="number" class="search-input strat-param" data-strategy="RSI_SCALPER" data-param="volMultiplier" value="1.2" min="1" step="0.1">
+                            </div>
+                            <div class="cfg-row">
+                                <span class="cfg-label">Düşüş Adımları (%)</span>
+                                <input type="text" class="search-input strat-param" data-strategy="RSI_SCALPER" data-param="steps" value="1.5, 3, 5">
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="strategy-panel" data-strategy="HULL_SRP">
+                        <div class="strategy-header">
+                            <div class="strategy-title">
+                                <span class="strategy-dot" style="background:#089981;"></span>
+                                HULL / HL2 - SRP
+                            </div>
+                            <label class="switch">
+                                <input type="checkbox" class="strat-enabled" data-strategy="HULL_SRP">
+                                <span class="slider round"></span>
+                            </label>
+                        </div>
+                        <div class="strategy-body">
+                            <div class="cfg-row">
+                                <span class="cfg-label">Zaman Dilimi</span>
+                                <select class="search-input strat-interval" data-strategy="HULL_SRP">
+                                    <option value="1m">1m</option>
+                                    <option value="5m">5m</option>
+                                    <option value="15m">15m</option>
+                                    <option value="1h">1h</option>
+                                    <option value="4h">4h</option>
+                                </select>
+                            </div>
+                            <div class="cfg-row">
+                                <span class="cfg-label">HMA Length</span>
+                                <input type="number" class="search-input strat-param" data-strategy="HULL_SRP" data-param="period" value="10" min="2" max="100">
+                            </div>
+                            <div class="cfg-row">
+                                <span class="cfg-label">Kaynak</span>
+                                <select class="search-input strat-param" data-strategy="HULL_SRP" data-param="source">
+                                    <option value="hl2">(Y+D)/2</option>
+                                    <option value="close">Kapanış</option>
+                                    <option value="open">Açılış</option>
+                                </select>
+                            </div>
+                            <div class="cfg-row">
+                                <span class="cfg-label">Long Trade</span>
+                                <label class="switch switch-small">
+                                    <input type="checkbox" class="strat-param" data-strategy="HULL_SRP" data-param="longTrade" checked>
+                                    <span class="slider round"></span>
+                                </label>
+                            </div>
+                            <div class="cfg-row">
+                                <span class="cfg-label">Short Trade</span>
+                                <label class="switch switch-small">
+                                    <input type="checkbox" class="strat-param" data-strategy="HULL_SRP" data-param="shortTrade">
+                                    <span class="slider round"></span>
+                                </label>
+                            </div>
+                        </div>
+                        <div class="strategy-body strategy-trade-section">
+                            <div class="cfg-subtitle">💰 İşlem Ayarları</div>
+                            <div class="cfg-row">
+                                <span class="cfg-label">İlk İşlem (USDT)</span>
+                                <input type="number" class="search-input strat-param" data-strategy="HULL_SRP" data-param="baseOrder" value="5" min="1" step="1" oninput="window.updateMarginPreview('HULL_SRP')">
+                            </div>
+                            <div class="cfg-row">
+                                <span class="cfg-label">Kaldıraç <span class="lev-badge">X</span></span>
+                                <input type="number" class="search-input strat-param" data-strategy="HULL_SRP" data-param="leverage" value="1" min="1" max="125" step="1" oninput="window.updateMarginPreview('HULL_SRP')">
+                            </div>
+                            <div class="cfg-row margin-row">
+                                <span class="cfg-label">💵 Marjin (Kilitlenen)</span>
+                                <span id="margin-preview-HULL_SRP" class="margin-preview">5.00 USDT</span>
+                            </div>
+                            <div class="cfg-row">
+                                <span class="cfg-label">Hedef Kâr (%)</span>
+                                <input type="number" class="search-input strat-param" data-strategy="HULL_SRP" data-param="takeProfit" value="2.0" min="0.1" step="0.1">
+                            </div>
+                            <div class="cfg-row">
+                                <span class="cfg-label">İzleyen Stop (%)</span>
+                                <input type="number" class="search-input strat-param" data-strategy="HULL_SRP" data-param="trailing" value="0.5" min="0.1" step="0.1">
+                            </div>
+                            <div class="cfg-row">
+                                <span class="cfg-label">Stop Loss (%)</span>
+                                <input type="number" class="search-input strat-param" data-strategy="HULL_SRP" data-param="stopLoss" value="2.0" min="0.1" step="0.1">
+                            </div>
+                            <div class="cfg-subtitle">🔁 DCA (Kademeli Alım)</div>
+                            <div class="cfg-row">
+                                <span class="cfg-label">DCA Aktif</span>
+                                <label class="switch switch-small">
+                                    <input type="checkbox" class="strat-param" data-strategy="HULL_SRP" data-param="useDCA">
+                                    <span class="slider round"></span>
+                                </label>
+                            </div>
+                            <div class="cfg-row">
+                                <span class="cfg-label">Hacim Çarpanı</span>
+                                <input type="number" class="search-input strat-param" data-strategy="HULL_SRP" data-param="volMultiplier" value="1.0" min="1" step="0.1">
+                            </div>
+                            <div class="cfg-row">
+                                <span class="cfg-label">Düşüş Adımları (%)</span>
+                                <input type="text" class="search-input strat-param" data-strategy="HULL_SRP" data-param="steps" value="2, 4, 6">
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="strategy-panel" data-strategy="GRIDBOT">
+                        <div class="strategy-header">
+                            <div class="strategy-title">
+                                <span class="strategy-dot" style="background:#fcd535;"></span>
+                                GRIDBOT Scalper
+                            </div>
+                            <label class="switch">
+                                <input type="checkbox" class="strat-enabled" data-strategy="GRIDBOT">
+                                <span class="slider round"></span>
+                            </label>
+                        </div>
+                        <div class="strategy-body">
+                            <div class="cfg-row">
+                                <span class="cfg-label">Zaman Dilimi</span>
+                                <select class="search-input strat-interval" data-strategy="GRIDBOT">
+                                    <option value="1m">1m</option>
+                                    <option value="5m">5m</option>
+                                    <option value="15m">15m</option>
+                                    <option value="1h">1h</option>
+                                    <option value="4h">4h</option>
+                                </select>
+                            </div>
+                            <div class="cfg-row">
+                                <span class="cfg-label">Geriye Dönük Tarama</span>
+                                <input type="number" class="search-input strat-param" data-strategy="GRIDBOT" data-param="lookback" value="8" min="2" max="50">
+                            </div>
+                        </div>
+                        <div class="strategy-body strategy-trade-section">
+                            <div class="cfg-subtitle">💰 İşlem Ayarları</div>
+                            <div class="cfg-row">
+                                <span class="cfg-label">İlk İşlem (USDT)</span>
+                                <input type="number" class="search-input strat-param" data-strategy="GRIDBOT" data-param="baseOrder" value="10" min="1" step="1" oninput="window.updateMarginPreview('GRIDBOT')">
+                            </div>
+                            <div class="cfg-row">
+                                <span class="cfg-label">Kaldıraç <span class="lev-badge">X</span></span>
+                                <input type="number" class="search-input strat-param" data-strategy="GRIDBOT" data-param="leverage" value="1" min="1" max="125" step="1" oninput="window.updateMarginPreview('GRIDBOT')">
+                            </div>
+                            <div class="cfg-row margin-row">
+                                <span class="cfg-label">💵 Marjin (Kilitlenen)</span>
+                                <span id="margin-preview-GRIDBOT" class="margin-preview">10.00 USDT</span>
+                            </div>
+                            <div class="cfg-row">
+                                <span class="cfg-label">Hedef Kâr (%)</span>
+                                <input type="number" class="search-input strat-param" data-strategy="GRIDBOT" data-param="takeProfit" value="1.0" min="0.1" step="0.1">
+                            </div>
+                            <div class="cfg-row">
+                                <span class="cfg-label">İzleyen Stop (%)</span>
+                                <input type="number" class="search-input strat-param" data-strategy="GRIDBOT" data-param="trailing" value="0.2" min="0.1" step="0.1">
+                            </div>
+                            <div class="cfg-row">
+                                <span class="cfg-label">Stop Loss (%)</span>
+                                <input type="number" class="search-input strat-param" data-strategy="GRIDBOT" data-param="stopLoss" value="2.0" min="0.1" step="0.1">
+                            </div>
+                            <div class="cfg-subtitle">🔁 DCA (Kademeli Alım)</div>
+                            <div class="cfg-row">
+                                <span class="cfg-label">DCA Aktif</span>
+                                <label class="switch switch-small">
+                                    <input type="checkbox" class="strat-param" data-strategy="GRIDBOT" data-param="useDCA">
+                                    <span class="slider round"></span>
+                                </label>
+                            </div>
+                            <div class="cfg-row">
+                                <span class="cfg-label">Hacim Çarpanı</span>
+                                <input type="number" class="search-input strat-param" data-strategy="GRIDBOT" data-param="volMultiplier" value="1.5" min="1" step="0.1">
+                            </div>
+                            <div class="cfg-row">
+                                <span class="cfg-label">Düşüş Adımları (%)</span>
+                                <input type="text" class="search-input strat-param" data-strategy="GRIDBOT" data-param="steps" value="1, 2, 3">
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="modal-footer bot-config-footer">
+                <div class="bot-footer-info">
+                    <span id="bot-modal-trades-info">Açık pozisyon: <b id="bot-modal-active-count">0</b></span>
+                </div>
+                <div class="bot-footer-buttons">
+                    <button class="btn-secondary" onclick="closeBotConfigModal()">Kapat</button>
+                    <button class="btn-primary" onclick="saveBotConfig()">💾 KAYDET</button>
+                    <button class="btn-success" id="btn-start-bot" onclick="startBot()">▶ BOT BAŞLAT</button>
+                    <button class="btn-danger" id="btn-stop-bot" onclick="stopBot()">⏹ BOT DURDUR</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div id="chart-settings-modal" class="modal-overlay">
+        <div class="modal-content chart-settings-content">
+            <div class="modal-header">
+                <h2>⚙️ Grafik Ayarları</h2>
+                <span class="modal-close" onclick="closeChartSettingsModal()">✕</span>
+            </div>
+
+            <div class="chart-settings-body">
+                <div class="cs-section">
+                    <div class="cs-section-title">GRAFİK MARJLARI</div>
+
+                    <div class="cs-row">
+                        <span class="cs-label">Üst</span>
+                        <input type="number" id="cs-margin-top" class="search-input" min="0" max="50" step="1" value="20">
+                        <span class="cs-suffix">%</span>
+                    </div>
+
+                    <div class="cs-row">
+                        <span class="cs-label">Alt</span>
+                        <input type="number" id="cs-margin-bottom" class="search-input" min="0" max="50" step="1" value="20">
+                        <span class="cs-suffix">%</span>
+                    </div>
+
+                    <div class="cs-row">
+                        <span class="cs-label">Sağ</span>
+                        <input type="number" id="cs-right-offset" class="search-input" min="0" max="50" step="1" value="5">
+                        <span class="cs-suffix">çubuk</span>
+                    </div>
+
+                    <button class="cs-reset-btn" onclick="resetChartMargins()">Sıfırla</button>
+                </div>
+
+                <div class="cs-section">
+                    <div class="cs-section-title">MUM RENKLERİ</div>
+
+                    <div class="cs-row-check">
+                        <input type="checkbox" id="cs-show-border" checked onchange="toggleBorderVisibility()">
+                        <span class="cs-check-label">Temel hat</span>
+                        <div class="cs-color-group">
+                            <input type="color" id="cs-bg-up" class="cs-color" value="#089981" title="Yükseliş gövde">
+                            <input type="color" id="cs-bg-down" class="cs-color" value="#f23645" title="Düşüş gövde">
+                        </div>
+                    </div>
+
+                    <div class="cs-row-check">
+                        <input type="checkbox" id="cs-show-wick" checked onchange="toggleWickVisibility()">
+                        <span class="cs-check-label">Fitil</span>
+                        <div class="cs-color-group">
+                            <input type="color" id="cs-wick-up" class="cs-color" value="#089981" title="Yükseliş fitil">
+                            <input type="color" id="cs-wick-down" class="cs-color" value="#f23645" title="Düşüş fitil">
+                        </div>
+                    </div>
+
+                    <div class="cs-row-check">
+                        <input type="checkbox" id="cs-show-candle-border" checked onchange="toggleCandleBorder()">
+                        <span class="cs-check-label">Kenarlar</span>
+                        <div class="cs-color-group">
+                            <input type="color" id="cs-border-up" class="cs-color" value="#089981" title="Yükseliş kenar">
+                            <input type="color" id="cs-border-down" class="cs-color" value="#f23645" title="Düşüş kenar">
+                        </div>
+                    </div>
+
+                    <button class="cs-reset-btn" onclick="resetChartColors()">Sıfırla</button>
+                </div>
+            </div>
+
+            <div class="chart-settings-footer">
+                <button class="btn-secondary" onclick="closeChartSettingsModal()">Kapat</button>
+                <button class="btn-primary" onclick="applyChartSettings()">💾 Uygula</button>
+            </div>
+        </div>
+    </div>
+
+    <script src="/static/chart.js"></script>
+</body>
+</html>
