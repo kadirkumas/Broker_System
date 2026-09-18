@@ -138,11 +138,8 @@
                             <div class="btp-tab" id="tab-daily" onclick="switchBtpTab('daily')">Günlük İşlemler(<span id="btp-daily-count">0</span>)</div>
                         </div>
                         <div class="btp-controls">
-                            <span id="daily-pnl-header" onclick="openDailyReportModal()" style="display: inline-block; cursor: pointer; background: rgba(41, 98, 255, 0.1); border: 1px solid #2962ff; padding: 3px 8px; border-radius: 4px; color: #EAECEF; font-weight: bold; font-size: 12px; margin-right: 8px;">
+                            <span id="daily-pnl-header" onclick="openDailyReportModal()" style="display: inline-block; cursor: pointer; background: rgba(41, 98, 255, 0.1); border: 1px solid #2962ff; padding: 3px 8px; border-radius: 4px; color: #EAECEF; font-weight: bold; font-size: 12px; margin-right: 15px;">
                                 Bugün: <span id="daily-total-pnl">0.00$</span> 📅
-                            </span>
-                            <span id="calendar-btn" onclick="openCalendarModal()" title="Aylık Takvim" style="display: inline-block; cursor: pointer; background: rgba(252, 213, 53, 0.1); border: 1px solid #fcd535; padding: 3px 8px; border-radius: 4px; color: #fcd535; font-weight: bold; font-size: 12px; margin-right: 15px;">
-                                📆 Takvim
                             </span>
                             
                             <input type="text" id="btp-search-input" placeholder="Sembol Ara..." class="search-input" style="width: 120px; padding: 4px 8px; font-size: 11px; margin-right: 15px;" oninput="refreshBottomPanel()">
@@ -316,84 +313,22 @@
     </div>
 
     <div id="daily-report-modal" class="modal-overlay">
-        <div class="modal-content" style="width: 750px; max-width: 95vw; height: 600px; background: #0b0e14; border: 1px solid #2b3139;">
-            <div class="modal-header" style="background: #181a20; border-bottom: 1px solid #2b3139;">
-                <h2>📅 Bugünün İşlem Raporu</h2>
-                <div style="display: flex; align-items: center; gap: 15px;">
-                    <span id="daily-modal-summary" style="font-size: 13px; font-weight: bold; color: #0ECB81;">+0.00 USDT</span>
-                    <span class="modal-close" onclick="closeDailyReportModal()">✕</span>
-                </div>
+        <div class="modal-content" style="width: 450px; height: 500px; background: #0b0e14; border: 1px solid #2b3139;">
+            <div class="modal-header" style="background: #181a20;">
+                <h2>📅 Günlük Kâr / Zarar Takvimi</h2>
+                <span class="modal-close" onclick="closeDailyReportModal()">✕</span>
             </div>
             <div class="modal-body" style="padding: 0; display: flex; flex-direction: column; overflow-y: auto;">
                 <table class="btp-table" style="width: 100%;">
-                    <thead style="position: sticky; top: 0; z-index: 5; background: #181a20;">
+                    <thead style="position: sticky; top: 0; z-index: 5;">
                         <tr>
-                            <th class="left" style="background: #181a20; width: 6%;">#</th>
-                            <th class="left" style="background: #181a20; width: 14%;">Sembol</th>
-                            <th class="left" style="background: #181a20; width: 8%;">Yön</th>
-                            <th class="right" style="background: #181a20; width: 11%;">Giriş</th>
-                            <th class="right" style="background: #181a20; width: 11%;">Çıkış</th>
-                            <th class="right" style="background: #181a20; width: 15%;">Kâr / Zarar</th>
-                            <th class="right" style="background: #181a20; width: 12%;">Net USDT</th>
-                            <th class="right" style="background: #181a20; width: 10%;">Sebep</th>
-                            <th class="right" style="background: #181a20; width: 13%;">Saat</th>
+                            <th class="left" style="background: #181a20;">Tarih</th>
+                            <th class="center" style="background: #181a20;">İşlem Sayısı</th>
+                            <th class="right" style="background: #181a20;">Net Kâr / Zarar</th>
                         </tr>
                     </thead>
                     <tbody id="daily-report-tbody"></tbody>
                 </table>
-            </div>
-            <div style="padding: 12px 20px; border-top: 1px solid #2b3139; background: #181a20; display: flex; justify-content: space-between; align-items: center; font-size: 13px;">
-                <span style="color: #848e9c;">Kapanan işlem sayısı: <b id="daily-modal-count" style="color: #EAECEF;">0</b></span>
-                <div style="display: flex; gap: 20px;">
-                    <span style="color: #0ECB81;">Kârlı: <b id="daily-modal-wins">0</b></span>
-                    <span style="color: #F6465D;">Zararlı: <b id="daily-modal-losses">0</b></span>
-                    <span style="color: #fcd535;">Win Rate: <b id="daily-modal-winrate">0%</b></span>
-                </div>
-            </div>
-        </div>
-    </div>
-
-    <div id="calendar-modal" class="modal-overlay">
-        <div class="modal-content" style="width: 900px; max-width: 95vw; height: auto; max-height: 90vh; background: #0b0e14; border: 1px solid #2b3139;">
-            <div class="modal-header" style="background: #181a20; border-bottom: 1px solid #2b3139;">
-                <h2>📆 Kâr / Zarar Takvimi</h2>
-                <div style="display: flex; align-items: center; gap: 12px;">
-                    <span id="cal-month-total" style="font-size: 13px; font-weight: bold; color: #848e9c;">0.00 USDT</span>
-                    <span class="modal-close" onclick="closeCalendarModal()">✕</span>
-                </div>
-            </div>
-
-            <div class="calendar-controls">
-                <button class="cal-nav-btn" onclick="calPrevMonth()">◀ Önceki Ay</button>
-                <div class="cal-month-title" id="cal-month-title">Eylül 2026</div>
-                <button class="cal-nav-btn" onclick="calNextMonth()">Sonraki Ay ▶</button>
-                <button class="cal-nav-btn cal-today-btn" onclick="calGoToday()">📅 Bugüne Dön</button>
-            </div>
-
-            <div class="calendar-body">
-                <div class="cal-weekdays">
-                    <div>Pzt</div>
-                    <div>Sal</div>
-                    <div>Çar</div>
-                    <div>Per</div>
-                    <div>Cum</div>
-                    <div>Cmt</div>
-                    <div>Paz</div>
-                </div>
-                <div class="cal-grid" id="cal-grid"></div>
-            </div>
-
-            <div class="calendar-footer">
-                <div class="cal-legend">
-                    <span><span class="cal-legend-dot" style="background:#0ECB81;"></span> Kârlı</span>
-                    <span><span class="cal-legend-dot" style="background:#F6465D;"></span> Zararlı</span>
-                    <span><span class="cal-legend-dot" style="background:#848e9c;"></span> İşlem Yok</span>
-                </div>
-                <div class="cal-summary">
-                    <span>Toplam İşlem: <b id="cal-sum-trades" style="color: #EAECEF;">0</b></span>
-                    <span>Kârlı Gün: <b id="cal-sum-wins" style="color: #0ECB81;">0</b></span>
-                    <span>Zararlı Gün: <b id="cal-sum-losses" style="color: #F6465D;">0</b></span>
-                </div>
             </div>
         </div>
     </div>
@@ -837,53 +772,6 @@
                     </div>
 
                     <button class="cs-reset-btn" onclick="resetChartColors()">Sıfırla</button>
-                </div>
-
-                <div class="cs-section">
-                    <div class="cs-section-title">PANEL GENİŞLİKLERİ</div>
-
-                    <div class="cs-row">
-                        <span class="cs-label">Sidebar</span>
-                        <input type="number" id="cs-sidebar-width" class="search-input" min="250" max="600" step="10" value="340">
-                        <span class="cs-suffix">px</span>
-                    </div>
-
-                    <div class="cs-row">
-                        <span class="cs-label">İzleme L.</span>
-                        <input type="number" id="cs-watchlist-width" class="search-input" min="120" max="300" step="5" value="165">
-                        <span class="cs-suffix">px</span>
-                    </div>
-
-                    <div class="cs-row">
-                        <span class="cs-label">Toast</span>
-                        <input type="number" id="cs-toast-width" class="search-input" min="200" max="500" step="10" value="320">
-                        <span class="cs-suffix">px</span>
-                    </div>
-
-                    <button class="cs-reset-btn" onclick="resetPanelWidths()">Sıfırla</button>
-                </div>
-
-                <div class="cs-section">
-                    <div class="cs-section-title">TELEGRAM BİLDİRİM</div>
-
-                    <div class="cs-row-check">
-                        <input type="checkbox" id="cs-tg-signals" checked>
-                        <span class="cs-check-label">Yeni Sinyaller</span>
-                    </div>
-
-                    <div class="cs-row-check">
-                        <input type="checkbox" id="cs-tg-closes" checked>
-                        <span class="cs-check-label">Kapanışlar</span>
-                    </div>
-
-                    <div class="cs-row-check">
-                        <input type="checkbox" id="cs-tg-delist" checked>
-                        <span class="cs-check-label">Delist Uyarıları</span>
-                    </div>
-
-                    <button class="cs-reset-btn" onclick="testTelegram()" id="tg-test-btn">📤 Test Mesajı Gönder</button>
-
-                    <span id="tg-status-badge" class="tg-status-badge unknown" style="display:block; margin-top:6px; text-align:center;">● Bağlantı kontrol ediliyor...</span>
                 </div>
             </div>
 

@@ -1,8 +1,6 @@
 import asyncio
 import time
 from backend.database import get_db_connection
-from backend import telegram_notifier
-from backend.strategy_engine import load_config
 
 
 class PositionManager:
@@ -239,24 +237,6 @@ class PositionManager:
         lev_info = f" [{leverage}x]" if leverage > 1 else ""
         print(f"[✓ KAPANIŞ] {symbol}{dca_info}{lev_info} | {reason} | Çıkış: {exit_price:.6f} | "
               f"Kâr: {sign}{pnl_pct*100:.2f}% | Kom: -{commission:.4f} | Net: {sign}{net_pnl:.4f} USDT")
-        
-        # ⚡ Telegram bildirimi (ayar kontrolü ile)
-        try:
-            cfg = load_config()
-            tg_cfg = cfg.get("telegram", {})
-            if tg_cfg.get("notify_closes", True):
-                asyncio.create_task(telegram_notifier.notify_close(
-                    symbol=symbol,
-                    trade_type=trade["trade_type"],
-                    entry_price=avg_price,
-                    exit_price=exit_price,
-                    pnl_pct=pnl_pct * 100,
-                    net_pnl=net_pnl,
-                    reason=reason,
-                    dca_count=dca_count,
-                ))
-        except Exception as _e:
-            print(f"[TG] Kapanış bildirim hatası: {_e}")
 
         return {
             "symbol": symbol,

@@ -3492,58 +3492,15 @@ window.applyPanelSettings();
 // =============================================================
 // TELEGRAM AYARLARI
 // =============================================================
-window.defaultTelegramSettings = {
-    notify_signals: true,
-    notify_closes: true,
-    notify_delisting: true,
-};
-
-window.currentTelegramSettings = JSON.parse(localStorage.getItem('cryptoTelegramSettings_v1')) || { ...window.defaultTelegramSettings };
 
 
 
 
 
-window.saveTelegramSettings = async function() {
-    const el1 = document.getElementById('cs-tg-signals');
-    const el2 = document.getElementById('cs-tg-closes');
-    const el3 = document.getElementById('cs-tg-delist');
-    
-    const tgSettings = {
-        notify_signals: el1 ? el1.checked : true,
-        notify_closes: el2 ? el2.checked : true,
-        notify_delisting: el3 ? el3.checked : true,
-    };
-    
-    window.currentTelegramSettings = tgSettings;
-    localStorage.setItem('cryptoTelegramSettings_v1', JSON.stringify(tgSettings));
-    
-    // ⚡ botConfig.telegram'ı da güncelle (modal tekrar açılınca doğru yüklenir)
-    if (!window.botConfig.telegram) window.botConfig.telegram = {};
-    window.botConfig.telegram.notify_signals = tgSettings.notify_signals;
-    window.botConfig.telegram.notify_closes = tgSettings.notify_closes;
-    window.botConfig.telegram.notify_delisting = tgSettings.notify_delisting;
-    
-    // Backend config'e de yaz
-    try {
-        const cfgRes = await fetch('/api/engine/config');
-        const cfg = await cfgRes.json();
-        
-        if (!cfg.telegram) cfg.telegram = {};
-        cfg.telegram.notify_signals = tgSettings.notify_signals;
-        cfg.telegram.notify_closes = tgSettings.notify_closes;
-        cfg.telegram.notify_delisting = tgSettings.notify_delisting;
-        
-        await fetch('/api/engine/config', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(cfg)
-        });
-        console.log('[TG] Ayarlar kaydedildi:', tgSettings);
-    } catch(e) {
-        console.warn('[TG] Config kaydetme hatası:', e);
-    }
-};
+
+
+
+
 
 window.testTelegram = async function() {
     const btn = document.getElementById('tg-test-btn');
@@ -3705,35 +3662,7 @@ document.addEventListener('keydown', function(e) {
     }
 });
 
-window.checkTelegramStatus = async function() {
-    const badge = document.getElementById('tg-status-badge');
-    if (!badge) return;
-    
-    badge.className = 'tg-status-badge unknown';
-    badge.innerHTML = '● Kontrol ediliyor...';
-    
-    try {
-        const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 5000);
-        
-        const res = await fetch('/api/telegram/status', { signal: controller.signal });
-        clearTimeout(timeoutId);
-        
-        const data = await res.json();
-        
-        if (data.configured) {
-            badge.className = 'tg-status-badge connected';
-            badge.innerHTML = '● Bağlı';
-        } else {
-            badge.className = 'tg-status-badge error';
-            badge.innerHTML = '● .env ayarları eksik';
-        }
-    } catch(e) {
-        console.warn('[TG] Status hatası:', e);
-        badge.className = 'tg-status-badge error';
-        badge.innerHTML = '● Sunucu yanıt vermedi';
-    }
-};
+
 
 // =============================================================
 // AYARLAR MODALI HOOK - Telegram
@@ -3992,87 +3921,188 @@ document.addEventListener('keydown', function(e) {
     }
 });
 
-// =============================================================
-// TELEGRAM BILDIRIM AYARLARI v3 (TEMIZ KURULUM)
-// =============================================================
-
-window._tgSettings = { notify_signals: true, notify_closes: true, notify_delisting: true };
-
-window.loadTelegramSettingsToModal = function() {
-    var s = { notify_signals: true, notify_closes: true, notify_delisting: true };
+window.checkTelegramStatus = async function() {
+    console.log('[TG-Status] Fonksiyon çağrıldı');
+    
+    const badge = document.getElementById('tg-status-badge');
+    if (!badge) {
+        console.warn('[TG-Status] Badge elementi bulunamadı');
+        return;
+    }
+    
+    badge.className = 'tg-status-badge unknown';
+    badge.innerHTML = '● Kontrol ediliyor...';
+    
     try {
-        var stored = localStorage.getItem('cryptoTgSettings_v3');
+        const controller = new AbortController();
+        const timeoutId = setTimeout(function() { controller.abort(); }, 5000);
+        
+        console.log('[TG-Status] Fetch başlıyor...');
+        const res = await fetch('/api/telegram/status', { 
+            signal: controller.signal,
+            cache: 'no-store'
+        });
+        clearTimeout(timeoutId);
+        
+        console.log('[TG-Status] HTTP durum:', res.status);
+        
+        if (!res.ok) {
+            badge.className = 'tg-status-badge error';
+            badge.innerHTML = '● Sunucu hatası (' + res.status + ')';
+            return;
+        }
+        
+        const data = await res.json();
+        console.log('[TG-Status] Yanıt:', data);
+        
+        if (data.configured === true) {
+            badge.className = 'tg-status-badge connected';
+            badge.innerHTML = '● Bağlı';
+        } else {
+            badge.className = 'tg-status-badge error';
+            badge.innerHTML = '● .env ayarları eksik';
+        }
+    } catch(e) {
+        console.error('[TG-Status] Hata:', e);
+        if (e.name === 'AbortError') {
+            badge.className = 'tg-status-badge error';
+            badge.innerHTML = '● Sunucu yanıt vermedi (timeout)';
+        } else {
+            badge.className = 'tg-status-badge error';
+            badge.innerHTML = '● Bağlantı hatası';
+        }
+    }
+};
+
+// =============================================================
+// TELEGRAM STATUS - Ayarlar modalı açıldığında kontrol et
+// =============================================================
+(function() {
+    function installHook() {
+        if (!window.openChartSettingsModal) {
+            setTimeout(installHook, 300);
+            return;
+        }
+        
+        if (window.openChartSettingsModal._tgStatusHooked) return;
+        
+        const orig = window.openChartSettingsModal;
+        window.openChartSettingsModal = function() {
+            console.log('[TG-Status] Ayarlar modalı açılıyor');
+            if (orig) orig.apply(this, arguments);
+            setTimeout(function() {
+                console.log('[TG-Status] Status kontrol ediliyor...');
+                window.checkTelegramStatus();
+            }, 150);
+        };
+        window.openChartSettingsModal._tgStatusHooked = true;
+        console.log('[TG-Status] Hook kuruldu');
+    }
+    installHook();
+})();
+
+// =============================================================
+// TELEGRAM BİLDİRİM AYARLARI - KESİN SÜRÜM
+// =============================================================
+window._tgCurrentSettings = { notify_signals: true, notify_closes: true, notify_delisting: true };
+
+// ⚡ Ayarları localStorage'dan yükle
+window.loadTelegramSettingsToModal = function() {
+    console.log('[TG] loadTelegramSettingsToModal çağrıldı');
+    
+    let s = { notify_signals: true, notify_closes: true, notify_delisting: true };
+    
+    try {
+        const stored = localStorage.getItem('cryptoTelegramSettings_v2');
         if (stored) {
-            var parsed = JSON.parse(stored);
+            const parsed = JSON.parse(stored);
             s.notify_signals = parsed.notify_signals !== false;
             s.notify_closes = parsed.notify_closes !== false;
             s.notify_delisting = parsed.notify_delisting !== false;
+            console.log('[TG] localStorage'dan yüklendi:', s);
         }
-    } catch(e) {}
+    } catch(e) {
+        console.warn('[TG] localStorage okuma hatası:', e);
+    }
     
-    var el1 = document.getElementById('cs-tg-signals');
-    var el2 = document.getElementById('cs-tg-closes');
-    var el3 = document.getElementById('cs-tg-delist');
+    // UI'a uygula
+    const el1 = document.getElementById('cs-tg-signals');
+    const el2 = document.getElementById('cs-tg-closes');
+    const el3 = document.getElementById('cs-tg-delist');
+    
     if (el1) el1.checked = s.notify_signals;
     if (el2) el2.checked = s.notify_closes;
     if (el3) el3.checked = s.notify_delisting;
     
-    window._tgSettings = s;
-    console.log('[TG] Yuklendi:', s);
+    window._tgCurrentSettings = s;
+    console.log('[TG] UI güncellendi');
 };
 
-window.saveTelegramSettings = function() {
-    var el1 = document.getElementById('cs-tg-signals');
-    var el2 = document.getElementById('cs-tg-closes');
-    var el3 = document.getElementById('cs-tg-delist');
+// ⚡ Ayarları kaydet (localStorage + backend)
+window.saveTelegramSettings = async function() {
+    console.log('[TG] saveTelegramSettings çağrıldı');
     
-    var s = {
+    const el1 = document.getElementById('cs-tg-signals');
+    const el2 = document.getElementById('cs-tg-closes');
+    const el3 = document.getElementById('cs-tg-delist');
+    
+    const s = {
         notify_signals: el1 ? el1.checked : true,
         notify_closes: el2 ? el2.checked : true,
-        notify_delisting: el3 ? el3.checked : true
+        notify_delisting: el3 ? el3.checked : true,
     };
     
-    window._tgSettings = s;
-    localStorage.setItem('cryptoTgSettings_v3', JSON.stringify(s));
+    window._tgCurrentSettings = s;
+    console.log('[TG] Kaydediliyor:', s);
     
+    // 1. localStorage'a yaz
+    localStorage.setItem('cryptoTelegramSettings_v2', JSON.stringify(s));
+    
+    // 2. botConfig'i güncelle
     if (!window.botConfig) window.botConfig = {};
     if (!window.botConfig.telegram) window.botConfig.telegram = {};
     window.botConfig.telegram.notify_signals = s.notify_signals;
     window.botConfig.telegram.notify_closes = s.notify_closes;
     window.botConfig.telegram.notify_delisting = s.notify_delisting;
     
-    fetch('/api/engine/config')
-        .then(function(r) { return r.json(); })
-        .then(function(cfg) {
-            if (!cfg.telegram) cfg.telegram = {};
-            cfg.telegram.notify_signals = s.notify_signals;
-            cfg.telegram.notify_closes = s.notify_closes;
-            cfg.telegram.notify_delisting = s.notify_delisting;
-            return fetch('/api/engine/config', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(cfg)
-            });
-        })
-        .then(function() {
-            console.log('[TG] Kaydedildi:', s);
-        })
-        .catch(function(e) {
-            console.warn('[TG] Backend kaydetme hatasi:', e);
+    // 3. Backend'e gönder
+    try {
+        const cfgRes = await fetch('/api/engine/config');
+        const cfg = await cfgRes.json();
+        
+        if (!cfg.telegram) cfg.telegram = {};
+        cfg.telegram.notify_signals = s.notify_signals;
+        cfg.telegram.notify_closes = s.notify_closes;
+        cfg.telegram.notify_delisting = s.notify_delisting;
+        
+        await fetch('/api/engine/config', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(cfg)
         });
+        console.log('[TG] Backend güncellendi:', s);
+    } catch(e) {
+        console.warn('[TG] Backend kaydetme hatası:', e);
+    }
 };
 
+// =============================================================
+// HOOK - Ayarlar modalı açıldığında ayarları yükle + durum kontrol et
+// =============================================================
 (function() {
-    function installHooks() {
+    function installHook() {
         if (typeof window.openChartSettingsModal !== 'function') {
-            setTimeout(installHooks, 300);
+            setTimeout(installHook, 300);
             return;
         }
-        if (window.openChartSettingsModal._tgHooked) return;
         
-        var origOpen = window.openChartSettingsModal;
+        if (window.openChartSettingsModal._tgInstalled) return;
+        
+        const origOpen = window.openChartSettingsModal;
         window.openChartSettingsModal = function() {
+            console.log('[TG] Modal açılıyor, hook tetiklendi');
             origOpen.apply(this, arguments);
+            
             setTimeout(function() {
                 window.loadTelegramSettingsToModal();
                 if (typeof window.checkTelegramStatus === 'function') {
@@ -4080,18 +4110,30 @@ window.saveTelegramSettings = function() {
                 }
             }, 150);
         };
-        window.openChartSettingsModal._tgHooked = true;
-        console.log('[TG] Open hook kuruldu');
-        
-        if (typeof window.applyChartSettings === 'function' && !window.applyChartSettings._tgHooked) {
-            var origApply = window.applyChartSettings;
-            window.applyChartSettings = function() {
-                window.saveTelegramSettings();
-                origApply.apply(this, arguments);
-            };
-            window.applyChartSettings._tgHooked = true;
-            console.log('[TG] Apply hook kuruldu');
-        }
+        window.openChartSettingsModal._tgInstalled = true;
+        console.log('[TG] Hook kuruldu');
     }
-    installHooks();
+    
+    function installApplyHook() {
+        if (typeof window.applyChartSettings !== 'function') {
+            setTimeout(installApplyHook, 300);
+            return;
+        }
+        
+        if (window.applyChartSettings._tgInstalled) return;
+        
+        const origApply = window.applyChartSettings;
+        window.applyChartSettings = function() {
+            console.log('[TG] Uygula basıldı, ayarlar kaydediliyor...');
+            // ⚡ ÖNCE kaydet
+            window.saveTelegramSettings();
+            // ⚡ SONRA orijinal apply'ı çağır
+            origApply.apply(this, arguments);
+        };
+        window.applyChartSettings._tgInstalled = true;
+        console.log('[TG] Apply hook kuruldu');
+    }
+    
+    installHook();
+    installApplyHook();
 })();

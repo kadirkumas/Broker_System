@@ -5,7 +5,6 @@ import time
 from binance.client import Client
 from backend.strategies import RSIScalperStrategy, HullSRPStrategy, GridbotScalperStrategy
 from backend.database import get_db_connection
-from backend import telegram_notifier
 
 
 CONFIG_PATH = os.path.join(os.path.dirname(__file__), "bot_config.json")
@@ -399,12 +398,6 @@ class StrategyEngine:
                 if newly and getattr(self, '_delisted_cache_time', 0) > 0:
                     for sym in newly:
                         print(f"[DELIST] YENI DELIST: {sym}")
-                        try:
-                            tg_cfg = self.config.get("telegram", {})
-                            if tg_cfg.get("notify_delisting", True):
-                                asyncio.create_task(telegram_notifier.notify_delisting(sym))
-                        except Exception:
-                            pass
                         self.recent_signals.insert(0, {
                             "id": f"DELIST_{sym}_{int(_time.time())}",
                             "symbol": sym,

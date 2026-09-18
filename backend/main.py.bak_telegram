@@ -47,7 +47,6 @@ from backend.strategy_engine import StrategyEngine, load_config, save_config
 from backend.order_manager import OrderManager
 from backend.position_manager import PositionManager
 from backend.database import init_db, get_db_connection
-from backend import telegram_notifier
 
 # ----------------------------------------------------------------------
 # BINANCE CLIENT + MOTORLAR
@@ -612,35 +611,3 @@ async def delete_trade_history(trade_id: int):
     print(f"[DELETE] İşlem #{trade_id} ({symbol}) kalıcı olarak silindi")
     
     return {"status": "success", "deleted_id": trade_id, "symbol": symbol}
-
-# ----------------------------------------------------------------------
-# TELEGRAM BİLDİRİM ENDPOINT'LERİ
-# ----------------------------------------------------------------------
-@app.get("/api/telegram/status")
-async def telegram_status():
-    """Telegram ayarları yapılmış mı?"""
-    return {
-        "status": "success",
-        "configured": telegram_notifier.is_configured(),
-    }
-
-
-@app.post("/api/telegram/test")
-async def telegram_test():
-    """Test mesajı gönderir."""
-    if not telegram_notifier.is_configured():
-        return {
-            "status": "error",
-            "message": "Telegram ayarları eksik. .env dosyasında TELEGRAM_BOT_TOKEN ve TELEGRAM_CHAT_ID olmalı."
-        }
-    
-    result = await telegram_notifier.send_telegram_message(
-        "🔔 <b>Broker System</b>\n\n"
-        "✅ Telegram bildirimleri başarıyla bağlandı!\n"
-        "Artık sinyal ve kapanış bildirimleri buraya gelecek."
-    )
-    
-    if result.get("ok"):
-        return {"status": "success", "message": "Test mesajı gönderildi"}
-    else:
-        return {"status": "error", "message": result.get("description") or result.get("message") or "Bilinmeyen hata"}

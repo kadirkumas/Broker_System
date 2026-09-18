@@ -1092,13 +1092,6 @@ input:checked + .slider:before { transform: translateX(20px); }
     grid-template-columns: 1fr 1fr 1fr 1fr !important;
     gap: 20px !important;
     overflow-y: auto !important;
-    align-items: start !important;   /* ⚡ tüm sütunlar üstten hizalı */
-}
-
-/* Her section üstten başlasın, ortalanmasın */
-.cs-section {
-    align-self: start !important;
-    justify-content: flex-start !important;
 }
 
 .cs-section {
@@ -2203,15 +2196,13 @@ input:checked + .slider:before { transform: translateX(20px); }
 /* ============================================================
    TELEGRAM AYARLARI - BADGE STİLLERİ
    ============================================================ */
-/* Telegram badge - kompakt */
 .tg-status-badge {
-    display: block !important;
-    margin-top: 8px !important;
-    padding: 4px 10px !important;
-    border-radius: 10px !important;
-    font-size: 10px !important;
-    font-weight: 700 !important;
-    text-align: center !important;
+    display: inline-block;
+    padding: 5px 12px;
+    border-radius: 12px;
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.3px;
 }
 
 .tg-status-badge.connected {
@@ -2248,203 +2239,4 @@ input:checked + .slider:before { transform: translateX(20px); }
 #tg-test-btn:disabled {
     opacity: 0.5;
     cursor: wait;
-}
-
-/* Telegram bölümü için özel */
-.cs-section .cs-section-title {
-    min-height: 24px !important;
-    display: flex !important;
-    align-items: center !important;
-}
-
-/* ============================================================
-   KÂR / ZARAR TAKVİMİ
-   ============================================================ */
-.calendar-controls {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    padding: 14px 20px;
-    border-bottom: 1px solid #2b3139;
-    background: #131722;
-    gap: 10px;
-}
-
-.cal-nav-btn {
-    background: #1e222d;
-    border: 1px solid #2a2e39;
-    color: #d1d4dc;
-    padding: 6px 14px;
-    border-radius: 4px;
-    font-size: 12px;
-    font-weight: 600;
-    cursor: pointer;
-    transition: all 0.15s;
-    font-family: inherit;
-    white-space: nowrap;
-}
-
-.cal-nav-btn:hover {
-    background: #2a2e39;
-    color: #fff;
-    border-color: #363c4e;
-}
-
-.cal-today-btn {
-    background: rgba(41, 98, 255, 0.15);
-    border-color: rgba(41, 98, 255, 0.4);
-    color: #79a0ff;
-    margin-left: auto;
-}
-
-.cal-today-btn:hover {
-    background: rgba(41, 98, 255, 0.3);
-    color: #fff;
-}
-
-.cal-month-title {
-    font-size: 16px;
-    font-weight: 700;
-    color: #EAECEF;
-    flex: 1;
-    text-align: center;
-    letter-spacing: 0.5px;
-}
-
-.calendar-body {
-    padding: 15px 20px;
-    overflow-y: auto;
-    max-height: 55vh;
-}
-
-.cal-weekdays {
-    display: grid;
-    grid-template-columns: repeat(7, 1fr);
-    gap: 6px;
-    margin-bottom: 8px;
-}
-
-.cal-weekdays > div {
-    text-align: center;
-    font-size: 11px;
-    font-weight: 700;
-    color: #848e9c;
-    padding: 6px 0;
-    text-transform: uppercase;
-    letter-spacing: 0.5px;
-}
-
-.cal-grid {
-    display: grid;
-    grid-template-columns: repeat(7, 1fr);
-    gap: 6px;
-}
-
-.cal-day {
-    background: #131722;
-    border: 1px solid #2a2e39;
-    border-radius: 6px;
-    padding: 8px 6px;
-    min-height: 72px;
-    display: flex;
-    flex-direction: column;
-    justify-content: space-between;
-    transition: all 0.15s;
-    position: relative;
-}
-
-.cal-day.cal-empty {
-    background: transparent;
-    border-color: transparent;
-    pointer-events: none;
-}
-
-.cal-day.cal-day-profit {
-    background: rgba(14, 203, 129, 0.12);
-    border-color: rgba(14, 203, 129, 0.4);
-}
-
-.cal-day.cal-day-loss {
-    background: rgba(246, 70, 93, 0.12);
-    border-color: rgba(246, 70, 93, 0.4);
-}
-
-.cal-day.cal-day-today {
-    border: 2px solid #2962ff;
-    box-shadow: 0 0 12px rgba(41, 98, 255, 0.4);
-}
-
-.cal-day.cal-day-clickable {
-    cursor: pointer;
-}
-
-.cal-day.cal-day-clickable:hover {
-    transform: translateY(-2px);
-    box-shadow: 0 4px 12px rgba(0,0,0,0.4);
-}
-
-.cal-day-num {
-    font-size: 12px;
-    font-weight: 700;
-    color: #d1d4dc;
-}
-
-.cal-day-pnl {
-    font-size: 12px;
-    font-weight: 700;
-    text-align: right;
-    font-variant-numeric: tabular-nums;
-}
-
-.cal-day-pnl.profit { color: #0ECB81; }
-.cal-day-pnl.loss { color: #F6465D; }
-.cal-day-pnl.empty { color: #5d6471; font-weight: 400; }
-
-.cal-day-count {
-    font-size: 9px;
-    color: #848e9c;
-    text-align: right;
-}
-
-.calendar-footer {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    padding: 12px 20px;
-    border-top: 1px solid #2b3139;
-    background: #181a20;
-    gap: 20px;
-    flex-wrap: wrap;
-}
-
-.cal-legend {
-    display: flex;
-    gap: 16px;
-    font-size: 11px;
-    color: #848e9c;
-}
-
-.cal-legend > span {
-    display: flex;
-    align-items: center;
-    gap: 5px;
-}
-
-.cal-legend-dot {
-    display: inline-block;
-    width: 10px;
-    height: 10px;
-    border-radius: 2px;
-}
-
-.cal-summary {
-    display: flex;
-    gap: 18px;
-    font-size: 11px;
-    color: #848e9c;
-}
-
-.cal-summary b {
-    font-size: 12px;
-    font-weight: 700;
 }

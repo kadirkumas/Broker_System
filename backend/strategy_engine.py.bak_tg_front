@@ -400,8 +400,7 @@ class StrategyEngine:
                     for sym in newly:
                         print(f"[DELIST] YENI DELIST: {sym}")
                         try:
-                            tg_cfg = self.config.get("telegram", {})
-                            if tg_cfg.get("notify_delisting", True):
+                            if self.config.get("telegram", {}).get("notify_signals", True):
                                 asyncio.create_task(telegram_notifier.notify_delisting(sym))
                         except Exception:
                             pass

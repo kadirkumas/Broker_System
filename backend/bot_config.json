@@ -51,5 +51,10 @@
       "volMultiplier": 1.5,
       "steps": "1, 2, 3"
     }
+  },
+  "telegram": {
+    "notify_signals": true,
+    "notify_closes": true,
+    "notify_delisting": true
   }
 }
