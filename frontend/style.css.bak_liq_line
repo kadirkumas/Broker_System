@@ -1738,37 +1738,3 @@ input:checked + .slider:before { transform: translateX(20px); }
 #toast-container .toast:not(.toast-v2) {
     display: none !important;
 }
-
-/* ============================================================
-   LİKİDASYON ETİKETİ
-   ============================================================ */
-.trade-label.liq-label {
-    background-color: #F6465D !important;
-    color: #fff !important;
-    font-weight: bold !important;
-    border: 1px solid #fff !important;
-    box-shadow: 0 0 12px rgba(246, 70, 93, 0.8) !important;
-    padding: 2px 7px !important;
-    font-size: 10px !important;
-    letter-spacing: 0.3px !important;
-    animation: liqPulse 2s infinite;
-}
-
-@keyframes liqPulse {
-    0%, 100% { box-shadow: 0 0 12px rgba(246, 70, 93, 0.8); }
-    50% { box-shadow: 0 0 20px rgba(246, 70, 93, 1); }
-}
-
-.trade-line.liq-label {
-    display: none !important;
-}
-
-/* ============================================================
-   LIQ SÜTUNU
-   ============================================================ */
-.btp-table td.liq-cell {
-    color: #F6465D !important;
-    font-weight: 600 !important;
-    font-size: 11px !important;
-    font-variant-numeric: tabular-nums !important;
-}

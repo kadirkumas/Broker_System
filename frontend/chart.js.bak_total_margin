@@ -624,13 +624,11 @@ window.renderBottomTrades = async function() {
             return (valA - valB) * dir;
         });
         
-        let totalCurrentVol = 0, totalMargin = 0, grossProfit = 0, grossLoss = 0;
+        let totalCurrentVol = 0, grossProfit = 0, grossLoss = 0;
         let activeCount = posArray.length;
         
         posArray.forEach(p => {
             totalCurrentVol += p.totalVol;
-            const lev = p.leverage || 1;
-            totalMargin += p.totalVol / lev;  // ⚡ Marjin hesabı
             if (p.pnl > 0) grossProfit += p.pnl; else grossLoss += p.pnl;
         });
         
@@ -638,10 +636,6 @@ window.renderBottomTrades = async function() {
         if (countEl) countEl.innerText = activeCount;
         let thVol = document.getElementById('pos-total-vol'); 
         if (thVol) thVol.innerText = totalCurrentVol.toFixed(2) + ' USDT';
-        
-        // ⚡ Toplam marjin gostergeci
-        let thMargin = document.getElementById('pos-total-margin');
-        if (thMargin) thMargin.innerText = totalMargin.toFixed(2) + ' USDT';
         let thGrossProfit = document.getElementById('pos-gross-profit'); 
         if (thGrossProfit) thGrossProfit.innerText = '+' + grossProfit.toFixed(2) + '$';
         let thGrossLoss = document.getElementById('pos-gross-loss'); 
@@ -650,27 +644,13 @@ window.renderBottomTrades = async function() {
         if (window.updatePosSortIcons) window.updatePosSortIcons();
         
         if (activeCount === 0) {
-            tbody.innerHTML = `<tr><td colspan="10" style="text-align:center; color:#848e9c; padding:40px; border-bottom:none;">Açık işlem bulunmuyor.</td></tr>`;
+            tbody.innerHTML = `<tr><td colspan="9" style="text-align:center; color:#848e9c; padding:40px; border-bottom:none;">Açık işlem bulunmuyor.</td></tr>`;
             return;
         }
         
         let html = '';
         posArray.forEach(p => {
             const isActiveRow = (p.displaySymbol === activeSymbol) ? 'active-coin-row' : '';
-            
-            // ⚡ LIQ fiyatı hesabı (kaldıraç bazlı, yaklaşık)
-            const _lev = p.leverage || 1;
-            const _MAINT = 0.005;  // %0.5 maintenance margin (yaklaşık)
-            let liqPrice = 0;
-            if (_lev > 1 && p.avgPrice > 0) {
-                if (p.type === 'LONG') {
-                    liqPrice = p.avgPrice * (1 - 1/_lev + _MAINT);
-                } else {
-                    liqPrice = p.avgPrice * (1 + 1/_lev - _MAINT);
-                }
-                if (liqPrice <= 0) liqPrice = 0;
-            }
-            
             const diffSec = Math.max(0, Math.floor(Date.now() / 1000) - p.entryTime);
             const d = Math.floor(diffSec / 86400), h = Math.floor((diffSec % 86400) / 3600), m = Math.floor((diffSec % 3600) / 60);
             const timeStr = `${d > 0 ? d + "g " : ""}${h > 0 ? h + "s " : ""}${m}dk`;
@@ -685,13 +665,13 @@ window.renderBottomTrades = async function() {
             const dcaBg = p.dcaCount > 0 ? 'color:#fcd535; background:rgba(252,213,53,0.1);' : 'color:#848e9c;';
             const volCell = `<span style="display:inline-flex; align-items:center; justify-content:flex-end; gap:8px;"><span style="min-width:68px; text-align:right; color:#EAECEF; font-weight:600;">${p.totalVol.toFixed(2)} USDT</span><span style="min-width:26px; text-align:right; color:#fcd535; font-weight:600; font-size:10px;">${leverage}x</span><span style="min-width:82px; text-align:right; color:#0ECB81; font-weight:600; font-size:10px;">Marjin: ${margin.toFixed(2)}</span><span style="min-width:44px; text-align:center; font-size:10px; font-weight:600; padding:1px 4px; border-radius:3px; ${dcaBg}">${p.dcaCount > 0 ? 'DCA:' + p.dcaCount : 'Ana'}</span></span>`;
             
-            html += `<tr class="${isActiveRow}" onclick="window.changeSymbol('${p.displaySymbol}')"><td class="left" style="font-weight:600; cursor:pointer;">${p.displaySymbol}</td><td class="left ${tagClass}">${typeIcon} ${p.type}</td><td class="right" style="font-size:11px;">${volCell}</td><td class="right">${window.formatPrice(p.avgPrice)}</td><td class="right">${window.formatPrice(p.currentPrice)}</td><td class="right" style="color:#F6465D; font-weight:600; font-size:11px;">${liqPrice > 0 ? window.formatPrice(liqPrice) : '—'}</td><td class="right" style="color:${pnlColor}; font-weight:bold;">${sign}${p.pnlPct.toFixed(2)}% (${sign}${p.pnl.toFixed(2)}$)</td><td class="right" style="color:#848e9c;">-${(p.totalVol * getDisplayCommission(p.symbol)).toFixed(4)}$</td><td class="right" style="color:#EAECEF; font-size:11px;">${window.formatDateTime(p.entryTime)}</td><td class="right" style="color:#848e9c;">${timeStr}</td></tr>`;
+            html += `<tr class="${isActiveRow}" onclick="window.changeSymbol('${p.displaySymbol}')"><td class="left" style="font-weight:600; cursor:pointer;">${p.displaySymbol}</td><td class="left ${tagClass}">${typeIcon} ${p.type}</td><td class="right" style="font-size:11px;">${volCell}</td><td class="right">${window.formatPrice(p.avgPrice)}</td><td class="right">${window.formatPrice(p.currentPrice)}</td><td class="right" style="color:${pnlColor}; font-weight:bold;">${sign}${p.pnlPct.toFixed(2)}% (${sign}${p.pnl.toFixed(2)}$)</td><td class="right" style="color:#848e9c;">-${(p.totalVol * getDisplayCommission(p.symbol)).toFixed(4)}$</td><td class="right" style="color:#EAECEF; font-size:11px;">${window.formatDateTime(p.entryTime)}</td><td class="right" style="color:#848e9c;">${timeStr}</td></tr>`;
         });
         tbody.innerHTML = html;
         
     } catch(e) {
         console.error('Pozisyonlar yüklenemedi:', e);
-        tbody.innerHTML = `<tr><td colspan="10" style="text-align:center; color:#f23645; padding:40px; border-bottom:none;">Backend bağlantı hatası: ${e.message}</td></tr>`;
+        tbody.innerHTML = `<tr><td colspan="9" style="text-align:center; color:#f23645; padding:40px; border-bottom:none;">Backend bağlantı hatası: ${e.message}</td></tr>`;
     }
 };
 

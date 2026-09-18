@@ -1762,13 +1762,3 @@ input:checked + .slider:before { transform: translateX(20px); }
 .trade-line.liq-label {
     display: none !important;
 }
-
-/* ============================================================
-   LIQ SÜTUNU
-   ============================================================ */
-.btp-table td.liq-cell {
-    color: #F6465D !important;
-    font-weight: 600 !important;
-    font-size: 11px !important;
-    font-variant-numeric: tabular-nums !important;
-}

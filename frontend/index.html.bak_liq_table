@@ -164,8 +164,7 @@
                                         </div>
                                     </th>
                                     <th class="right sortable" style="width:11%;" onclick="window.togglePosSort('avgPrice')">Giriş Fiyatı <span class="sort-icon" id="psort-avgPrice"></span></th>
-                                    <th class="right sortable" style="width:10%;" onclick="window.togglePosSort('currentPrice')">Anlık Fiyat <span class="sort-icon" id="psort-currentPrice"></span></th>
-                                    <th class="right" style="width:11%; color:#F6465D;">💥 LIQ Fiyatı</th>
+                                    <th class="right sortable" style="width:11%;" onclick="window.togglePosSort('currentPrice')">Anlık Fiyat <span class="sort-icon" id="psort-currentPrice"></span></th>
                                     <th class="right sortable" style="width:14%;" onclick="window.togglePosSort('pnl')">
                                         <div style="font-size: 11px; color: #848e9c; margin-bottom: 4px;">Kâr / Zarar <span class="sort-icon" id="psort-pnl"></span></div>
                                         <div style="font-size: 14px; font-weight: bold; white-space: nowrap;">
@@ -180,7 +179,7 @@
                                 </tr>
                             </thead>
                             <tbody id="btp-tbody-positions">
-                                <tr><td colspan="10" style="text-align:center; color:#848e9c; padding:30px; border:none;">Açık işlem bulunmuyor.</td></tr>
+                                <tr><td colspan="9" style="text-align:center; color:#848e9c; padding:30px; border:none;">Açık işlem bulunmuyor.</td></tr>
                             </tbody>
                         </table>
                         
