@@ -218,7 +218,6 @@ input:checked + .slider:before { transform: translateX(20px); }
     width: 100%; 
     border-collapse: collapse; 
     font-size: 12px;
-    table-layout: fixed;
 }
 .btp-table th {
     color: #848e9c; 

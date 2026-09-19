@@ -155,21 +155,21 @@
                         <table class="btp-table" id="table-positions">
                             <thead>
                                 <tr>
-                                    <th class="center" style="width:3%; color:#5d6471;">#</th>
-                                    <th class="left sortable" style="width:9%;" onclick="window.togglePosSort('symbol')">Sembol <span class="sort-icon" id="psort-symbol"></span></th>
-                                    <th class="left sortable" style="width:5%;" onclick="window.togglePosSort('type')">Yön <span class="sort-icon" id="psort-type"></span></th>
-                                    <th class="right sortable" style="width:18%;" onclick="window.togglePosSort('totalVol')">
-                                        <div style="font-size: 10px; color: #848e9c; margin-bottom: 3px;">Toplam Hacim <span class="sort-icon" id="psort-totalVol"></span></div>
-                                        <div style="display:flex; justify-content:flex-end; align-items:baseline; gap:5px; white-space:nowrap;">
-                                            <span id="pos-total-vol" style="font-size: 11px; font-weight: bold; color: #fcd535;">0.00 USDT</span>
-                                            <span style="color: #5d6471; font-size: 10px;">|</span>
-                                            <span style="font-size: 10px; color: #848e9c;">Marjin:</span>
-                                            <span id="pos-total-margin" style="font-size: 11px; font-weight: bold; color: #0ECB81;">0.00 USDT</span>
+                                    <th class="center" style="width:4%; color:#5d6471;">#</th>
+                                    <th class="left sortable" style="width:10%;" onclick="window.togglePosSort('symbol')">Sembol <span class="sort-icon" id="psort-symbol"></span></th>
+                                    <th class="left sortable" style="width:6%;" onclick="window.togglePosSort('type')">Yön <span class="sort-icon" id="psort-type"></span></th>
+                                    <th class="right sortable" style="width:16%;" onclick="window.togglePosSort('totalVol')">
+                                        <div style="font-size: 11px; color: #848e9c; margin-bottom: 4px;">Toplam Hacim <span class="sort-icon" id="psort-totalVol"></span></div>
+                                        <div style="display:flex; justify-content:flex-end; align-items:baseline; gap:8px; white-space:nowrap;">
+                                            <span id="pos-total-vol" style="font-size: 14px; font-weight: bold; color: #fcd535;">0.00 USDT</span>
+                                            <span style="color: #5d6471; font-size: 11px;">|</span>
+                                            <span style="font-size: 11px; color: #848e9c;">Marjin:</span>
+                                            <span id="pos-total-margin" style="font-size: 12px; font-weight: bold; color: #0ECB81;">0.00 USDT</span>
                                         </div>
                                     </th>
-                                    <th class="right sortable" style="width:8%;" onclick="window.togglePosSort('avgPrice')">Giriş Fiyatı <span class="sort-icon" id="psort-avgPrice"></span></th>
-                                    <th class="right sortable" style="width:9%;" onclick="window.togglePosSort('currentPrice')">Anlık Fiyat <span class="sort-icon" id="psort-currentPrice"></span></th>
-                                    <th class="right" style="width:8%; color:#F6465D;">💥 LIQ Fiyatı</th>
+                                    <th class="right sortable" style="width:9%;" onclick="window.togglePosSort('avgPrice')">Giriş Fiyatı <span class="sort-icon" id="psort-avgPrice"></span></th>
+                                    <th class="right sortable" style="width:10%;" onclick="window.togglePosSort('currentPrice')">Anlık Fiyat <span class="sort-icon" id="psort-currentPrice"></span></th>
+                                    <th class="right" style="width:9%; color:#F6465D;">💥 LIQ Fiyatı</th>
                                     <th class="right sortable" style="width:13%;" onclick="window.togglePosSort('pnl')">
                                         <div style="font-size: 11px; color: #848e9c; margin-bottom: 4px;">Kâr / Zarar <span class="sort-icon" id="psort-pnl"></span></div>
                                         <div style="font-size: 14px; font-weight: bold; white-space: nowrap;">
@@ -179,8 +179,8 @@
                                         </div>
                                     </th>
                                     <th class="right" style="width:9%;">Komisyon (-%0.1)</th>
-                                    <th class="right sortable" style="width:11%;" onclick="window.togglePosSort('entryTime')">İşlem Baş. Tar. <span class="sort-icon" id="psort-entryTime"></span></th>
-                                    <th class="right" style="width:7%;">Süre</th>
+                                    <th class="right sortable" style="width:12%;" onclick="window.togglePosSort('entryTime')">İşlem Baş. Tar. <span class="sort-icon" id="psort-entryTime"></span></th>
+                                    <th class="right" style="width:8%;">Süre</th>
                                 </tr>
                             </thead>
                             <tbody id="btp-tbody-positions">

@@ -2796,10 +2796,10 @@ window.renderSignals = async function() {
                 if (!window._seenSignalIds.has(uid)) {
                     if (evt.event_type === 'signal') {
                         const isLong = evt.signal === 'LONG';
-                        window.showToast(`${evt.symbol} [${evt.strategy}] ${evt.signal}`, isLong ? 'success' : 'error', 5000, isLong ? '📈 LONG SİNYAL' : '📉 SHORT SİNYAL');
+                        window.showToast(`${evt.symbol} [${evt.strategy}] ${evt.signal}`, isLong ? 'success' : 'error', 5000);
                     } else {
                         const sign = evt.pnl_amount >= 0 ? '+' : '';
-                        window.showToast(`${evt.symbol} KAPANDI ${sign}${evt.pnl_amount.toFixed(4)} USDT`, evt.pnl_amount >= 0 ? 'success' : 'error', 5000, evt.pnl_amount >= 0 ? '✅ KÂR' : '🛑 ZARAR');
+                        window.showToast(`${evt.symbol} KAPANDI ${sign}${evt.pnl_amount.toFixed(4)} USDT`, evt.pnl_amount >= 0 ? 'success' : 'error', 5000);
                     }
                 }
             });
