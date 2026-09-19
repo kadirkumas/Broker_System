@@ -53,8 +53,8 @@
     }
   },
   "telegram": {
-    "notify_signals": true,
+    "notify_signals": false,
     "notify_closes": true,
-    "notify_delisting": true
+    "notify_delisting": false
   }
 }

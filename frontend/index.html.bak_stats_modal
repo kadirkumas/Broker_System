@@ -26,7 +26,6 @@
                 
                 <button class="bot-settings-btn" style="border-color: #089981; color: #089981;" onclick="openWalletModal()">👛 Cüzdan</button>
                 <button class="bot-settings-btn" onclick="openBotConfigModal()">🤖 Bot Ayarları</button>
-                <button class="bot-settings-btn" onclick="openStatsModal()" style="border-color: #fcd535; color: #fcd535;" title="İstatistikler">📊 İstatistik</button>
                 <button class="bot-settings-btn" onclick="openChartSettingsModal()" title="Grafik Ayarları">⚙️ Ayarlar</button>
                 <button class="bot-settings-btn" style="border-color: #f23645; color: #f23645;" onclick="resetAllData()" title="Tüm test verilerini sıfırla">🗑️ Sıfırla</button>
                 
@@ -394,47 +393,6 @@
                     <span>Toplam İşlem: <b id="cal-sum-trades" style="color: #EAECEF;">0</b></span>
                     <span>Kârlı Gün: <b id="cal-sum-wins" style="color: #0ECB81;">0</b></span>
                     <span>Zararlı Gün: <b id="cal-sum-losses" style="color: #F6465D;">0</b></span>
-                </div>
-            </div>
-        </div>
-    </div>
-
-
-    <div id="stats-modal" class="modal-overlay">
-        <div class="modal-content" style="width: 1100px; max-width: 96vw; height: 700px; max-height: 92vh; background: #0b0e14; border: 1px solid #2b3139;">
-            <div class="modal-header" style="background: #181a20; border-bottom: 1px solid #2b3139;">
-                <h2>📊 Trading İstatistikleri</h2>
-                <span class="modal-close" onclick="closeStatsModal()">✕</span>
-            </div>
-
-            <div class="stats-tabs">
-                <div class="stats-tab active" data-tab="strategy" onclick="switchStatsTab('strategy')">📈 Strateji Performansı</div>
-                <div class="stats-tab" data-tab="symbol" onclick="switchStatsTab('symbol')">💰 En Kârlı Semboller</div>
-                <div class="stats-tab" data-tab="reason" onclick="switchStatsTab('reason')">📉 Kapanış Sebepleri</div>
-            </div>
-
-            <div class="stats-summary-bar">
-                <div class="stats-summary-item">
-                    <span class="lbl">Toplam İşlem</span>
-                    <span class="val" id="stats-total-trades">0</span>
-                </div>
-                <div class="stats-summary-item">
-                    <span class="lbl">Toplam PnL</span>
-                    <span class="val" id="stats-total-pnl">0.00 USDT</span>
-                </div>
-                <div class="stats-summary-item">
-                    <span class="lbl">Genel Win Rate</span>
-                    <span class="val" id="stats-total-wr">0%</span>
-                </div>
-                <div class="stats-summary-item">
-                    <span class="lbl">Kârlı / Zararlı Gün</span>
-                    <span class="val" id="stats-days">0 / 0</span>
-                </div>
-            </div>
-
-            <div class="stats-body">
-                <div id="stats-content" style="padding: 15px 20px; overflow-y: auto; flex: 1;">
-                    <div style="text-align: center; color: #848e9c; padding: 40px;">Yükleniyor...</div>
                 </div>
             </div>
         </div>
