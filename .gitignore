@@ -1,6 +1,53 @@
+# ============ MEVCUT ============
 .env
 __pycache__/
 *.pyc
 bot_data.db
 venv/
 *.db
+
+# ============ PATCH & BACKUP ============
+Patch/
+*.bak_*
+*.bak
+*.bak2
+*.bak3
+*.bak4
+*.bak5
+
+# ============ ENV ============
+.env.local
+.env.*.local
+
+# ============ PYTHON ============
+*.py[cod]
+*.so
+env/
+.venv/
+
+# ============ DB ============
+*.db-journal
+*.sqlite
+*.sqlite3
+
+# ============ LOGS ============
+*.log
+logs/
+
+# ============ IDE ============
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# ============ OS ============
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# ============ MISC ============
+0
+test..txt
+config_update.json
+scan_project.py
+cleanup_project.py
