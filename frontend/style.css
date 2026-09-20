@@ -2736,3 +2736,284 @@ input:checked + .slider:before { transform: translateX(20px); }
     color: #2962ff;
     border-color: #2962ff;
 }
+
+/* ============================================================
+   BACKTEST MODAL
+   ============================================================ */
+.backtest-modal-content {
+    width: 1100px !important;
+    max-width: 96vw !important;
+    height: 90vh !important;
+    max-height: 95vh !important;
+    background: #0b0e14 !important;
+    border: 1px solid #2b3139 !important;
+}
+
+.backtest-body {
+    flex: 1;
+    overflow-y: auto;
+    padding: 20px 24px;
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+}
+
+.bt-form-grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 12px 20px;
+    padding: 16px;
+    background: #131722;
+    border: 1px solid #2b3139;
+    border-radius: 8px;
+}
+
+.bt-form-item {
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+}
+
+.bt-form-item label {
+    font-size: 11px;
+    font-weight: 600;
+    color: #848e9c;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.bt-form-item input,
+.bt-form-item select {
+    background: #1e222d;
+    border: 1px solid #2a2e39;
+    color: #EAECEF;
+    padding: 8px 12px;
+    border-radius: 4px;
+    font-size: 13px;
+    outline: none;
+    transition: border 0.15s;
+}
+
+.bt-form-item input:focus,
+.bt-form-item select:focus {
+    border-color: #2962ff;
+}
+
+.bt-params-title,
+.bt-section-title {
+    font-size: 12px;
+    font-weight: 700;
+    color: #fcd535;
+    text-transform: uppercase;
+    letter-spacing: 0.8px;
+    padding-bottom: 8px;
+    border-bottom: 1px solid #2a2e39;
+    margin-bottom: 10px;
+}
+
+#bt-params-section {
+    margin-top: 16px;
+    padding: 14px 16px;
+    background: #131722;
+    border: 1px solid #2b3139;
+    border-radius: 8px;
+}
+
+#bt-params-content {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 10px 16px;
+}
+
+.bt-param-row {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.bt-param-row label {
+    font-size: 10px;
+    color: #848e9c;
+    font-weight: 600;
+}
+
+.bt-param-row input,
+.bt-param-row select {
+    background: #1e222d;
+    border: 1px solid #2a2e39;
+    color: #EAECEF;
+    padding: 6px 10px;
+    border-radius: 4px;
+    font-size: 12px;
+    outline: none;
+}
+
+.bt-action-row {
+    display: flex;
+    justify-content: center;
+    gap: 12px;
+    padding-top: 10px;
+}
+
+.bt-action-row button {
+    padding: 10px 24px;
+    font-size: 13px;
+    border-radius: 6px;
+    cursor: pointer;
+    border: none;
+    font-weight: bold;
+    transition: all 0.15s;
+}
+
+/* Progress */
+#bt-progress-section {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    padding: 40px 20px;
+}
+
+.bt-progress-bar {
+    width: 100%;
+    height: 12px;
+    background: #1e222d;
+    border: 1px solid #2a2e39;
+    border-radius: 6px;
+    overflow: hidden;
+    position: relative;
+}
+
+#bt-progress-fill {
+    height: 100%;
+    width: 0%;
+    background: linear-gradient(90deg, #2962ff, #0ECB81);
+    transition: width 0.3s ease;
+    border-radius: 6px;
+}
+
+#bt-progress-msg {
+    text-align: center;
+    color: #d1d4dc;
+    font-size: 13px;
+    font-weight: 600;
+}
+
+/* Metrics Grid */
+.bt-metrics-grid {
+    display: grid;
+    grid-template-columns: repeat(6, 1fr);
+    gap: 1px;
+    background: #2b3139;
+    border: 1px solid #2b3139;
+    border-radius: 8px;
+    overflow: hidden;
+    margin-bottom: 16px;
+}
+
+.bt-metric-box {
+    background: #131722;
+    padding: 14px 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    text-align: center;
+}
+
+.bt-metric-lbl {
+    font-size: 10px;
+    color: #848e9c;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.bt-metric-val {
+    font-size: 16px;
+    font-weight: 700;
+    color: #EAECEF;
+    font-variant-numeric: tabular-nums;
+}
+
+.bt-equity-wrap,
+.bt-trades-wrap {
+    margin-bottom: 16px;
+    padding: 14px;
+    background: #131722;
+    border: 1px solid #2b3139;
+    border-radius: 8px;
+}
+
+#bt-equity-chart {
+    width: 100%;
+    height: 220px;
+    position: relative;
+}
+
+#bt-trades-table {
+    max-height: 300px;
+    overflow-y: auto;
+}
+
+.bt-trades-tbl {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 11px;
+}
+
+.bt-trades-tbl th {
+    position: sticky;
+    top: 0;
+    background: #181a20;
+    color: #848e9c;
+    font-weight: 600;
+    font-size: 10px;
+    text-transform: uppercase;
+    padding: 8px 10px;
+    text-align: right;
+    border-bottom: 1px solid #2b3139;
+    z-index: 2;
+}
+
+.bt-trades-tbl th.left { text-align: left; }
+.bt-trades-tbl td {
+    padding: 6px 10px;
+    border-bottom: 1px solid #1e222d;
+    color: #d1d4dc;
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+}
+.bt-trades-tbl td.left { text-align: left; }
+.bt-trades-tbl tr:hover td { background: rgba(255,255,255,0.03); }
+
+/* ============================================================
+   BACKTEST MODE TOGGLE (Vadeli/Spot)
+   ============================================================ */
+.bt-mode-toggle {
+    display: inline-flex;
+    background: #1e222d;
+    border: 1px solid #2a2e39;
+    border-radius: 4px;
+    overflow: hidden;
+}
+
+.bt-mode-btn {
+    background: transparent;
+    border: none;
+    color: #848e9c;
+    font-size: 10px;
+    font-weight: 700;
+    padding: 3px 10px;
+    cursor: pointer;
+    transition: all 0.15s;
+    font-family: inherit;
+    letter-spacing: 0.3px;
+}
+
+.bt-mode-btn:hover {
+    color: #d1d4dc;
+}
+
+.bt-mode-btn.active {
+    background: #2962ff;
+    color: #fff;
+}

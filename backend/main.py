@@ -711,6 +711,103 @@ async def get_symbol_stats(min_trades: int = 1):
 # ----------------------------------------------------------------------
 # İSTATİSTİK - Kapanış sebebi analizi
 # ----------------------------------------------------------------------
+# ----------------------------------------------------------------------
+# BACKTEST - Async task-based backtest engine
+# ----------------------------------------------------------------------
+from backend import backtest_engine
+import uuid
+from datetime import datetime
+import io
+import csv
+from fastapi.responses import StreamingResponse
+
+
+@app.post("/api/backtest/start")
+async def backtest_start(payload: dict):
+    """Backtest baslatir, task_id doner."""
+    symbol = str(payload.get("symbol", "BTCUSDT")).upper()
+    strategy = payload.get("strategy", "RSI_SCALPER")
+    params = payload.get("params", {})
+    initial_balance = float(payload.get("initial_balance", 1000))
+    interval = payload.get("interval", "4h")
+    start_date = payload.get("start_date")
+    end_date = payload.get("end_date")
+    mode = str(payload.get("mode", "futures")).lower()  # futures | spot
+
+    task_id = str(uuid.uuid4())[:8]
+
+    backtest_engine.create_task(task_id, symbol, strategy, params, initial_balance, interval)
+
+    # Arka planda calistir
+    asyncio.create_task(asyncio.to_thread(
+        backtest_engine.run_backtest_sync,
+        task_id, client, symbol, strategy, params, initial_balance, interval, start_date, end_date, mode
+    ))
+
+    return {"status": "success", "task_id": task_id}
+
+
+@app.get("/api/backtest/status/{task_id}")
+async def backtest_status(task_id: str):
+    task = backtest_engine.get_task(task_id)
+    if not task:
+        return {"status": "not_found"}
+    return {
+        "status": task["status"],
+        "progress": task.get("progress", 0),
+        "message": task.get("message", ""),
+    }
+
+
+@app.get("/api/backtest/result/{task_id}")
+async def backtest_result(task_id: str):
+    task = backtest_engine.get_task(task_id)
+    if not task:
+        return {"status": "not_found"}
+    if task["status"] == "error":
+        return {"status": "error", "message": task.get("message", "")}
+    if task["status"] != "done":
+        return {"status": task["status"], "message": task.get("message", "")}
+    return {"status": "done", "result": task["result"]}
+
+
+@app.get("/api/backtest/csv/{task_id}")
+async def backtest_csv(task_id: str):
+    task = backtest_engine.get_task(task_id)
+    if not task or task["status"] != "done":
+        return {"status": "error", "message": "Sonuc hazir degil"}
+
+    result = task["result"]
+    trades = result.get("trades", [])
+
+    output = io.StringIO()
+    writer = csv.writer(output)
+    writer.writerow(["#", "Entry Time", "Exit Time", "Side", "Entry Price", "Exit Price",
+                     "Volume USDT", "PnL %", "PnL USDT", "Reason", "DCA"])
+
+    for i, t in enumerate(trades, 1):
+        try:
+            et = datetime.fromtimestamp(t["entry_time"]).strftime("%Y-%m-%d %H:%M:%S")
+            xt = datetime.fromtimestamp(t["exit_time"]).strftime("%Y-%m-%d %H:%M:%S")
+        except Exception:
+            et = str(t.get("entry_time", ""))
+            xt = str(t.get("exit_time", ""))
+
+        writer.writerow([
+            i, et, xt, t["side"],
+            t["entry_price"], t["exit_price"], t["total_vol"],
+            t["pnl_pct"], t["pnl_amount"], t["reason"], t["dca_count"],
+        ])
+
+    output.seek(0)
+    filename = f"backtest_{result['symbol']}_{task_id}.csv"
+    return StreamingResponse(
+        iter([output.getvalue()]),
+        media_type="text/csv",
+        headers={"Content-Disposition": f"attachment; filename={filename}"}
+    )
+
+
 @app.get("/api/stats/symbols-by-count")
 async def get_symbols_by_count(min_trades: int = 1):
     """Coin islem sayisina gore siralama (buyukten kucuge)."""
@@ -750,10 +847,12 @@ async def get_close_reason_stats():
     rows = conn.execute("""
         SELECT 
             CASE 
+                WHEN close_reason LIKE '%PARTIAL%' THEN 'PARTIAL TP'
                 WHEN close_reason LIKE '%TRAILING%' THEN 'TRAILING'
                 WHEN close_reason LIKE '%STOP%' THEN 'STOP LOSS'
-                WHEN close_reason LIKE '%TAKE%' THEN 'TAKE PROFIT'
                 WHEN close_reason LIKE '%DELIST%' THEN 'DELISTED'
+                WHEN close_reason LIKE '%TIME%' THEN 'TIME LIMIT'
+                WHEN close_reason LIKE '%TAKE%' THEN 'TAKE PROFIT'
                 ELSE 'DIGER'
             END as reason,
             COUNT(*) as trades,

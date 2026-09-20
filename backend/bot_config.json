@@ -50,7 +50,7 @@
       "partialTPKeepDCA": true
     },
     "GRIDBOT": {
-      "enabled": true,
+      "enabled": false,
       "interval": "15m",
       "gridType": "geometric",
       "gridCount": 6,

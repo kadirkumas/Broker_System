@@ -4379,10 +4379,12 @@ window.renderReasonStats = function(data) {
         const pnlCls = d.total_pnl >= 0 ? 'pnl-pos' : 'pnl-neg';
         const sign = d.total_pnl >= 0 ? '+' : '';
         const reasonEmoji = {
+            'PARTIAL TP': '⚡',
             'TRAILING': '🎯',
             'STOP LOSS': '🛑',
-            'TAKE PROFIT': '✅',
             'DELISTED': '🚫',
+            'TIME LIMIT': '⏰',
+            'TAKE PROFIT': '✅',
             'DIGER': '❓'
         };
         const emoji = reasonEmoji[d.reason] || '❓';
@@ -4857,4 +4859,481 @@ window.toggleGridDim = function(idx) {
             1500
         );
     }
+};
+
+// =============================================================
+// BACKTEST MODAL - JS Logic
+// =============================================================
+window._btState = { taskId: null, interval: null, currentResult: null, mode: 'futures' };
+
+window.openBacktestModal = function() {
+    document.getElementById('backtest-modal').classList.add('active');
+    // Form sifirla
+    document.getElementById('bt-form-section').style.display = 'block';
+    document.getElementById('bt-progress-section').style.display = 'none';
+    document.getElementById('bt-result-section').style.display = 'none';
+
+    // Aktif tab'a gore mode sec
+    const _at = (typeof activeTab !== 'undefined') ? activeTab : 'futures';
+    window._btState.mode = (_at === 'spot') ? 'spot' : 'futures';
+
+    // Mode butonlarini guncelle
+    document.querySelectorAll('.bt-mode-btn').forEach(function(btn) {
+        if (btn.dataset.mode === window._btState.mode) btn.classList.add('active');
+        else btn.classList.remove('active');
+    });
+
+    // Sembol listesini doldur
+    window._populateBtSymbols();
+
+    // Placeholder
+    const symEl = document.getElementById('bt-symbol');
+    if (symEl) {
+        symEl.placeholder = window._btState.mode === 'futures' ? 'Vadeli sembol ara...' : 'Spot sembol ara...';
+    }
+
+    // Varsayilan strateji parametrelerini yukle
+    window.onBtStrategyChange();
+};
+
+window.setBtMode = function(mode) {
+    window._btState.mode = mode;
+    document.querySelectorAll('.bt-mode-btn').forEach(function(btn) {
+        if (btn.dataset.mode === mode) btn.classList.add('active');
+        else btn.classList.remove('active');
+    });
+    // Listeyi yeniden doldur
+    window._populateBtSymbols();
+    // Sembol input'u temizle
+    const symEl = document.getElementById('bt-symbol');
+    if (symEl) {
+        symEl.value = '';
+        symEl.placeholder = mode === 'futures' ? 'Vadeli sembol ara...' : 'Spot sembol ara...';
+    }
+};
+
+window._populateBtSymbols = function() {
+    const listEl = document.getElementById('bt-symbol-list');
+    if (!listEl) return;
+
+    const mode = window._btState.mode || 'futures';
+    let symbols = [];
+
+    // ⚡ Onemli: Bu degiskenler modul scope'unda (let ile) tanimli.
+    // window. ile erisilemiyorlar. Dogrudan kullan.
+    try {
+        if (mode === 'futures') {
+            // 1) Oncelik: canli sembol seti (exchange info'dan)
+            try {
+                if (typeof activeFuturesSymbols !== 'undefined' &&
+                    activeFuturesSymbols && activeFuturesSymbols.size > 0) {
+                    symbols = Array.from(activeFuturesSymbols);
+                }
+            } catch(e1) {}
+
+            // 2) Fallback: futuresData array'i (WS ticker'lari)
+            if (symbols.length === 0) {
+                try {
+                    if (typeof futuresData !== 'undefined' && Array.isArray(futuresData)) {
+                        symbols = futuresData.map(function(d) { return d.symbol; });
+                    }
+                } catch(e2) {}
+            }
+        } else {
+            try {
+                if (typeof activeSpotSymbols !== 'undefined' &&
+                    activeSpotSymbols && activeSpotSymbols.size > 0) {
+                    symbols = Array.from(activeSpotSymbols);
+                }
+            } catch(e1) {}
+
+            if (symbols.length === 0) {
+                try {
+                    if (typeof spotData !== 'undefined' && Array.isArray(spotData)) {
+                        symbols = spotData.map(function(d) { return d.symbol; });
+                    }
+                } catch(e2) {}
+            }
+        }
+    } catch(e) { console.warn('[BT] Sym populate error:', e); }
+
+    if (symbols.length === 0) {
+        symbols = ['BTCUSDT', 'ETHUSDT', 'BNBUSDT', 'SOLUSDT', 'XRPUSDT',
+                   'DOGEUSDT', 'ADAUSDT', 'AVAXUSDT', 'LINKUSDT', 'MATICUSDT'];
+    }
+
+    symbols = symbols.filter(function(s) { return s && typeof s === 'string' && s.endsWith('USDT'); });
+    // Duplicate temizle
+    symbols = Array.from(new Set(symbols));
+    symbols.sort();
+
+    listEl.innerHTML = symbols.map(function(s) {
+        return '<option value="' + s + '"></option>';
+    }).join('');
+    console.log('[BT] ' + symbols.length + ' ' + mode + ' sembol yuklendi');
+};
+
+window.closeBacktestModal = function() {
+    document.getElementById('backtest-modal').classList.remove('active');
+    if (window._btState.interval) {
+        clearInterval(window._btState.interval);
+        window._btState.interval = null;
+    }
+};
+
+window.onBtStrategyChange = function() {
+    const strat = document.getElementById('bt-strategy').value;
+    const content = document.getElementById('bt-params-content');
+    
+    // Config'den mevcut strateji parametrelerini al
+    let params = {};
+    try {
+        const cfgRes = window.botConfig || {};
+        const stratCfg = (cfgRes.strategies || {})[strat] || {};
+        params = { ...stratCfg };
+    } catch(e) {}
+    
+    let html = '';
+    
+    if (strat === 'RSI_SCALPER') {
+        html = `
+            <div class="bt-param-row"><label>RSI Period</label><input type="number" id="btp-period" value="${params.period || 7}"></div>
+            <div class="bt-param-row"><label>LONG Eşik</label><input type="number" id="btp-longVal" value="${params.longVal || 20}"></div>
+            <div class="bt-param-row"><label>SHORT Eşik</label><input type="number" id="btp-shortVal" value="${params.shortVal || 80}"></div>
+        `;
+    } else if (strat === 'HULL_SRP') {
+        html = `
+            <div class="bt-param-row"><label>HMA Period</label><input type="number" id="btp-period" value="${params.period || 10}"></div>
+            <div class="bt-param-row"><label>Kaynak</label>
+                <select id="btp-source">
+                    <option value="hl2" ${params.source === 'hl2' ? 'selected' : ''}>HL2</option>
+                    <option value="close" ${params.source === 'close' ? 'selected' : ''}>Close</option>
+                    <option value="open" ${params.source === 'open' ? 'selected' : ''}>Open</option>
+                </select>
+            </div>
+        `;
+    } else if (strat === 'GRIDBOT') {
+        html = `
+            <div class="bt-param-row"><label>Izgara Tipi</label>
+                <select id="btp-gridType">
+                    <option value="geometric" ${params.gridType === 'geometric' ? 'selected' : ''}>Geometrik</option>
+                    <option value="arithmetic" ${params.gridType === 'arithmetic' ? 'selected' : ''}>Aritmetik</option>
+                </select>
+            </div>
+            <div class="bt-param-row"><label>Izgara Sayısı</label><input type="number" id="btp-gridCount" value="${params.gridCount || 20}"></div>
+            <div class="bt-param-row"><label>SMA Period</label><input type="number" id="btp-smaPeriod" value="${params.smaPeriod || 100}"></div>
+            <div class="bt-param-row"><label>ATR Period</label><input type="number" id="btp-atrPeriod" value="${params.atrPeriod || 14}"></div>
+            <div class="bt-param-row"><label>ATR Çarpan</label><input type="number" id="btp-atrMultiplier" value="${params.atrMultiplier || 5}" step="0.5"></div>
+        `;
+    }
+    
+    // Ortak parametreler
+    const _dir = params.tradeDirection || 'both';
+    html += `
+        <div class="bt-param-row" style="grid-column: span 3; border-bottom: 1px dashed #2a2e39; padding-bottom: 8px; margin-bottom: 4px;">
+            <label style="color:#fcd535;">İşlem Yönü</label>
+            <select id="btp-tradeDirection" style="max-width: 200px;">
+                <option value="long" ${_dir === 'long' ? 'selected' : ''}>▲ Long (Sadece Alış)</option>
+                <option value="short" ${_dir === 'short' ? 'selected' : ''}>▼ Short (Sadece Satış)</option>
+                <option value="both" ${_dir === 'both' ? 'selected' : ''}>◆ Tümü (Long + Short)</option>
+            </select>
+        </div>
+        <div class="bt-param-row"><label>İlk İşlem (USDT)</label><input type="number" id="btp-baseOrder" value="${params.baseOrder || 10}"></div>
+        <div class="bt-param-row"><label>Kaldıraç</label><input type="number" id="btp-leverage" value="${params.leverage || 1}"></div>
+        <div class="bt-param-row"><label>Hedef Kâr (%)</label><input type="number" id="btp-takeProfit" value="${params.takeProfit || 1.5}" step="0.1"></div>
+        <div class="bt-param-row"><label>İzleyen Stop (%)</label><input type="number" id="btp-trailing" value="${params.trailing || 0.3}" step="0.1"></div>
+        <div class="bt-param-row"><label>Stop Loss (%)</label><input type="number" id="btp-stopLoss" value="${params.stopLoss || 3}" step="0.1"></div>
+        <div class="bt-param-row"><label>DCA Aktif</label>
+            <select id="btp-useDCA">
+                <option value="true" ${params.useDCA ? 'selected' : ''}>Evet</option>
+                <option value="false" ${!params.useDCA ? 'selected' : ''}>Hayır</option>
+            </select>
+        </div>
+        <div class="bt-param-row"><label>Hacim Çarpanı</label><input type="number" id="btp-volMultiplier" value="${params.volMultiplier || 1.2}" step="0.1"></div>
+        <div class="bt-param-row"><label>Düşüş Adımları</label><input type="text" id="btp-steps" value="${params.steps || '1.5, 3, 5'}"></div>
+    `;
+    
+    content.innerHTML = html;
+};
+
+window._collectBtParams = function() {
+    const strat = document.getElementById('bt-strategy').value;
+    const params = {};
+    
+    // Common
+    const common = ['baseOrder', 'leverage', 'takeProfit', 'trailing', 'stopLoss', 'volMultiplier', 'steps'];
+    common.forEach(k => {
+        const el = document.getElementById('btp-' + k);
+        if (el) {
+            const v = el.value;
+            if (k === 'steps') params[k] = v;
+            else if (k === 'leverage' || k === 'baseOrder') params[k] = parseInt(v) || 0;
+            else params[k] = parseFloat(v) || 0;
+        }
+    });
+    
+    const dcaEl = document.getElementById('btp-useDCA');
+    if (dcaEl) params.useDCA = dcaEl.value === 'true';
+
+    const dirEl = document.getElementById('btp-tradeDirection');
+    if (dirEl) params.tradeDirection = dirEl.value || 'both';
+    
+    // Strategy-specific
+    if (strat === 'RSI_SCALPER') {
+        params.period = parseInt(document.getElementById('btp-period')?.value) || 7;
+        params.longOp = '<';
+        params.longVal = parseInt(document.getElementById('btp-longVal')?.value) || 20;
+        params.shortOp = '>';
+        params.shortVal = parseInt(document.getElementById('btp-shortVal')?.value) || 80;
+    } else if (strat === 'HULL_SRP') {
+        params.period = parseInt(document.getElementById('btp-period')?.value) || 10;
+        params.source = document.getElementById('btp-source')?.value || 'hl2';
+        // longTrade/shortTrade artik tradeDirection ile yonetiliyor
+    } else if (strat === 'GRIDBOT') {
+        params.gridType = document.getElementById('btp-gridType')?.value || 'geometric';
+        params.gridCount = parseInt(document.getElementById('btp-gridCount')?.value) || 20;
+        params.smaPeriod = parseInt(document.getElementById('btp-smaPeriod')?.value) || 100;
+        params.atrPeriod = parseInt(document.getElementById('btp-atrPeriod')?.value) || 14;
+        params.atrMultiplier = parseFloat(document.getElementById('btp-atrMultiplier')?.value) || 5;
+    }
+    
+    return params;
+};
+
+window.startBacktest = async function() {
+    const symbol = document.getElementById('bt-symbol').value.trim().toUpperCase();
+    const strategy = document.getElementById('bt-strategy').value;
+    const interval = document.getElementById('bt-interval').value;
+    const initialBalance = parseFloat(document.getElementById('bt-balance').value) || 1000;
+    const startDateVal = document.getElementById('bt-start-date').value;
+    
+    if (!symbol) {
+        window.showToast('❌ Sembol gerekli', 'error');
+        return;
+    }
+    
+    const params = window._collectBtParams();
+    
+    let startDate = null;
+    if (startDateVal && startDateVal.trim()) {
+        // GG-AA-YYYY parse
+        const _parts = startDateVal.trim().split(/[\-\/\.]/);
+        if (_parts.length === 3) {
+            const _d = parseInt(_parts[0]);
+            const _m = parseInt(_parts[1]) - 1;
+            const _y = parseInt(_parts[2]);
+            if (_d > 0 && _m >= 0 && _m <= 11 && _y > 2000) {
+                startDate = new Date(_y, _m, _d, 0, 0, 0).getTime();
+            }
+        }
+        if (!startDate) {
+            window.showToast('❌ Tarih formati: GG-AA-YYYY (ornek: 15-03-2024)', 'error', 4000);
+            return;
+        }
+    }
+    
+    // UI: form gizle, progress goster
+    document.getElementById('bt-form-section').style.display = 'none';
+    document.getElementById('bt-progress-section').style.display = 'flex';
+    document.getElementById('bt-result-section').style.display = 'none';
+    document.getElementById('bt-progress-fill').style.width = '0%';
+    const _pctReset = document.getElementById('bt-progress-pct');
+    if (_pctReset) _pctReset.innerText = '0%';
+    document.getElementById('bt-progress-msg').innerText = 'Başlatılıyor...';
+    
+    try {
+        const res = await fetch('/api/backtest/start', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                symbol, strategy, params, initial_balance: initialBalance,
+                interval, start_date: startDate, end_date: null,
+                mode: window._btState.mode || 'futures'
+            })
+        });
+        const data = await res.json();
+        
+        if (data.status !== 'success') {
+            window.showToast('❌ Başlatma hatası: ' + (data.message || ''), 'error');
+            document.getElementById('bt-form-section').style.display = 'block';
+            document.getElementById('bt-progress-section').style.display = 'none';
+            return;
+        }
+        
+        window._btState.taskId = data.task_id;
+        window._btState.interval = setInterval(() => window._pollBtStatus(), 2000);
+    } catch(e) {
+        window.showToast('❌ Hata: ' + e.message, 'error');
+        document.getElementById('bt-form-section').style.display = 'block';
+        document.getElementById('bt-progress-section').style.display = 'none';
+    }
+};
+
+window._pollBtStatus = async function() {
+    const taskId = window._btState.taskId;
+    if (!taskId) return;
+    
+    try {
+        const res = await fetch(`/api/backtest/status/${taskId}`);
+        const data = await res.json();
+        
+        if (data.status === 'not_found') {
+            clearInterval(window._btState.interval);
+            window.showToast('❌ Task bulunamadı', 'error');
+            return;
+        }
+        
+        const _pct = data.progress || 0;
+        document.getElementById('bt-progress-fill').style.width = _pct + '%';
+        const pctEl = document.getElementById('bt-progress-pct');
+        if (pctEl) pctEl.innerText = _pct + '%';
+        document.getElementById('bt-progress-msg').innerText = data.message || 'Test devam ediyor...';
+        
+        if (data.status === 'done') {
+            clearInterval(window._btState.interval);
+            window._btState.interval = null;
+            window._loadBtResult(taskId);
+        } else if (data.status === 'error') {
+            clearInterval(window._btState.interval);
+            window._btState.interval = null;
+            window.showToast('❌ Backtest hatası: ' + (data.message || ''), 'error', 6000);
+            document.getElementById('bt-form-section').style.display = 'block';
+            document.getElementById('bt-progress-section').style.display = 'none';
+        }
+    } catch(e) {
+        console.warn('[BT] Poll hata:', e);
+    }
+};
+
+window._loadBtResult = async function(taskId) {
+    try {
+        const res = await fetch(`/api/backtest/result/${taskId}`);
+        const data = await res.json();
+        
+        if (data.status !== 'done') {
+            window.showToast('❌ Sonuç alınamadı: ' + (data.message || ''), 'error');
+            return;
+        }
+        
+        window._btState.currentResult = data.result;
+        window._renderBtResult(data.result);
+        document.getElementById('bt-progress-section').style.display = 'none';
+        document.getElementById('bt-result-section').style.display = 'block';
+    } catch(e) {
+        window.showToast('❌ Sonuç yükleme hatası: ' + e.message, 'error');
+    }
+};
+
+window._renderBtResult = function(r) {
+    // Metrics
+    const pnlEl = document.getElementById('bt-m-pnl');
+    const pctEl = document.getElementById('bt-m-pct');
+    const ddEl = document.getElementById('bt-m-dd');
+    
+    document.getElementById('bt-m-trades').innerText = r.total_trades;
+    
+    const sign = r.total_pnl >= 0 ? '+' : '';
+    pnlEl.innerText = sign + r.total_pnl.toFixed(2) + ' USDT';
+    pnlEl.style.color = r.total_pnl >= 0 ? '#0ECB81' : '#F6465D';
+    
+    pctEl.innerText = sign + r.total_pnl_pct.toFixed(2) + '%';
+    pctEl.style.color = r.total_pnl_pct >= 0 ? '#0ECB81' : '#F6465D';
+    
+    document.getElementById('bt-m-wr').innerText = r.win_rate.toFixed(1) + '%';
+    
+    ddEl.innerText = '-' + r.max_drawdown.toFixed(2) + '%';
+    ddEl.style.color = '#F6465D';
+    
+    document.getElementById('bt-m-final').innerText = r.final_balance.toFixed(2);
+    
+    // Equity curve (lightweight-charts)
+    window._drawBtEquity(r.equity_curve);
+    
+    // Trades table
+    document.getElementById('bt-trades-total').innerText = r.trades_total;
+    window._drawBtTrades(r.trades);
+};
+
+window._drawBtEquity = function(curve) {
+    const container = document.getElementById('bt-equity-chart');
+    if (!container) return;
+    container.innerHTML = '';
+    
+    if (!curve || curve.length === 0) return;
+    
+    const chart = LightweightCharts.createChart(container, {
+        width: container.clientWidth,
+        height: container.clientHeight,
+        layout: { background: { type: 'solid', color: '#131722' }, textColor: '#d1d4dc' },
+        grid: { vertLines: { color: '#1e222d' }, horzLines: { color: '#1e222d' } },
+        rightPriceScale: { borderColor: '#2a2e39' },
+        timeScale: { borderColor: '#2a2e39', timeVisible: true },
+        crosshair: { mode: LightweightCharts.CrosshairMode.Normal },
+    });
+    
+    const series = chart.addAreaSeries({
+        lineColor: '#2962ff',
+        topColor: 'rgba(41, 98, 255, 0.4)',
+        bottomColor: 'rgba(41, 98, 255, 0.0)',
+        lineWidth: 2,
+    });
+    
+    const data = curve.map(p => ({ time: p.time, value: p.value }));
+    series.setData(data);
+    chart.timeScale().fitContent();
+};
+
+window._drawBtTrades = function(trades) {
+    const container = document.getElementById('bt-trades-table');
+    if (!trades || trades.length === 0) {
+        container.innerHTML = '<div style="text-align:center; color:#848e9c; padding:20px;">İşlem yok</div>';
+        return;
+    }
+    
+    let html = '<table class="bt-trades-tbl"><thead><tr>'
+        + '<th class="left">#</th>'
+        + '<th class="left">Yön</th>'
+        + '<th class="left">Giriş</th>'
+        + '<th class="left">Çıkış</th>'
+        + '<th>Büyüklük</th>'
+        + '<th>K/Z %</th>'
+        + '<th>K/Z USDT</th>'
+        + '<th class="left">Sebep</th>'
+        + '<th>DCA</th>'
+        + '</tr></thead><tbody>';
+    
+    trades.forEach((t, i) => {
+        const isProfit = t.pnl_amount >= 0;
+        const sign = isProfit ? '+' : '';
+        const color = isProfit ? '#0ECB81' : '#F6465D';
+        
+        html += '<tr>'
+            + '<td class="left">' + (i + 1) + '</td>'
+            + '<td class="left" style="color:' + (t.side === 'BUY' ? '#0ECB81' : '#F6465D') + ';">' + (t.side === 'BUY' ? '▲ LONG' : '▼ SHORT') + '</td>'
+            + '<td class="left">' + t.entry_price + '</td>'
+            + '<td class="left">' + t.exit_price + '</td>'
+            + '<td>' + t.total_vol.toFixed(2) + '</td>'
+            + '<td style="color:' + color + '; font-weight:bold;">' + sign + t.pnl_pct.toFixed(2) + '%</td>'
+            + '<td style="color:' + color + '; font-weight:bold;">' + sign + t.pnl_amount.toFixed(4) + '</td>'
+            + '<td class="left" style="font-size:10px; color:#848e9c;">' + t.reason + '</td>'
+            + '<td>' + (t.dca_count > 0 ? t.dca_count : '—') + '</td>'
+            + '</tr>';
+    });
+    
+    html += '</tbody></table>';
+    container.innerHTML = html;
+};
+
+window.downloadBtCsv = function() {
+    const taskId = window._btState.taskId;
+    if (!taskId) return;
+    window.open(`/api/backtest/csv/${taskId}`, '_blank');
+};
+
+window.resetBacktestForm = function() {
+    document.getElementById('bt-form-section').style.display = 'block';
+    document.getElementById('bt-progress-section').style.display = 'none';
+    document.getElementById('bt-result-section').style.display = 'none';
+    window._btState.taskId = null;
+    window._btState.currentResult = null;
 };

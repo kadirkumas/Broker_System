@@ -27,6 +27,7 @@
                 <button class="bot-settings-btn" style="border-color: #089981; color: #089981;" onclick="openWalletModal()">👛 Cüzdan</button>
                 <button class="bot-settings-btn" onclick="openBotConfigModal()">🤖 Bot Ayarları</button>
                 <button class="bot-settings-btn" onclick="openStatsModal()" style="border-color: #fcd535; color: #fcd535;" title="İstatistikler">📊 İstatistik</button>
+                <button class="bot-settings-btn" onclick="openBacktestModal()" style="border-color: #089981; color: #089981;" title="Backtest">🧪 Backtest</button>
                 <button class="bot-settings-btn" onclick="openChartSettingsModal()" title="Grafik Ayarları">⚙️ Ayarlar</button>
                 <button class="bot-settings-btn" style="border-color: #f23645; color: #f23645;" onclick="resetAllData()" title="Tüm test verilerini sıfırla">🗑️ Sıfırla</button>
                 
@@ -407,6 +408,131 @@
         </div>
     </div>
 
+
+        <div id="backtest-modal" class="modal-overlay">
+        <div class="modal-content backtest-modal-content">
+            <div class="modal-header" style="background: #181a20; border-bottom: 1px solid #2b3139;">
+                <h2>🧪 Backtest</h2>
+                <span class="modal-close" onclick="closeBacktestModal()">✕</span>
+            </div>
+
+            <div class="backtest-body">
+                <!-- FORM -->
+                <div id="bt-form-section">
+                    <div class="bt-form-grid">
+                        <div class="bt-form-item">
+                            <div style="display:flex; justify-content:space-between; align-items:center; gap:8px;">
+                                <label>Sembol</label>
+                                <div class="bt-mode-toggle" id="bt-mode-toggle">
+                                    <button type="button" class="bt-mode-btn active" data-mode="futures" onclick="setBtMode('futures')">Vadeli</button>
+                                    <button type="button" class="bt-mode-btn" data-mode="spot" onclick="setBtMode('spot')">Spot</button>
+                                </div>
+                            </div>
+                            <input list="bt-symbol-list" id="bt-symbol" value="BTCUSDT" placeholder="Sembol ara veya seç..." autocomplete="off">
+                            <datalist id="bt-symbol-list">
+                                <option value="BTCUSDT"></option>
+                            </datalist>
+                        </div>
+                        <div class="bt-form-item">
+                            <label>Strateji</label>
+                            <select id="bt-strategy" onchange="onBtStrategyChange()">
+                                <option value="RSI_SCALPER">RSI Scalper</option>
+                                <option value="HULL_SRP">HULL / SRP</option>
+                                <option value="GRIDBOT">GRIDBOT Scalper</option>
+                            </select>
+                        </div>
+                        <div class="bt-form-item">
+                            <label>Interval</label>
+                            <select id="bt-interval">
+                                <option value="1m">1m</option>
+                                <option value="5m">5m</option>
+                                <option value="15m">15m</option>
+                                <option value="1h">1h</option>
+                                <option value="4h" selected>4h</option>
+                                <option value="1d">1d</option>
+                            </select>
+                        </div>
+                        <div class="bt-form-item">
+                            <label>Başlangıç Bakiye (USDT)</label>
+                            <input type="number" id="bt-balance" value="1000" min="10" step="10">
+                        </div>
+                        <div class="bt-form-item">
+                            <label>Başlangıç Tarihi (opsiyonel)</label>
+                            <input type="text" id="bt-start-date" placeholder="GG-AA-YYYY  (boş = listing tarihi)" autocomplete="off">
+                        </div>
+                    </div>
+
+                    <div id="bt-params-section">
+                        <div class="bt-params-title">⚙️ Strateji Parametreleri</div>
+                        <div id="bt-params-content"></div>
+                    </div>
+
+                    <div class="bt-action-row">
+                        <button class="btn-success" onclick="startBacktest()" id="bt-run-btn" style="padding: 10px 30px; font-size: 14px;">🚀 ÇALIŞTIR</button>
+                    </div>
+                </div>
+
+                <!-- PROGRESS -->
+                <div id="bt-progress-section" style="display:none;">
+                    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;">
+                        <span style="font-size:11px; color:#848e9c; font-weight:700; letter-spacing:1px; text-transform:uppercase;">İlerleme</span>
+                        <span id="bt-progress-pct" style="font-size:20px; color:#79a0ff; font-weight:800; font-variant-numeric:tabular-nums; text-shadow:0 0 10px rgba(41,98,255,0.4);">0%</span>
+                    </div>
+                    <div class="bt-progress-bar">
+                        <div id="bt-progress-fill"></div>
+                    </div>
+                    <div id="bt-progress-msg" style="margin-top:12px;">Başlatılıyor...</div>
+                </div>
+
+                <!-- RESULT -->
+                <div id="bt-result-section" style="display:none;">
+                    <div class="bt-metrics-grid">
+                        <div class="bt-metric-box">
+                            <span class="bt-metric-lbl">Toplam İşlem</span>
+                            <span class="bt-metric-val" id="bt-m-trades">0</span>
+                        </div>
+                        <div class="bt-metric-box">
+                            <span class="bt-metric-lbl">Kâr / Zarar</span>
+                            <span class="bt-metric-val" id="bt-m-pnl">0.00</span>
+                        </div>
+                        <div class="bt-metric-box">
+                            <span class="bt-metric-lbl">Getiri %</span>
+                            <span class="bt-metric-val" id="bt-m-pct">0%</span>
+                        </div>
+                        <div class="bt-metric-box">
+                            <span class="bt-metric-lbl">Win Rate</span>
+                            <span class="bt-metric-val" id="bt-m-wr">0%</span>
+                        </div>
+                        <div class="bt-metric-box">
+                            <span class="bt-metric-lbl">Max DD</span>
+                            <span class="bt-metric-val" id="bt-m-dd">0%</span>
+                        </div>
+                        <div class="bt-metric-box">
+                            <span class="bt-metric-lbl">Son Bakiye</span>
+                            <span class="bt-metric-val" id="bt-m-final">0</span>
+                        </div>
+                    </div>
+
+                    <div class="bt-equity-wrap">
+                        <div class="bt-section-title">📈 Equity Curve</div>
+                        <div id="bt-equity-chart"></div>
+                    </div>
+
+                    <div class="bt-trades-wrap">
+                        <div class="bt-section-title">
+                            📋 İşlemler (ilk 500) — Toplam: <span id="bt-trades-total">0</span>
+                        </div>
+                        <div id="bt-trades-table"></div>
+                    </div>
+
+                    <div class="bt-action-row">
+                        <button class="btn-primary" onclick="downloadBtCsv()">📥 CSV İndir</button>
+                        <button class="btn-secondary" onclick="resetBacktestForm()">🔁 Yeni Backtest</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
 
     <div id="stats-modal" class="modal-overlay">
         <div class="modal-content" style="width: 1100px; max-width: 96vw; height: 700px; max-height: 92vh; background: #0b0e14; border: 1px solid #2b3139;">
