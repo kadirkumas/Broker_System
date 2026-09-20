@@ -1,0 +1,210 @@
+import time
+from binance.client import Client
+from backend.database import get_db_connection
+
+
+class OrderManager:
+    # Sınıf seviyesinde cache
+    _exchange_info_cache = None
+    _exchange_info_time = 0
+    # ⚡ Komisyon cache
+    _commission_cache = {}
+
+    def __init__(self, client: Client, symbol: str = "BTCUSDT", test_mode: bool = True):
+        self.client = client
+        self.symbol = symbol
+        self.test_mode = test_mode
+
+    def get_commission_rate(self, symbol: str = None) -> dict:
+        """
+        Sembol icin gercek komisyon oranini Binance'ten ceker.
+        1 saat cache.
+        
+        Returns:
+            {"taker": 0.0004, "maker": 0.0002}
+        """
+        target_symbol = symbol or self.symbol
+        now = time.time()
+        
+        # Cache kontrolu
+        if target_symbol in OrderManager._commission_cache:
+            cached = OrderManager._commission_cache[target_symbol]
+            if now - cached.get("timestamp", 0) < 3600:
+                return cached
+        
+        try:
+            data = self.client.futures_commission_rate(symbol=target_symbol)
+            result = {
+                "taker": float(data.get("takerCommissionRate", 0.0004)),
+                "maker": float(data.get("makerCommissionRate", 0.0002)),
+                "timestamp": now,
+            }
+            OrderManager._commission_cache[target_symbol] = result
+            print(f"[COMM] {target_symbol} komisyon: taker={result['taker']*100:.4f}%, maker={result['maker']*100:.4f}%")
+            return result
+        except Exception as e:
+            print(f"[!] Komisyon orani alinamadi {target_symbol}: {e}")
+            # Varsayilan VIP 0 degerleri
+            return {"taker": 0.0004, "maker": 0.0002, "timestamp": now}
+
+    def get_symbol_precision(self, symbol: str = None):
+        """Exchange info'yu 5 dakika cache'ler."""
+        target_symbol = symbol or self.symbol
+
+        if OrderManager._exchange_info_cache is None or (time.time() - OrderManager._exchange_info_time) > 300:
+            try:
+                OrderManager._exchange_info_cache = self.client.futures_exchange_info()
+                OrderManager._exchange_info_time = time.time()
+            except Exception as e:
+                print(f"[!] Exchange info hatası: {e}")
+                if OrderManager._exchange_info_cache is None:
+                    return 2, 3
+
+        for s in OrderManager._exchange_info_cache['symbols']:
+            if s['symbol'] == target_symbol:
+                return s['pricePrecision'], s['quantityPrecision']
+        return 2, 3
+
+    def open_dca_position(self, side: str, base_amount_usdt: float = 10.0, strategy_name: str = None,
+                          leverage: int = 1, dca_levels: int = 3, step_pct: float = 1.0, tp_pct: float = 1.5, sl_pct: float = 3.0):
+        """
+        İlk pozisyonu açar. DCA kademeleri position_manager tarafından yönetilir.
+        """
+        # ⚡ SON KONTROL: Aynı sembolde zaten pozisyon var mı? (race condition son savunma)
+        conn = get_db_connection()
+        existing = conn.execute(
+            "SELECT id FROM active_trades WHERE symbol = ?", (self.symbol,)
+        ).fetchone()
+        conn.close()
+        
+        if existing:
+            print(f"[DUP-PREVENT] {self.symbol} zaten açık pozisyonda! Yeni emir reddedildi.")
+            return {
+                "status": "duplicate",
+                "symbol": self.symbol,
+                "message": "Aynı sembolde açık pozisyon var"
+            }
+        
+        price_prec, qty_prec = self.get_symbol_precision(self.symbol)
+        ticker = self.client.futures_symbol_ticker(symbol=self.symbol)
+        current_price = float(ticker['price'])
+
+        qty = round(base_amount_usdt / current_price, qty_prec)
+        strat = strategy_name or "UNKNOWN"
+        leverage = max(1, int(leverage))
+        margin = base_amount_usdt / leverage if leverage > 0 else base_amount_usdt
+
+        if self.test_mode:
+            print(f"[TEST MODU] {self.symbol} [{strat}] {side} | Fiyat: {current_price} USDT | Adet: {qty} | Kaldıraç: {leverage}x | Marjin: {margin:.4f} | Toplam: {base_amount_usdt:.2f} USDT")
+            self._save_to_db(self.symbol, side, base_amount_usdt, current_price, 0, strat, current_price, base_amount_usdt, leverage)
+            return {
+                "status": "success",
+                "mode": "TEST",
+                "symbol": self.symbol,
+                "strategy": strat,
+                "side": side,
+                "entry_price": current_price,
+                "quantity": base_amount_usdt,
+                "leverage": leverage,
+                "margin": round(margin, 4)
+            }
+
+        # --- GERÇEK EMİR DÖNGÜSÜ (mainnet) ---
+        try:
+            # Kaldıraç ayarla
+            if leverage > 1:
+                try:
+                    self.client.futures_change_leverage(symbol=self.symbol, leverage=leverage)
+                    print(f"[LEV] {self.symbol} Kaldıraç {leverage}x olarak ayarlandı")
+                except Exception as le:
+                    print(f"[!] Leverage ayarlanamadı {self.symbol}: {le}")
+
+            self.client.futures_create_order(
+                symbol=self.symbol,
+                side=side,
+                type="MARKET",
+                quantity=qty
+            )
+            entry_price = current_price
+
+            tp_side = "SELL" if side == "BUY" else "BUY"
+            tp_price = round(entry_price * (1 + (tp_pct / 100) if side == "BUY" else 1 - (tp_pct / 100)), price_prec)
+            self.client.futures_create_order(
+                symbol=self.symbol,
+                side=tp_side,
+                type="TAKE_PROFIT_MARKET",
+                stopPrice=tp_price,
+                closePosition=True
+            )
+
+            sl_price = round(entry_price * (1 - (sl_pct / 100) if side == "BUY" else 1 + (sl_pct / 100)), price_prec)
+            self.client.futures_create_order(
+                symbol=self.symbol,
+                side=tp_side,
+                type="STOP_MARKET",
+                stopPrice=sl_price,
+                closePosition=True
+            )
+
+            self._save_to_db(self.symbol, side, base_amount_usdt, entry_price, 0, strat, entry_price, base_amount_usdt, leverage)
+            return {
+                "status": "success",
+                "mode": "REAL",
+                "symbol": self.symbol,
+                "strategy": strat,
+                "entry_price": entry_price,
+                "tp": tp_price,
+                "sl": sl_price,
+                "leverage": leverage
+            }
+
+        except Exception as e:
+            return {"status": "error", "message": str(e)}
+
+    def close_position(self, symbol: str = None):
+        target_symbol = symbol or self.symbol
+
+        if self.test_mode:
+            print(f"[TEST MODU] {target_symbol} pozisyonu kapatıldı.")
+            self._close_in_db(target_symbol)
+            return {"status": "success", "mode": "TEST", "symbol": target_symbol, "action": "CLOSED"}
+
+        try:
+            self.client.futures_cancel_all_open_orders(symbol=target_symbol)
+            positions = self.client.futures_position_information(symbol=target_symbol)
+            pos = next((p for p in positions if p['symbol'] == target_symbol and float(p['positionAmt']) != 0), None)
+
+            if pos:
+                amt = float(pos['positionAmt'])
+                close_side = "SELL" if amt > 0 else "BUY"
+                self.client.futures_create_order(
+                    symbol=target_symbol,
+                    side=close_side,
+                    type="MARKET",
+                    quantity=abs(amt),
+                    reduceOnly=True
+                )
+
+            self._close_in_db(target_symbol)
+            return {"status": "success", "mode": "REAL", "symbol": target_symbol, "action": "CLOSED"}
+
+        except Exception as e:
+            return {"status": "error", "message": str(e)}
+
+    def _save_to_db(self, symbol, side, total_vol, avg_price, dca_count, strategy_name, initial_price, initial_vol, leverage=1):
+        conn = get_db_connection()
+        conn.execute(
+            """INSERT INTO active_trades 
+               (symbol, trade_type, total_vol, avg_price, dca_count, entry_time, strategy_name, initial_price, initial_vol, leverage) 
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (symbol, side, total_vol, avg_price, dca_count, int(time.time()),
+             strategy_name, initial_price, initial_vol, leverage)
+        )
+        conn.commit()
+        conn.close()
+
+    def _close_in_db(self, symbol: str):
+        conn = get_db_connection()
+        conn.execute("DELETE FROM active_trades WHERE symbol = ?", (symbol,))
+        conn.commit()
+        conn.close()

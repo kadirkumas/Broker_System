@@ -60,6 +60,13 @@ def init_db():
         "initial_price": "ALTER TABLE active_trades ADD COLUMN initial_price REAL",
         "initial_vol": "ALTER TABLE active_trades ADD COLUMN initial_vol REAL",
         "leverage": "ALTER TABLE active_trades ADD COLUMN leverage INTEGER DEFAULT 1",
+        "pt_enabled": "ALTER TABLE active_trades ADD COLUMN pt_enabled INTEGER DEFAULT 0",
+        "pt_percent": "ALTER TABLE active_trades ADD COLUMN pt_percent REAL DEFAULT 50",
+        "pt_done": "ALTER TABLE active_trades ADD COLUMN pt_done INTEGER DEFAULT 0",
+        "pt_volume": "ALTER TABLE active_trades ADD COLUMN pt_volume REAL DEFAULT 0",
+        "pt_pnl": "ALTER TABLE active_trades ADD COLUMN pt_pnl REAL DEFAULT 0",
+        "pt_keep_dca": "ALTER TABLE active_trades ADD COLUMN pt_keep_dca INTEGER DEFAULT 1",
+        "entry_is_maker": "ALTER TABLE active_trades ADD COLUMN entry_is_maker INTEGER DEFAULT 0",
     }
     for col, sql in migrations_at.items():
         if col not in cols_at:
@@ -77,6 +84,8 @@ def init_db():
         "close_reason": "ALTER TABLE trade_history ADD COLUMN close_reason TEXT",
         "leverage": "ALTER TABLE trade_history ADD COLUMN leverage INTEGER DEFAULT 1",
         "funding_fee": "ALTER TABLE trade_history ADD COLUMN funding_fee REAL DEFAULT 0",
+        "is_partial": "ALTER TABLE trade_history ADD COLUMN is_partial INTEGER DEFAULT 0",
+        "commission": "ALTER TABLE trade_history ADD COLUMN commission REAL DEFAULT 0",
     }
     for col, sql in migrations_th.items():
         if col not in cols_th:

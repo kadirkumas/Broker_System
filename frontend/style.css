@@ -2613,3 +2613,126 @@ input:checked + .slider:before { transform: translateX(20px); }
 .rank-badge.gold { background: rgba(252, 213, 53, 0.2); color: #fcd535; }
 .rank-badge.silver { background: rgba(132, 142, 156, 0.2); color: #b2b5be; }
 .rank-badge.bronze { background: rgba(205, 127, 50, 0.2); color: #cd7f32; }
+
+/* ============================================================
+   KISMİ TP ROZETİ + BILDIRIM STILI
+   ============================================================ */
+.pt-badge {
+    display: inline-block;
+    padding: 1px 5px;
+    margin-left: 4px;
+    font-size: 9px;
+    font-weight: bold;
+    background: rgba(252, 213, 53, 0.15);
+    color: #fcd535;
+    border-radius: 3px;
+    letter-spacing: 0.3px;
+    vertical-align: middle;
+}
+
+.signal-item.partial-tp-item {
+    border-left-color: #fcd535 !important;
+}
+.signal-item.partial-tp-item:hover {
+    border-left-color: #e0b82c !important;
+    background: #2a2e39;
+}
+
+/* ============================================================
+   CFG LABEL TOOLTIP (Bot Ayarlari info)
+   ============================================================ */
+.cfg-label[data-tip] {
+    cursor: help;
+}
+
+#cfg-tooltip {
+    position: fixed;
+    z-index: 999999;
+    max-width: 320px;
+    min-width: 200px;
+    padding: 8px 12px;
+    background: #0b0e14;
+    color: #d1d4dc;
+    font-size: 11px;
+    font-weight: 500;
+    line-height: 1.45;
+    border: 1px solid #2962ff;
+    border-radius: 6px;
+    box-shadow: 0 6px 24px rgba(0, 0, 0, 0.7);
+    pointer-events: none;
+    opacity: 0;
+    transform: translateY(-4px);
+    transition: opacity 0.15s ease, transform 0.15s ease;
+    font-family: inherit;
+    letter-spacing: 0;
+    text-transform: none;
+    display: none;
+}
+
+#cfg-tooltip.show {
+    opacity: 1;
+    transform: translateY(0);
+}
+
+#cfg-tooltip::before {
+    content: '';
+    position: absolute;
+    width: 0;
+    height: 0;
+    border: 5px solid transparent;
+}
+
+#cfg-tooltip.pos-bottom::before {
+    top: -10px;
+    left: var(--arrow-left, 15px);
+    border-bottom-color: #2962ff;
+}
+
+#cfg-tooltip.pos-top::before {
+    bottom: -10px;
+    left: var(--arrow-left, 15px);
+    border-top-color: #2962ff;
+}
+
+/* ============================================================
+   DEV TOOLS - Minik Restart Butonlari
+   ============================================================ */
+.dev-tools .dev-btn {
+    background: #1e222d;
+    border: 1px solid #2a2e39;
+    color: #848e9c;
+    padding: 1px 6px;
+    font-size: 11px;
+    line-height: 1.2;
+    border-radius: 4px;
+    cursor: pointer;
+    transition: all 0.15s;
+    font-family: inherit;
+    min-width: 22px;
+    text-align: center;
+}
+
+.dev-tools .dev-btn:hover {
+    background: #2a2e39;
+    color: #EAECEF;
+    border-color: #363c4e;
+}
+
+.dev-tools .dev-btn:active {
+    transform: scale(0.9);
+}
+
+.dev-tools .dev-btn:nth-child(1):hover {
+    color: #F6465D;
+    border-color: #F6465D;
+}
+
+.dev-tools .dev-btn:nth-child(2):hover {
+    color: #fcd535;
+    border-color: #fcd535;
+}
+
+.dev-tools .dev-btn:nth-child(3):hover {
+    color: #2962ff;
+    border-color: #2962ff;
+}

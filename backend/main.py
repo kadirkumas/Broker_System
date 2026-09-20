@@ -99,6 +99,34 @@ app.mount("/static", NoCacheStaticFiles(directory=str(FRONTEND_DIR)), name="stat
 
 
 # ----------------------------------------------------------------------
+# DEV TOOLS - Backend stop / restart
+# ----------------------------------------------------------------------
+@app.post("/api/dev/stop")
+async def dev_stop():
+    """Backend process'ini kapatir (dev araci)."""
+    async def _delayed_exit():
+        await asyncio.sleep(0.8)
+        print("[DEV] Backend kapatiliyor (os._exit)...")
+        os._exit(0)
+    asyncio.create_task(_delayed_exit())
+    return {"status": "success", "message": "Backend kapatiliyor"}
+
+
+@app.post("/api/dev/restart")
+async def dev_restart():
+    """main.py mtime'ini gunceller -> uvicorn --reload yeniden baslatir."""
+    try:
+        import time as _time
+        main_file = Path(__file__)
+        os.utime(main_file, (_time.time(), _time.time()))
+        print("[DEV] Reload tetiklendi (main.py touch)")
+        return {"status": "success", "message": "Reload tetiklendi"}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
+
+
+# ----------------------------------------------------------------------
 # TEMEL
 # ----------------------------------------------------------------------
 @app.get("/")
@@ -256,7 +284,7 @@ async def get_recent_signals(limit: int = 100):
     closes_rows = conn.execute(
         """SELECT id, symbol, trade_type, total_vol, entry_price, exit_price,
                   pnl_amount, pnl_pct, entry_time, exit_time, strategy_name,
-                  dca_count, close_reason, leverage
+                  dca_count, close_reason, leverage, is_partial, commission
            FROM trade_history 
            ORDER BY exit_time DESC 
            LIMIT ?""",
@@ -683,6 +711,38 @@ async def get_symbol_stats(min_trades: int = 1):
 # ----------------------------------------------------------------------
 # İSTATİSTİK - Kapanış sebebi analizi
 # ----------------------------------------------------------------------
+@app.get("/api/stats/symbols-by-count")
+async def get_symbols_by_count(min_trades: int = 1):
+    """Coin islem sayisina gore siralama (buyukten kucuge)."""
+    conn = get_db_connection()
+    rows = conn.execute("""
+        SELECT 
+            symbol,
+            COUNT(*) as trades,
+            SUM(CASE WHEN pnl_amount > 0 THEN 1 ELSE 0 END) as wins,
+            SUM(CASE WHEN pnl_amount <= 0 THEN 1 ELSE 0 END) as losses,
+            ROUND(SUM(pnl_amount), 4) as total_pnl,
+            ROUND(AVG(pnl_pct), 4) as avg_pnl_pct,
+            ROUND(MAX(pnl_amount), 4) as best,
+            ROUND(MIN(pnl_amount), 4) as worst
+        FROM trade_history
+        WHERE ABS(pnl_amount) < (total_vol * 5)
+        GROUP BY symbol
+        HAVING COUNT(*) >= ?
+        ORDER BY trades DESC, total_pnl DESC
+    """, (min_trades,)).fetchall()
+    conn.close()
+    
+    result = []
+    for r in rows:
+        d = dict(r)
+        total = d["trades"] or 0
+        wins = d["wins"] or 0
+        d["win_rate"] = round((wins / total) * 100, 2) if total > 0 else 0
+        result.append(d)
+    return result
+
+
 @app.get("/api/stats/close-reasons")
 async def get_close_reason_stats():
     """Kapanış sebeplerine göre analiz (TP/Trailing/SL)."""

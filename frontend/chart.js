@@ -110,7 +110,7 @@ if (bootHistArray.length > 2000) { historicalTradesMap = {}; bootHistArray.slice
 let globalPositions = new Map();
 try { let savedPos = localStorage.getItem('cryptoGlobalPos_v1'); if (savedPos) globalPositions = new Map(JSON.parse(savedPos)); } catch(e) { localStorage.removeItem('cryptoGlobalPos_v1'); }
 
-let scanQueue = [], historySortDir = localStorage.getItem('cryptoHistorySortDir') || 'desc';
+let scanQueue = [], historySortDir = localStorage.getItem('cryptoHistorySortDir_v2') || 'desc';
 let savedInterval = localStorage.getItem('cryptoInterval') || '5d', savedChartType = localStorage.getItem('cryptoChartType') || 'candles';
 
 let defaultChartsData = [
@@ -291,7 +291,7 @@ window.switchBtpTab = function(target) {
     window.refreshBottomPanel();
 };
 
-window.toggleHistorySort = function() { historySortDir = historySortDir === 'desc' ? 'asc' : 'desc'; localStorage.setItem('cryptoHistorySortDir', historySortDir); window.lastHistoryHash = ""; window.histPage = 1; window.renderHistoricalTrades(); };
+window.toggleHistorySort = function() { historySortDir = historySortDir === 'desc' ? 'asc' : 'desc'; localStorage.setItem('cryptoHistorySortDir_v2', historySortDir); window.lastHistoryHash = ""; window.histPage = 1; window.renderHistoricalTrades(); };
 
 window.syncHistoricalTrades = function(newTradesArray) {
     let updated = false;
@@ -339,7 +339,7 @@ window.renderHistoricalTrades = async function() {
         if (searchQ) trades = trades.filter(t => t.symbol.toUpperCase().includes(searchQ));
         
         // Sıralama
-        trades.sort((a, b) => historySortDir === 'asc' ? a.entry_time - b.entry_time : b.entry_time - a.entry_time);
+        trades.sort((a, b) => historySortDir === 'asc' ? a.exit_time - b.exit_time : b.exit_time - a.exit_time);
         if (iconEl) iconEl.innerText = historySortDir === 'desc' ? '↓' : '↑';
         
         const totalRows = trades.length;
@@ -357,7 +357,9 @@ window.renderHistoricalTrades = async function() {
             const tagText = isLong ? '▲ LONG' : '▼ SHORT';
             const pnlColor = t.pnl_amount >= 0 ? '#0ECB81' : '#F6465D';
             const sign = t.pnl_amount >= 0 ? '+' : '';
-            const comm = t.total_vol * getDisplayCommission(t.symbol);
+            const comm = (t.commission !== undefined && t.commission !== null && t.commission > 0)
+                ? t.commission
+                : (t.total_vol * getDisplayCommission(t.symbol));
             
             const diffSec = Math.max(0, t.exit_time - t.entry_time);
             const d = Math.floor(diffSec / 86400), h = Math.floor((diffSec % 86400) / 3600), m = Math.floor((diffSec % 3600) / 60);
@@ -366,7 +368,8 @@ window.renderHistoricalTrades = async function() {
             // ⚡ Kapanış sebebi kısa etiketi
             let reasonShort = '-';
             let reasonFull = t.close_reason || 'Bilinmiyor';
-            if (reasonFull.includes('TRAILING')) reasonShort = 'T';
+            if (reasonFull.includes('PARTIAL')) reasonShort = 'PT';
+            else if (reasonFull.includes('TRAILING')) reasonShort = 'T';
             else if (reasonFull.includes('STOP')) reasonShort = 'SL';
             else if (reasonFull.includes('TAKE')) reasonShort = 'TP';
             
@@ -376,9 +379,14 @@ window.renderHistoricalTrades = async function() {
                 : `${t.total_vol.toFixed(2)} USDT`;
             
             const isActiveRow = ((t.symbol + '.P') === activeSymbol) ? 'active-coin-row' : '';
+            const isPartialRow = t.is_partial == 1;
+            const delCellHTML = isPartialRow
+                ? '<span title="Kısmi TP kapanışı - ana işleme bağlıdır" style="font-size:11px; color:#5d6471; cursor:help;">🔗</span>'
+                : `<span class="btn-del-trade" onclick="window.deleteTradePermanently(${t.id}, event)" title="Bu işlemi kalıcı sil">✖</span>`;
+            
             html += `<tr class="${isActiveRow}">
                 <td class="center">
-                    <span class="btn-del-trade" onclick="window.deleteTradePermanently(${t.id}, event)" title="Bu işlemi kalıcı sil">✖</span>
+                    ${delCellHTML}
                     <span title="${reasonFull}" style="font-size:10px; padding:2px 5px; background:rgba(252,213,53,0.1); color:#fcd535; border-radius:3px; cursor:help; margin-left:4px;">${reasonShort}</span>
                 </td>
                 <td class="left" style="font-weight:600; cursor:pointer; color:#79a0ff;" onclick="window.jumpToSymbolWithTrades('${t.symbol}.P')">${t.symbol}</td>
@@ -494,7 +502,10 @@ window.renderDailyTrades = async function() {
             const tagText = isLong ? '▲ LONG' : '▼ SHORT';
             const pnlColor = t.pnl_amount >= 0 ? '#0ECB81' : '#F6465D';
             const sign = t.pnl_amount >= 0 ? '+' : '';
-            const comm = t.total_vol * getDisplayCommission(t.symbol);
+            // ⚡ Komisyon: DB'de varsa onu kullan, yoksa fallback tahmin
+            const comm = (t.commission !== undefined && t.commission !== null && t.commission > 0)
+                ? t.commission
+                : (t.total_vol * getDisplayCommission(t.symbol));
             const diffSec = Math.max(0, t.exit_time - t.entry_time);
             const d = Math.floor(diffSec / 86400), h = Math.floor((diffSec % 86400) / 3600), m = Math.floor((diffSec % 3600) / 60);
             const timeStr = `${d > 0 ? d + "g " : ""}${h > 0 ? h + "s " : ""}${m}dk`;
@@ -503,7 +514,7 @@ window.renderDailyTrades = async function() {
                 : `${t.total_vol.toFixed(2)} USDT`;
 
             html += `<tr class="${isActiveRow}">
-                <td class="center"><span class="btn-del-trade" onclick="window.deleteTradePermanently(${t.id}, event)" title="Sil">✖</span></td>
+                <td class="center">${(t.is_partial == 1) ? '<span title="Kısmi TP kapanışı - ana işleme bağlıdır" style="font-size:11px; color:#5d6471; cursor:help;">🔗</span>' : `<span class="btn-del-trade" onclick="window.deleteTradePermanently(${t.id}, event)" title="Sil">✖</span>`}</td>
                 <td class="left" style="font-weight:600; cursor:pointer; color:#79a0ff;" onclick="window.changeSymbol('${t.symbol}.P')">${t.symbol}</td>
                 <td class="left ${tagClass}">${tagText}</td>
                 <td class="right">${volCell}</td>
@@ -618,6 +629,9 @@ window.renderBottomTrades = async function() {
                 currentPrice: currentPrice,
                 pnl: netPnl,
                 pnlPct: pnlPct,
+                ptEnabled: t.pt_enabled || 0,
+                ptDone: t.pt_done || 0,
+                ptPercent: t.pt_percent || 50,
             });
         });
         
@@ -699,7 +713,8 @@ window.renderBottomTrades = async function() {
             const margin = p.totalVol / leverage;
             
             const dcaBg = p.dcaCount > 0 ? 'color:#fcd535; background:rgba(252,213,53,0.1);' : 'color:#848e9c;';
-            const volCell = `<span style="display:inline-flex; align-items:center; justify-content:flex-end; gap:8px;"><span style="min-width:68px; text-align:right; color:#EAECEF; font-weight:600;">${p.totalVol.toFixed(2)} USDT</span><span style="min-width:26px; text-align:right; color:#fcd535; font-weight:600; font-size:10px;">${leverage}x</span><span style="min-width:82px; text-align:right; color:#0ECB81; font-weight:600; font-size:10px;">Marjin: ${margin.toFixed(2)}</span><span style="min-width:44px; text-align:center; font-size:10px; font-weight:600; padding:1px 4px; border-radius:3px; ${dcaBg}">${p.dcaCount > 0 ? 'DCA:' + p.dcaCount : 'Ana'}</span></span>`;
+            const ptBadge = p.ptDone ? `<span title="Kısmi TP alındı" style="min-width:34px; text-align:center; font-size:10px; font-weight:600; padding:1px 4px; border-radius:3px; background:rgba(252,213,53,0.15); color:#fcd535;">PT✓</span>` : '';
+            const volCell = `<span style="display:inline-flex; align-items:center; justify-content:flex-end; gap:6px;"><span style="min-width:68px; text-align:right; color:#EAECEF; font-weight:600;">${p.totalVol.toFixed(2)} USDT</span><span style="min-width:26px; text-align:right; color:#fcd535; font-weight:600; font-size:10px;">${leverage}x</span><span style="min-width:82px; text-align:right; color:#0ECB81; font-weight:600; font-size:10px;">Marjin: ${margin.toFixed(2)}</span><span style="min-width:44px; text-align:center; font-size:10px; font-weight:600; padding:1px 4px; border-radius:3px; ${dcaBg}">${p.dcaCount > 0 ? 'DCA:' + p.dcaCount : 'Ana'}</span>${ptBadge}</span>`;
             
             html += `<tr class="${isActiveRow}" onclick="window.changeSymbol('${p.displaySymbol}')"><td class="center" style="color:#5d6471; font-size:11px;">${posArray.indexOf(p) + 1}</td><td class="left" style="font-weight:600; cursor:pointer;">${p.displaySymbol}</td><td class="left ${tagClass}">${typeIcon} ${p.type}</td><td class="right" style="font-size:11px;">${volCell}</td><td class="right">${window.formatPrice(p.avgPrice)}</td><td class="right">${window.formatPrice(p.currentPrice)}</td><td class="right" style="color:#F6465D; font-weight:600; font-size:11px;">${liqPrice > 0 ? window.formatPrice(liqPrice) : '—'}</td><td class="right" style="color:${pnlColor}; font-weight:bold;">${sign}${p.pnlPct.toFixed(2)}% (${sign}${p.pnl.toFixed(2)}$)</td><td class="right" style="color:#848e9c;">-${(p.totalVol * getDisplayCommission(p.symbol)).toFixed(4)}$</td><td class="right" style="color:#EAECEF; font-size:11px;">${window.formatDateTime(p.entryTime)}</td><td class="right" style="color:#848e9c;">${timeStr}</td></tr>`;
         });
@@ -870,6 +885,11 @@ window.openBotConfigModal = async function() {
         document.getElementById('cfg-position-interval').value = cfg.position_check_seconds || 3;
         document.getElementById('cfg-max-symbols').value = cfg.max_symbols || 30;
         document.getElementById('cfg-auto-close-delisted').checked = cfg.auto_close_delisted !== false;
+        document.getElementById('cfg-daily-max-loss').value = cfg.daily_max_loss || 0;
+        document.getElementById('cfg-max-open-positions').value = cfg.max_open_positions || 0;
+        document.getElementById('cfg-use-limit-order').checked = cfg.useLimitOrder !== false;
+        document.getElementById('cfg-limit-timeout').value = cfg.limitTimeoutSec || 3;
+        document.getElementById('cfg-fallback-market').checked = cfg.fallbackToMarket !== false;
         
         ['RSI_SCALPER', 'HULL_SRP', 'GRIDBOT'].forEach(strat => {
             const s = (cfg.strategies || {})[strat] || {};
@@ -950,6 +970,11 @@ window.saveBotConfig = async function() {
             position_check_seconds: parseInt(document.getElementById('cfg-position-interval').value) || 3,
             max_symbols: parseInt(document.getElementById('cfg-max-symbols').value) || 30,
             auto_close_delisted: document.getElementById('cfg-auto-close-delisted').checked,
+            daily_max_loss: parseFloat(document.getElementById('cfg-daily-max-loss').value) || 0,
+            max_open_positions: parseInt(document.getElementById('cfg-max-open-positions').value) || 0,
+            useLimitOrder: document.getElementById('cfg-use-limit-order').checked,
+            limitTimeoutSec: parseInt(document.getElementById('cfg-limit-timeout').value) || 3,
+            fallbackToMarket: document.getElementById('cfg-fallback-market').checked,
             strategies: {}
         };
         
@@ -1414,14 +1439,17 @@ window.renderSignals = async function() {
                 const dateStr = formatSignalDate(evt.timestamp);
                 
                                 // ⚡ STOP LOSS ise kırmızı, diğerleri yeşil
+                const isPartial = evt.is_partial == 1;
                 const isStopLoss = (evt.close_reason || '').toUpperCase().includes('STOP');
-                const cardClass = isStopLoss ? 'stop-item' : 'close-item';
+                let cardClass = 'close-item';
+                if (isPartial) cardClass = 'partial-tp-item';
+                else if (isStopLoss) cardClass = 'stop-item';
                 
                 html += `
                     <li class="signal-item ${cardClass}" onclick="window.changeSymbol('${evt.display_symbol}')">
                         <div class="signal-line-1">
                             <span class="signal-symbol">${evt.symbol}</span>
-                            <span class="signal-strategy">| ${reasonText} |</span>
+                            <span class="signal-strategy">| ${evt.is_partial ? '🎯 KISMİ TP' : reasonText} |</span>
                         </div>
                         <div class="signal-line-2">
                             <span class="signal-label">Giriş:</span>
@@ -1851,7 +1879,45 @@ window.recalculateAllIndicators = function(idx) {
     });
 
     const userMarkers = (cObj.userTrades && cObj.userTrades.markers) ? cObj.userTrades.markers : [];
-    let allM = [...(cObj.strategyMarkers||[]), ...(cObj.tradeMarkers||[]), ...userMarkers].sort((a,b)=>a.time - b.time); cObj.series.setMarkers(allM); window.syncTradeLabels(idx); window.renderActiveIndicatorsLog(idx);
+    let allM = [...(cObj.strategyMarkers||[]), ...(cObj.tradeMarkers||[]), ...userMarkers].sort((a,b)=>a.time - b.time);
+    
+    // ⚡ GRID aktif mi kontrol et
+    let hasGrid = false;
+    cObj.indicators.forEach(function(v) {
+        if (v.type === 'GRIDBOT' && !v.hidden) hasGrid = true;
+    });
+    
+    // Grid aktifse ve dim modu aciksa markerlari soluklastir
+    if (hasGrid) {
+        const dimOn = (cObj.gridDimMode !== undefined) ? cObj.gridDimMode : window._gridDimDefault;
+        if (dimOn) {
+            allM = allM.map(function(m) {
+                return Object.assign({}, m, {
+                    color: window._dimColor(m.color, 0.25)
+                });
+            });
+        }
+    }
+    
+    cObj.series.setMarkers(allM);
+    
+    // Grid toggle butonunu guncelle
+    const gridBtn = document.getElementById('grid-toggle-' + idx);
+    if (gridBtn) {
+        if (hasGrid) {
+            const dimOn = (cObj.gridDimMode !== undefined) ? cObj.gridDimMode : window._gridDimDefault;
+            gridBtn.style.display = 'inline-block';
+            gridBtn.style.opacity = dimOn ? '1' : '0.35';
+            gridBtn.style.color = dimOn ? '#79a0ff' : '#5d6471';
+            gridBtn.title = dimOn 
+                ? 'Grid vurgusu AÇIK (tikla: markerlari geri getir)' 
+                : 'Grid vurgusu KAPALI (tikla: markerlari soluklastir)';
+        } else {
+            gridBtn.style.display = 'none';
+        }
+    }
+    
+    window.syncTradeLabels(idx); window.renderActiveIndicatorsLog(idx);
     if (hasStrategy && botConfig.active) {
         if (cObj.lastTrade) globalPositions.set(cObj.symbol, cObj.lastTrade); else globalPositions.delete(cObj.symbol);
         let minimalPos = Array.from(globalPositions.entries()).map(([sym, t]) => [sym, { type: t.type, entryPrice: t.entryPrice, avgPrice: t.avgPrice, entryTime: t.entryTime, totalVol: t.totalVol, dcaCount: t.dcaCount }]); try { localStorage.setItem('cryptoGlobalPos_v1', JSON.stringify(minimalPos)); } catch(e) {}
@@ -2553,7 +2619,7 @@ window.showSymbolTrades = async function(symbol, idx = null) {
                 const firstCandleTime = cObj.rawCandles.length > 0 ? cObj.rawCandles[0].time : 0;
                 const lastCandleTime = cObj.lastCandleTime || 0;
                 
-                let t1 = time1, t2 = time2;
+                let t1 = _alignTf(time1), t2 = _alignTf(time2);
                 if (t1 < firstCandleTime) t1 = firstCandleTime;
                 if (t2 < firstCandleTime) t2 = firstCandleTime;
                 if (t1 > lastCandleTime) t1 = lastCandleTime;
@@ -2583,9 +2649,13 @@ window.showSymbolTrades = async function(symbol, idx = null) {
         
         const now = Math.floor(Date.now() / 1000);
         const lastTime = (cObj.lastCandleTime && cObj.lastCandleTime > now) ? cObj.lastCandleTime : now;
+
+        // ⚡ Marker hizalama: unix saniyeyi mum basina yuvarla
+        const _tfSec = window.getIntervalSeconds(cObj.interval || '5m') || 300;
+        const _alignTf = (t) => t ? Math.floor(t / _tfSec) * _tfSec : t;
         
         symbolActive.forEach(pos => {
-            const entryTime = pos.entry_time;
+            const entryTime = _alignTf(pos.entry_time);
             const entryPrice = pos.avg_price;
             const isLong = pos.trade_type === 'BUY';
             
@@ -2659,8 +2729,8 @@ window.showSymbolTrades = async function(symbol, idx = null) {
         });
         
         symbolHistory.forEach(trade => {
-            const entryTime = trade.entry_time;
-            const exitTime = trade.exit_time;
+            const entryTime = _alignTf(trade.entry_time);
+            const exitTime = _alignTf(trade.exit_time);
             const entryPrice = trade.entry_price;
             const exitPrice = trade.exit_price;
             const isLong = trade.trade_type === 'BUY';
@@ -4199,6 +4269,14 @@ window.loadStatsContent = async function(tab) {
                 return;
             }
             content.innerHTML = window.renderReasonStats(data);
+        } else if (tab === 'count') {
+            const res = await fetch('/api/stats/symbols-by-count?min_trades=1');
+            const data = await res.json();
+            if (!Array.isArray(data) || data.length === 0) {
+                content.innerHTML = '<div style="text-align:center; color:#848e9c; padding:40px;">Henüz yeterli veri yok.</div>';
+                return;
+            }
+            content.innerHTML = window.renderCountStats(data);
         }
         
     } catch(e) {
@@ -4330,3 +4408,453 @@ document.addEventListener('keydown', function(e) {
         if (m && m.classList.contains('active')) m.classList.remove('active');
     }
 });
+
+// =============================================================
+// CFG LABEL TOOLTIP v2 (Event Delegation + JS Sozluk)
+// =============================================================
+(function setupCfgTooltipsV2() {
+    const CFG_TIPS = {
+        "Tarama Süresi": "Sembollerin kac saniyede bir taranacagi. Kucuk deger = daha sik tarama, daha fazla API kullanimi.",
+        "Pozisyon Kontrol": "Acik pozisyonlarin TP/SL/Trailing icin kac saniyede bir kontrol edilecegi.",
+        "Maks Sembol": "Taranacak maksimum sembol sayisi. Likiditeye gore en aktif USDT pariteleri secilir.",
+        "Delist Kapat": "Bir sembol borsadan cikarilirsa otomatik olarak pozisyonu kapatir.",
+        "Zaman Dilimi": "Stratejinin hangi mum periyodunda calisacagi (1m, 5m, 15m, 1h, 4h).",
+        "RSI Period": "RSI hesaplama periyodu. Kucuk = daha hassas, buyuk = daha guvenilir.",
+        "HMA Length": "Hull Hareketli Ortalama periyodu. Trend yonunu belirler.",
+        "Kaynak": "HMA hesaplamasinda kullanilacak fiyat kaynagi (hl2, close, open).",
+        "Long Trade": "Yukari yonlu (alis) sinyalleri acilsin mi?",
+        "Short Trade": "Asagi yonlu (satis) sinyalleri acilsin mi?",
+        "Geriye Dönük Tarama": "Pivot noktalarini bulmak icin geriye bakilacak mum sayisi.",
+        "Izgara Tipi": "Geometrik: esit % araliklarla. Aritmetik: esit mutlak araliklarla.",
+        "Izgara Sayısı": "Toplam izgara seviyesi sayisi (merkez alti + ustu). 20 = 10 BUY + 10 SELL.",
+        "SMA Periyot": "Izgara merkezini belirleyen SMA periyodu. Buyuk deger = daha stabil merkez.",
+        "ATR Periyot": "ATR periyodu. Piyasa volatilitesini olcer.",
+        "ATR Çarpan": "Izgara genisligi carpani. Genislik = ATR x bu deger.",
+        "İlk İşlem": "Pozisyon acilisinda kullanilacak USDT miktari (kaldiracli degil, saf teminat).",
+        "Kaldıraç": "1 = kaldiracli degil. 5x = 5 kat. Kar/zarar kaldiracli oraninda buyur, tasfiye riski artar.",
+        "Marjin": "Bu pozisyon icin hesabinizda kilitlenen gercek teminat = Ilk Islem / Kaldiracli.",
+        "Hedef Kâr": "Pozisyon bu kar yuzdesine ulastiginda Izleyen Stop aktif olur. Ornek: 1.5 = %1.5 kar.",
+        "İzleyen Stop": "Fiyat tepe noktasindan bu yuzde kadar geri cekilirse pozisyon kapatilir. Kari korur.",
+        "Stop Loss": "Fiyat girise gore bu yuzde ters giderse pozisyon otomatik kapanir. Zarari sinirlar.",
+        "DCA Aktif": "Kademeli alim. Fiyat ters giderse ek alim yapar ve ortalama maliyeti dusurur.",
+        "Hacim Çarpanı": "Her DCA kademesinde eklenecek hacim carpani. 1.2 = her kademe 1.2x onceki hacim.",
+        "Düşüş Adımları": "Her DCA kademesinin hangi yuzde dususte tetiklenecegi. Ornek: 5,10,15,20.",
+        "Kısmi TP Aktif": "Pozisyon kara gectiginde tamamini kapatmak yerine bir kismini kapatir, kalani trendde tutar.",
+        "Kapatma Oranı": "Kismi TP'de kapatilacak pozisyon yuzdesi. 50 = pozisyonun yarisi kapatilir.",
+        "PT Sonrası DCA": "Kismi TP sonrasi kalan pozisyon icin DCA kademeleri aktif kalsin mi?",
+        "Günlük Max Zarar": "Bugunun toplam net zarari bu degeri asarsa yeni sinyaller acilmaz. 0 = devre disi.",
+        "Max Açık Pozisyon": "Ayni anda acik olabilecek maksimum pozisyon sayisi. 0 = sinirsiz.",
+    };
+
+    function getTooltip() {
+        let tip = document.getElementById('cfg-tooltip');
+        if (!tip) {
+            tip = document.createElement('div');
+            tip.id = 'cfg-tooltip';
+            document.body.appendChild(tip);
+        }
+        return tip;
+    }
+
+    function findTipText(el) {
+        // 1) data-tip varsa onu kullan
+        const dt = el.getAttribute('data-tip');
+        if (dt) return dt;
+        // 2) Yoksa metinden sozluge bak
+        const txt = (el.textContent || '').replace(/\s+/g, ' ').trim();
+        if (CFG_TIPS[txt]) return CFG_TIPS[txt];
+        for (const key in CFG_TIPS) {
+            if (txt.startsWith(key)) return CFG_TIPS[key];
+        }
+        return null;
+    }
+
+    function positionTooltip(el, tip) {
+        const rect = el.getBoundingClientRect();
+        const tipRect = tip.getBoundingClientRect();
+        const spaceAbove = rect.top;
+        const spaceBelow = window.innerHeight - rect.bottom;
+
+        let top, posClass;
+        if (spaceAbove >= tipRect.height + 12 || spaceAbove >= spaceBelow) {
+            top = rect.top - tipRect.height - 10;
+            posClass = 'pos-top';
+        } else {
+            top = rect.bottom + 10;
+            posClass = 'pos-bottom';
+        }
+
+        let left = rect.left;
+        if (left + tipRect.width > window.innerWidth - 15) {
+            left = window.innerWidth - tipRect.width - 15;
+        }
+        if (left < 10) left = 10;
+
+        tip.style.top = top + 'px';
+        tip.style.left = left + 'px';
+        tip.className = posClass;
+
+        const arrowLeft = Math.max(10, Math.min(tipRect.width - 20, rect.left - left + 10));
+        tip.style.setProperty('--arrow-left', arrowLeft + 'px');
+    }
+
+    let currentEl = null;
+
+    function showTip(el, text) {
+        const tip = getTooltip();
+        tip.textContent = text;
+        tip.style.display = 'block';
+        tip.style.opacity = '0';
+        positionTooltip(el, tip);
+        requestAnimationFrame(function() {
+            tip.classList.add('show');
+            tip.style.opacity = '';
+        });
+        currentEl = el;
+    }
+
+    function hideTip() {
+        const tip = document.getElementById('cfg-tooltip');
+        if (tip) {
+            tip.classList.remove('show');
+            setTimeout(function() { tip.style.display = 'none'; }, 150);
+        }
+        currentEl = null;
+    }
+
+    // ⚡ EVENT DELEGATION - document seviyesinde dinle
+    document.addEventListener('mouseover', function(e) {
+        const el = e.target.closest ? e.target.closest('.cfg-label') : null;
+        if (!el) return;
+        if (el === currentEl) return;
+        const txt = findTipText(el);
+        if (!txt) return;
+        if (currentEl) hideTip();
+        showTip(el, txt);
+    }, true);
+
+    document.addEventListener('mouseout', function(e) {
+        const el = e.target.closest ? e.target.closest('.cfg-label') : null;
+        if (!el) return;
+        // Ilgili baska bir cfg-label'a gecmediyse kapat
+        const related = e.relatedTarget && e.relatedTarget.closest ? e.relatedTarget.closest('.cfg-label') : null;
+        if (related === el) return;
+        if (currentEl === el) hideTip();
+    }, true);
+
+    console.log('[TOOLTIP v2] Event delegation kuruldu. Sozluk:', Object.keys(CFG_TIPS).length, 'alan');
+})();
+
+// =============================================================
+// DEV TOOLS - Backend restart / stop / reload
+// =============================================================
+// ⚠️ DEPRECATED: --reload modunda calismaz, buton kaldirildi.
+// Terminalden Ctrl+C ile durdurun.
+window.devStopBackend = async function() {
+    const ok = await window.showConfirm(
+        '⏹ BACKEND DURDUR',
+        'Backend kapatılsın mı?\n\n' +
+        '• Bot çalışıyorsa durur\n' +
+        '• Sayfa veri çekemez hale gelir\n' +
+        '• Yeniden başlatmak için terminalden:\n' +
+        '   py -m uvicorn backend.main:app --reload',
+        'DURDUR',
+        'İPTAL',
+        'danger'
+    );
+    if (!ok) return;
+    try {
+        window.showToast('⏹ Backend kapatılıyor...', 'warning', 3000);
+        await fetch('/api/dev/stop', { method: 'POST' });
+    } catch(e) {
+        // Beklenen: process öldüğü için bağlantı kesilir
+        console.log('[DEV] Stop response alinamadi (beklenen)');
+    }
+};
+
+window.devRestartBackend = async function() {
+    try {
+        const res = await fetch('/api/dev/restart', { method: 'POST' });
+        const data = await res.json();
+        if (data.status === 'success') {
+            window.showToast('🔄 Backend yeniden başlatılıyor... (3-5 sn)', 'info', 3500);
+        } else {
+            window.showToast('❌ Restart hatası: ' + (data.message || 'bilinmeyen'), 'error', 4000);
+        }
+    } catch(e) {
+        window.showToast('❌ Restart başarısız: ' + e.message, 'error', 4000);
+    }
+};
+
+window.devHardReload = function() {
+    window.showToast('⚡ Sayfa yenileniyor...', 'info', 1200);
+    setTimeout(function() {
+        try {
+            location.reload(true);
+        } catch(e) {
+            location.reload();
+        }
+    }, 300);
+};
+
+// =============================================================
+// COIN ISLEM SAYISI (Istatistik - Yeni Sekme)
+// =============================================================
+window.renderCountStats = function(data) {
+    let html = '<table class="stats-table"><thead><tr>'
+        + '<th class="left">#</th>'
+        + '<th class="left">Sembol</th>'
+        + '<th>İşlem</th>'
+        + '<th>Kârlı</th>'
+        + '<th>Zararlı</th>'
+        + '<th>Win Rate</th>'
+        + '<th>Toplam PnL</th>'
+        + '<th>Ort. PnL %</th>'
+        + '<th>En İyi</th>'
+        + '<th>En Kötü</th>'
+        + '</tr></thead><tbody>';
+    
+    data.forEach(function(d, i) {
+        const pnlCls = d.total_pnl >= 0 ? 'pnl-pos' : 'pnl-neg';
+        const sign = d.total_pnl >= 0 ? '+' : '';
+        let rankCls = '';
+        if (i === 0) rankCls = 'gold';
+        else if (i === 1) rankCls = 'silver';
+        else if (i === 2) rankCls = 'bronze';
+        
+        html += '<tr>'
+            + '<td class="left"><span class="rank-badge ' + rankCls + '">' + (i + 1) + '</span></td>'
+            + '<td class="left" style="cursor:pointer; color:#79a0ff; font-weight:600;" onclick="window.changeSymbol(\'' + d.symbol + '.P\')">' + d.symbol + '</td>'
+            + '<td style="color:#fcd535; font-weight:bold; font-size:13px;">' + d.trades + '</td>'
+            + '<td style="color:#0ECB81;">' + d.wins + '</td>'
+            + '<td style="color:#F6465D;">' + d.losses + '</td>'
+            + '<td>' + window.wrBar(d.win_rate) + '</td>'
+            + '<td class="' + pnlCls + '">' + sign + d.total_pnl.toFixed(4) + '</td>'
+            + '<td>' + (d.avg_pnl_pct >= 0 ? '+' : '') + d.avg_pnl_pct.toFixed(2) + '%</td>'
+            + '<td style="color:#0ECB81;">+' + d.best.toFixed(4) + '</td>'
+            + '<td style="color:#F6465D;">' + d.worst.toFixed(4) + '</td>'
+            + '</tr>';
+    });
+    
+    html += '</tbody></table>';
+    return html;
+};
+
+// =============================================================
+// GRID V2 - SMA + ATR tabanli gercek grid (chart visualization)
+// Backend'deki gridbot.py ile ayni formulu kullanir
+// =============================================================
+(function() {
+    // Eski tanimi sakla (fallback icin)
+    window._calcGridbotScalperOriginal = window.calcGridbotScalper;
+
+    // --- Yardimci: SMA ---
+    function _gridCalcSMA(closes, period) {
+        const result = [];
+        for (let i = 0; i < closes.length; i++) {
+            if (i < period - 1) { result.push(null); continue; }
+            let sum = 0;
+            for (let j = 0; j < period; j++) sum += closes[i - j];
+            result.push(sum / period);
+        }
+        return result;
+    }
+
+    // --- Yardimci: ATR (Wilder smoothing) ---
+    function _gridCalcATR(data, period) {
+        const result = [];
+        const trs = [null];
+        for (let i = 1; i < data.length; i++) {
+            const tr = Math.max(
+                data[i].high - data[i].low,
+                Math.abs(data[i].high - data[i-1].close),
+                Math.abs(data[i].low - data[i-1].close)
+            );
+            trs.push(tr);
+        }
+        let atr = null;
+        for (let i = 0; i < data.length; i++) {
+            if (i < period) { result.push(null); continue; }
+            if (i === period) {
+                let sum = 0;
+                for (let j = 1; j <= period; j++) sum += trs[j];
+                atr = sum / period;
+                result.push(atr);
+            } else {
+                atr = (atr * (period - 1) + trs[i]) / period;
+                result.push(atr);
+            }
+        }
+        return result;
+    }
+
+    // --- Yardimci: Grid seviyeleri ---
+    function _buildGridLevels(center, width, count, type) {
+        const levels = [];
+        const half = Math.max(1, Math.floor(count / 2));
+
+        if (type === 'geometric') {
+            const halfPct = (width / 2) / center;
+            const stepPct = halfPct / half;
+            for (let i = -half; i <= half; i++) {
+                const price = center * Math.pow(1 + stepPct, i);
+                levels.push({
+                    index: i,
+                    price: price,
+                    side: i < 0 ? 'BUY' : (i > 0 ? 'SELL' : 'CENTER')
+                });
+            }
+        } else {
+            const step = (width / 2) / half;
+            for (let i = -half; i <= half; i++) {
+                const price = center + (i * step);
+                if (price <= 0) continue;
+                levels.push({
+                    index: i,
+                    price: price,
+                    side: i < 0 ? 'BUY' : (i > 0 ? 'SELL' : 'CENTER')
+                });
+            }
+        }
+        return levels;
+    }
+
+    // --- Ana Fonksiyon ---
+    window.calcGridbotScalper = function(data, params, cObj, isBackground) {
+        if (!cObj.gridLineSeries) cObj.gridLineSeries = [];
+
+        // Onceki grid cizgilerini temizle
+        if (cObj.chart && cObj.gridLineSeries.length > 0) {
+            cObj.gridLineSeries.forEach(function(ls) {
+                try { cObj.chart.removeSeries(ls); } catch(e) {}
+            });
+            cObj.gridLineSeries = [];
+        }
+
+        const markers = [];
+        const tradeLabels = [];
+        const generatedHistory = [];
+
+        // Parametreler
+        const gridType = params.gridType || 'geometric';
+        const gridCount = parseInt(params.gridCount) || 20;
+        const smaPeriod = parseInt(params.smaPeriod) || 100;
+        const atrPeriod = parseInt(params.atrPeriod) || 14;
+        const atrMultiplier = parseFloat(params.atrMultiplier) || 5;
+
+        const minNeeded = Math.max(smaPeriod, atrPeriod) + 5;
+        if (!data || data.length < minNeeded) {
+            return { markers: markers, lastTrade: null, tradeLabels: tradeLabels };
+        }
+
+        // Hesapla
+        const closes = data.map(function(d) { return d.close; });
+        const sma = _gridCalcSMA(closes, smaPeriod);
+        const atr = _gridCalcATR(data, atrPeriod);
+
+        const lastIdx = data.length - 1;
+        const center = sma[lastIdx];
+        const curATR = atr[lastIdx];
+
+        if (center === null || curATR === null || center <= 0) {
+            return { markers: markers, lastTrade: null, tradeLabels: tradeLabels };
+        }
+
+        // Grid seviyeleri
+        const width = curATR * atrMultiplier;
+        const levels = _buildGridLevels(center, width, gridCount, gridType);
+
+        // Cizim
+        if (cObj.chart && data.length > 0) {
+            const startTime = data[Math.max(0, lastIdx - 100)].time;
+            const endTime = data[lastIdx].time;
+
+            for (let k = 0; k < levels.length; k++) {
+                const lvl = levels[k];
+                let color, lw, dashed;
+
+                if (lvl.side === 'BUY') {
+                    color = 'rgba(14, 203, 129, 0.35)';
+                    lw = 1;
+                    dashed = true;
+                } else if (lvl.side === 'SELL') {
+                    color = 'rgba(246, 70, 93, 0.35)';
+                    lw = 1;
+                    dashed = true;
+                } else {
+                    color = 'rgba(41, 98, 255, 0.9)';
+                    lw = 2;
+                    dashed = false;
+                }
+
+                try {
+                    const ls = cObj.chart.addLineSeries({
+                        color: color,
+                        lineWidth: lw,
+                        lineStyle: dashed ? 2 : 0,
+                        crosshairMarkerVisible: false,
+                        lastValueVisible: false,
+                        priceLineVisible: false,
+                        autoscaleInfoProvider: function() { return null; }
+                    });
+                    ls.setData([
+                        { time: startTime, value: lvl.price },
+                        { time: endTime, value: lvl.price }
+                    ]);
+                    cObj.gridLineSeries.push(ls);
+                } catch(e) {}
+            }
+        }
+
+        // Meta bilgiyi cObj'e kaydet
+        cObj.gridMeta = {
+            center: center,
+            width: width,
+            levels: levels,
+            sma: center,
+            atr: curATR,
+            gridType: gridType,
+            gridCount: gridCount
+        };
+
+        window.syncHistoricalTrades(generatedHistory);
+        return { markers: markers, lastTrade: null, tradeLabels: tradeLabels };
+    };
+
+    console.log('[GRID-V2] Grid visualization aktif - SMA+ATR tabanli');
+})();
+
+// =============================================================
+// GRID DIM MODE - Marker soluklastirma
+// =============================================================
+window._dimColor = function(hex, alpha) {
+    if (!hex) return hex;
+    if (hex.indexOf('rgba') === 0 || hex.indexOf('rgb') === 0) return hex;
+    if (hex.charAt(0) !== '#') return hex;
+    try {
+        const r = parseInt(hex.substr(1, 2), 16);
+        const g = parseInt(hex.substr(3, 2), 16);
+        const b = parseInt(hex.substr(5, 2), 16);
+        return 'rgba(' + r + ',' + g + ',' + b + ',' + alpha + ')';
+    } catch(e) {
+        return hex;
+    }
+};
+
+window._gridDimDefault = (localStorage.getItem('cryptoGridDimMode') !== '0'); // default: true
+
+window.toggleGridDim = function(idx) {
+    const cObj = chartsData[idx];
+    if (!cObj) return;
+    const current = (cObj.gridDimMode !== undefined) ? cObj.gridDimMode : window._gridDimDefault;
+    cObj.gridDimMode = !current;
+    localStorage.setItem('cryptoGridDimMode', cObj.gridDimMode ? '1' : '0');
+    window.recalculateAllIndicators(idx);
+    if (window.showToast) {
+        window.showToast(
+            cObj.gridDimMode ? '🎨 Grid vurgusu: AÇIK (markerlar soluk)' : '🎨 Grid vurgusu: KAPALI (markerlar net)',
+            'info',
+            1500
+        );
+    }
+};

@@ -84,6 +84,7 @@
                             <span id="overlay-sym-0" class="overlay-symbol">Yükleniyor...</span>
                             <span id="overlay-int-0" class="overlay-interval">-</span>
                             <span class="reset-btn" onclick="resetChart(0)" title="Grafiği Sıfırla">⟲</span>
+                            <span class="grid-toggle-btn" id="grid-toggle-0" onclick="window.toggleGridDim(0)" title="Grid Vurgusu" style="display:none; cursor:pointer; color:#79a0ff; font-size:14px; margin-left:4px; user-select:none; font-weight:bold;">⊞</span>
                             <div id="ohlcv-0" class="ohlcv-data"></div>
                             <div id="active-inds-0" class="active-indicators-log"></div>
                         </div>
@@ -97,6 +98,7 @@
                             <span id="overlay-sym-1" class="overlay-symbol">Yükleniyor...</span>
                             <span id="overlay-int-1" class="overlay-interval">-</span>
                             <span class="reset-btn" onclick="resetChart(1)" title="Grafiği Sıfırla">⟲</span>
+                            <span class="grid-toggle-btn" id="grid-toggle-1" onclick="window.toggleGridDim(1)" title="Grid Vurgusu" style="display:none; cursor:pointer; color:#79a0ff; font-size:14px; margin-left:4px; user-select:none; font-weight:bold;">⊞</span>
                             <div id="ohlcv-1" class="ohlcv-data"></div>
                             <div id="active-inds-1" class="active-indicators-log"></div>
                         </div>
@@ -110,6 +112,7 @@
                             <span id="overlay-sym-2" class="overlay-symbol">Yükleniyor...</span>
                             <span id="overlay-int-2" class="overlay-interval">-</span>
                             <span class="reset-btn" onclick="resetChart(2)" title="Grafiği Sıfırla">⟲</span>
+                            <span class="grid-toggle-btn" id="grid-toggle-2" onclick="window.toggleGridDim(2)" title="Grid Vurgusu" style="display:none; cursor:pointer; color:#79a0ff; font-size:14px; margin-left:4px; user-select:none; font-weight:bold;">⊞</span>
                             <div id="ohlcv-2" class="ohlcv-data"></div>
                             <div id="active-inds-2" class="active-indicators-log"></div>
                         </div>
@@ -123,6 +126,7 @@
                             <span id="overlay-sym-3" class="overlay-symbol">Yükleniyor...</span>
                             <span id="overlay-int-3" class="overlay-interval">-</span>
                             <span class="reset-btn" onclick="resetChart(3)" title="Grafiği Sıfırla">⟲</span>
+                            <span class="grid-toggle-btn" id="grid-toggle-3" onclick="window.toggleGridDim(3)" title="Grid Vurgusu" style="display:none; cursor:pointer; color:#79a0ff; font-size:14px; margin-left:4px; user-select:none; font-weight:bold;">⊞</span>
                             <div id="ohlcv-3" class="ohlcv-data"></div>
                             <div id="active-inds-3" class="active-indicators-log"></div>
                         </div>
@@ -239,7 +243,13 @@
                 <div class="sidebar-upper" id="sidebar-upper">
                     <div class="sidebar-panels-row">
                     <div class="module watchlist-module" id="watchlist-module">
-                        <h3>İzleme Listesi</h3>
+                        <h3 style="display: flex; justify-content: space-between; align-items: center; gap: 8px;">
+                            <span>İzleme Listesi</span>
+                            <div class="dev-tools" style="display: flex; gap: 3px; flex-shrink: 0;">
+                                <button class="dev-btn" onclick="devRestartBackend()" title="🔄 Backend Yeniden Başlat (--reload)">🔄</button>
+                                <button class="dev-btn" onclick="devHardReload()" title="⚡ Hard Refresh (Ctrl+Shift+R)">⚡</button>
+                            </div>
+                        </h3>
                         
                         <div class="tabs">
                             <button class="tab-btn active" onclick="switchTab('futures')">Vadeli <span id="count-futures" class="count-badge">-</span></button>
@@ -409,6 +419,7 @@
                 <div class="stats-tab active" data-tab="strategy" onclick="switchStatsTab('strategy')">📈 Strateji Performansı</div>
                 <div class="stats-tab" data-tab="symbol" onclick="switchStatsTab('symbol')">💰 En Kârlı Semboller</div>
                 <div class="stats-tab" data-tab="reason" onclick="switchStatsTab('reason')">📉 Kapanış Sebepleri</div>
+                <div class="stats-tab" data-tab="count" onclick="switchStatsTab('count')">🔢 Coin İşlem Sayısı</div>
             </div>
 
             <div class="stats-summary-bar">
@@ -518,26 +529,64 @@
             <div class="modal-body bot-config-body">
                 <div class="bot-global-row">
                     <div class="bot-global-item">
-                        <span class="cfg-label">⏱️ Tarama Süresi (sn)</span>
+                        <span class="cfg-label" data-tip="Sembollerin kac saniyede bir taranacagi. Kucuk deger = daha sik tarama, daha fazla API kullanimi.">⏱️ Tarama Süresi (sn)</span>
                         <input type="number" id="cfg-scan-interval" class="search-input" min="5" max="600" value="30">
                     </div>
                     <div class="bot-global-item">
-                        <span class="cfg-label">👁️ Pozisyon Kontrol (sn)</span>
+                        <span class="cfg-label" data-tip="Acik pozisyonlarin TP/SL/Trailing icin kac saniyede bir kontrol edilecegi.">👁️ Pozisyon Kontrol (sn)</span>
                         <input type="number" id="cfg-position-interval" class="search-input" min="1" max="60" value="3">
                     </div>
                     <div class="bot-global-item">
-                        <span class="cfg-label">📊 Maks Sembol</span>
+                        <span class="cfg-label" data-tip="Taranacak maksimum sembol sayisi. Likiditeye gore en aktif USDT pariteleri secilir.">📊 Maks Sembol</span>
                         <input type="number" id="cfg-max-symbols" class="search-input" min="5" max="500" value="30">
                     </div>
                     <div class="bot-global-item">
                         <button class="btn-secondary btn-small" onclick="refreshSymbolsFromModal()">🔄 Sembolleri Yenile</button>
                     </div>
                     <div class="bot-global-item">
-                        <span class="cfg-label">🚫 Delist Kapat</span>
+                        <span class="cfg-label" data-tip="Bir sembol borsadan cikarilirsa otomatik olarak pozisyonu kapatir.">🚫 Delist Kapat</span>
                         <label class="switch switch-small" style="margin-top: 6px;">
                             <input type="checkbox" id="cfg-auto-close-delisted" checked>
                             <span class="slider round"></span>
                         </label>
+                    </div>
+                </div>
+
+                <div style="margin-top: 6px;">
+                    <div class="cfg-subtitle" style="padding-left: 4px; margin-bottom: 6px;">💼 İşlem Ayarları (Execution)</div>
+                    <div class="bot-global-row" style="background: rgba(252, 213, 53, 0.06); border-color: rgba(252, 213, 53, 0.25);">
+                        <div class="bot-global-item">
+                            <span class="cfg-label" data-tip="LIMIT emir kullanarak daha dusuk komisyon (maker 0.02%) oder. Dolmazsa MARKET emre gecer.">⚡ LIMIT Emir Kullan</span>
+                            <label class="switch switch-small" style="margin-top: 6px;">
+                                <input type="checkbox" id="cfg-use-limit-order" checked>
+                                <span class="slider round"></span>
+                            </label>
+                        </div>
+                        <div class="bot-global-item">
+                            <span class="cfg-label" data-tip="LIMIT emrin dolmasi icin beklenecek saniye. Dolmazsa MARKET emre gecer.">⏱️ LIMIT Timeout (sn)</span>
+                            <input type="number" id="cfg-limit-timeout" class="search-input" min="1" max="10" value="3">
+                        </div>
+                        <div class="bot-global-item">
+                            <span class="cfg-label" data-tip="Timeout'ta MARKET emre gec. Kapaliysa sinyal iptal edilir.">🔄 MARKET Fallback</span>
+                            <label class="switch switch-small" style="margin-top: 6px;">
+                                <input type="checkbox" id="cfg-fallback-market" checked>
+                                <span class="slider round"></span>
+                            </label>
+                        </div>
+                    </div>
+                </div>
+
+                <div style="margin-top: 6px;">
+                    <div class="cfg-subtitle" style="padding-left: 4px; margin-bottom: 6px;">🛡️ Risk Limitleri</div>
+                    <div class="bot-global-row" style="background: rgba(246, 70, 93, 0.06); border-color: rgba(246, 70, 93, 0.25);">
+                        <div class="bot-global-item">
+                            <span class="cfg-label" data-tip="Bugunun toplam net zarari bu degeri asarsa yeni sinyaller acilmaz. 0 = devre disi. TR saatine gore gece yarisi sifirlanir.">🛑 Günlük Max Zarar (USDT)</span>
+                            <input type="number" id="cfg-daily-max-loss" class="search-input" min="0" step="1" value="0">
+                        </div>
+                        <div class="bot-global-item">
+                            <span class="cfg-label" data-tip="Ayni anda acik olabilecek maksimum pozisyon sayisi (tum stratejiler toplami). 0 = sinirsiz.">📌 Max Açık Pozisyon</span>
+                            <input type="number" id="cfg-max-open-positions" class="search-input" min="0" step="1" value="0">
+                        </div>
                     </div>
                 </div>
 
@@ -555,7 +604,7 @@
                         </div>
                         <div class="strategy-body">
                             <div class="cfg-row">
-                                <span class="cfg-label">Zaman Dilimi</span>
+                                <span class="cfg-label" data-tip="Stratejinin hangi mum periyodunda calisacagi (1m, 5m, 15m, 1h, 4h).">Zaman Dilimi</span>
                                 <select class="search-input strat-interval" data-strategy="RSI_SCALPER">
                                     <option value="1m">1m</option>
                                     <option value="5m">5m</option>
@@ -565,7 +614,7 @@
                                 </select>
                             </div>
                             <div class="cfg-row">
-                                <span class="cfg-label">RSI Period</span>
+                                <span class="cfg-label" data-tip="RSI hesaplama periyodu. Kucuk = daha hassas, buyuk = daha guvenilir.">RSI Period</span>
                                 <input type="number" class="search-input strat-param" data-strategy="RSI_SCALPER" data-param="period" value="7" min="2" max="50">
                             </div>
                             <div class="cfg-subtitle">LONG Koşulu</div>
@@ -590,44 +639,63 @@
                         <div class="strategy-body strategy-trade-section">
                             <div class="cfg-subtitle">💰 İşlem Ayarları</div>
                             <div class="cfg-row">
-                                <span class="cfg-label">İlk İşlem (USDT)</span>
+                                <span class="cfg-label" data-tip="Pozisyon acilisinda kullanilacak USDT miktari (kaldiracli degil, saf teminat).">İlk İşlem (USDT)</span>
                                 <input type="number" class="search-input strat-param" data-strategy="RSI_SCALPER" data-param="baseOrder" value="10" min="1" step="1" oninput="window.updateMarginPreview('RSI_SCALPER')">
                             </div>
                             <div class="cfg-row">
-                                <span class="cfg-label">Kaldıraç <span class="lev-badge">X</span></span>
+                                <span class="cfg-label" data-tip="1 = kaldiracli degil. 5x = 5 kat. Kar/zarar kaldiracli oraninda buyur, tasfiye riski artar.">Kaldıraç <span class="lev-badge">X</span></span>
                                 <input type="number" class="search-input strat-param" data-strategy="RSI_SCALPER" data-param="leverage" value="1" min="1" max="125" step="1" oninput="window.updateMarginPreview('RSI_SCALPER')">
                             </div>
                             <div class="cfg-row margin-row">
-                                <span class="cfg-label">💵 Marjin (Kilitlenen)</span>
+                                <span class="cfg-label" data-tip="Bu pozisyon icin hesabinizda kilitlenen gercek teminat = Ilk Islem / Kaldiracli.">💵 Marjin (Kilitlenen)</span>
                                 <span id="margin-preview-RSI_SCALPER" class="margin-preview">10.00 USDT</span>
                             </div>
                             <div class="cfg-row">
-                                <span class="cfg-label">Hedef Kâr (%)</span>
+                                <span class="cfg-label" data-tip="Pozisyon bu kar yuzdesine ulastiginda Izleyen Stop aktif olur. Ornek: 1.5 = %1.5 kar.">Hedef Kâr (%)</span>
                                 <input type="number" class="search-input strat-param" data-strategy="RSI_SCALPER" data-param="takeProfit" value="1.5" min="0.1" step="0.1">
                             </div>
                             <div class="cfg-row">
-                                <span class="cfg-label">İzleyen Stop (%)</span>
+                                <span class="cfg-label" data-tip="Fiyat tepe noktasindan bu yuzde kadar geri cekilirse pozisyon kapatilir. Kari korur.">İzleyen Stop (%)</span>
                                 <input type="number" class="search-input strat-param" data-strategy="RSI_SCALPER" data-param="trailing" value="0.3" min="0.1" step="0.1">
                             </div>
                             <div class="cfg-row">
-                                <span class="cfg-label">Stop Loss (%)</span>
+                                <span class="cfg-label" data-tip="Fiyat girise gore bu yuzde ters giderse pozisyon otomatik kapanir. Zarari sinirlar.">Stop Loss (%)</span>
                                 <input type="number" class="search-input strat-param" data-strategy="RSI_SCALPER" data-param="stopLoss" value="2.0" min="0.1" step="0.1">
                             </div>
                             <div class="cfg-subtitle">🔁 DCA (Kademeli Alım)</div>
                             <div class="cfg-row">
-                                <span class="cfg-label">DCA Aktif</span>
+                                <span class="cfg-label" data-tip="Kademeli alim. Fiyat ters giderse ek alim yapar ve ortalama maliyeti dusurur.">DCA Aktif</span>
                                 <label class="switch switch-small">
                                     <input type="checkbox" class="strat-param" data-strategy="RSI_SCALPER" data-param="useDCA">
                                     <span class="slider round"></span>
                                 </label>
                             </div>
                             <div class="cfg-row">
-                                <span class="cfg-label">Hacim Çarpanı</span>
+                                <span class="cfg-label" data-tip="Her DCA kademesinde eklenecek hacim carpani. 1.2 = her kademe 1.2x onceki hacim.">Hacim Çarpanı</span>
                                 <input type="number" class="search-input strat-param" data-strategy="RSI_SCALPER" data-param="volMultiplier" value="1.2" min="1" step="0.1">
                             </div>
                             <div class="cfg-row">
-                                <span class="cfg-label">Düşüş Adımları (%)</span>
+                                <span class="cfg-label" data-tip="Her DCA kademesinin hangi yuzde dususte tetiklenecegi. Ornek: 5,10,15,20.">Düşüş Adımları (%)</span>
                                 <input type="text" class="search-input strat-param" data-strategy="RSI_SCALPER" data-param="steps" value="1.5, 3, 5">
+                            </div>
+                            <div class="cfg-subtitle">🎯 Kısmi TP (Partial Take Profit)</div>
+                            <div class="cfg-row">
+                                <span class="cfg-label" data-tip="Pozisyon kara gectiginde tamamini kapatmak yerine bir kismini kapatir, kalani trendde tutar.">Kısmi TP Aktif</span>
+                                <label class="switch switch-small">
+                                    <input type="checkbox" class="strat-param" data-strategy="RSI_SCALPER" data-param="partialTPEnabled">
+                                    <span class="slider round"></span>
+                                </label>
+                            </div>
+                            <div class="cfg-row">
+                                <span class="cfg-label" data-tip="Kismi TP'de kapatilacak pozisyon yuzdesi. 50 = pozisyonun yarisi kapatilir.">Kapatma Oranı (%)</span>
+                                <input type="number" class="search-input strat-param" data-strategy="RSI_SCALPER" data-param="partialTPPercent" value="50" min="1" max="99" step="1">
+                            </div>
+                            <div class="cfg-row">
+                                <span class="cfg-label" data-tip="Kismi TP sonrasi kalan pozisyon icin DCA kademeleri aktif kalsin mi?">PT Sonrası DCA</span>
+                                <label class="switch switch-small">
+                                    <input type="checkbox" class="strat-param" data-strategy="RSI_SCALPER" data-param="partialTPKeepDCA" checked>
+                                    <span class="slider round"></span>
+                                </label>
                             </div>
                         </div>
                     </div>
@@ -645,7 +713,7 @@
                         </div>
                         <div class="strategy-body">
                             <div class="cfg-row">
-                                <span class="cfg-label">Zaman Dilimi</span>
+                                <span class="cfg-label" data-tip="Stratejinin hangi mum periyodunda calisacagi (1m, 5m, 15m, 1h, 4h).">Zaman Dilimi</span>
                                 <select class="search-input strat-interval" data-strategy="HULL_SRP">
                                     <option value="1m">1m</option>
                                     <option value="5m">5m</option>
@@ -655,11 +723,11 @@
                                 </select>
                             </div>
                             <div class="cfg-row">
-                                <span class="cfg-label">HMA Length</span>
+                                <span class="cfg-label" data-tip="Hull Hareketli Ortalama periyodu. Trend yonunu belirler.">HMA Length</span>
                                 <input type="number" class="search-input strat-param" data-strategy="HULL_SRP" data-param="period" value="10" min="2" max="100">
                             </div>
                             <div class="cfg-row">
-                                <span class="cfg-label">Kaynak</span>
+                                <span class="cfg-label" data-tip="HMA hesaplamasinda kullanilacak fiyat kaynagi (hl2, close, open).">Kaynak</span>
                                 <select class="search-input strat-param" data-strategy="HULL_SRP" data-param="source">
                                     <option value="hl2">(Y+D)/2</option>
                                     <option value="close">Kapanış</option>
@@ -667,14 +735,14 @@
                                 </select>
                             </div>
                             <div class="cfg-row">
-                                <span class="cfg-label">Long Trade</span>
+                                <span class="cfg-label" data-tip="Yukari yonlu (alis) sinyalleri acilsin mi?">Long Trade</span>
                                 <label class="switch switch-small">
                                     <input type="checkbox" class="strat-param" data-strategy="HULL_SRP" data-param="longTrade" checked>
                                     <span class="slider round"></span>
                                 </label>
                             </div>
                             <div class="cfg-row">
-                                <span class="cfg-label">Short Trade</span>
+                                <span class="cfg-label" data-tip="Asagi yonlu (satis) sinyalleri acilsin mi?">Short Trade</span>
                                 <label class="switch switch-small">
                                     <input type="checkbox" class="strat-param" data-strategy="HULL_SRP" data-param="shortTrade">
                                     <span class="slider round"></span>
@@ -684,44 +752,63 @@
                         <div class="strategy-body strategy-trade-section">
                             <div class="cfg-subtitle">💰 İşlem Ayarları</div>
                             <div class="cfg-row">
-                                <span class="cfg-label">İlk İşlem (USDT)</span>
+                                <span class="cfg-label" data-tip="Pozisyon acilisinda kullanilacak USDT miktari (kaldiracli degil, saf teminat).">İlk İşlem (USDT)</span>
                                 <input type="number" class="search-input strat-param" data-strategy="HULL_SRP" data-param="baseOrder" value="5" min="1" step="1" oninput="window.updateMarginPreview('HULL_SRP')">
                             </div>
                             <div class="cfg-row">
-                                <span class="cfg-label">Kaldıraç <span class="lev-badge">X</span></span>
+                                <span class="cfg-label" data-tip="1 = kaldiracli degil. 5x = 5 kat. Kar/zarar kaldiracli oraninda buyur, tasfiye riski artar.">Kaldıraç <span class="lev-badge">X</span></span>
                                 <input type="number" class="search-input strat-param" data-strategy="HULL_SRP" data-param="leverage" value="1" min="1" max="125" step="1" oninput="window.updateMarginPreview('HULL_SRP')">
                             </div>
                             <div class="cfg-row margin-row">
-                                <span class="cfg-label">💵 Marjin (Kilitlenen)</span>
+                                <span class="cfg-label" data-tip="Bu pozisyon icin hesabinizda kilitlenen gercek teminat = Ilk Islem / Kaldiracli.">💵 Marjin (Kilitlenen)</span>
                                 <span id="margin-preview-HULL_SRP" class="margin-preview">5.00 USDT</span>
                             </div>
                             <div class="cfg-row">
-                                <span class="cfg-label">Hedef Kâr (%)</span>
+                                <span class="cfg-label" data-tip="Pozisyon bu kar yuzdesine ulastiginda Izleyen Stop aktif olur. Ornek: 1.5 = %1.5 kar.">Hedef Kâr (%)</span>
                                 <input type="number" class="search-input strat-param" data-strategy="HULL_SRP" data-param="takeProfit" value="2.0" min="0.1" step="0.1">
                             </div>
                             <div class="cfg-row">
-                                <span class="cfg-label">İzleyen Stop (%)</span>
+                                <span class="cfg-label" data-tip="Fiyat tepe noktasindan bu yuzde kadar geri cekilirse pozisyon kapatilir. Kari korur.">İzleyen Stop (%)</span>
                                 <input type="number" class="search-input strat-param" data-strategy="HULL_SRP" data-param="trailing" value="0.5" min="0.1" step="0.1">
                             </div>
                             <div class="cfg-row">
-                                <span class="cfg-label">Stop Loss (%)</span>
+                                <span class="cfg-label" data-tip="Fiyat girise gore bu yuzde ters giderse pozisyon otomatik kapanir. Zarari sinirlar.">Stop Loss (%)</span>
                                 <input type="number" class="search-input strat-param" data-strategy="HULL_SRP" data-param="stopLoss" value="2.0" min="0.1" step="0.1">
                             </div>
                             <div class="cfg-subtitle">🔁 DCA (Kademeli Alım)</div>
                             <div class="cfg-row">
-                                <span class="cfg-label">DCA Aktif</span>
+                                <span class="cfg-label" data-tip="Kademeli alim. Fiyat ters giderse ek alim yapar ve ortalama maliyeti dusurur.">DCA Aktif</span>
                                 <label class="switch switch-small">
                                     <input type="checkbox" class="strat-param" data-strategy="HULL_SRP" data-param="useDCA">
                                     <span class="slider round"></span>
                                 </label>
                             </div>
                             <div class="cfg-row">
-                                <span class="cfg-label">Hacim Çarpanı</span>
+                                <span class="cfg-label" data-tip="Her DCA kademesinde eklenecek hacim carpani. 1.2 = her kademe 1.2x onceki hacim.">Hacim Çarpanı</span>
                                 <input type="number" class="search-input strat-param" data-strategy="HULL_SRP" data-param="volMultiplier" value="1.0" min="1" step="0.1">
                             </div>
                             <div class="cfg-row">
-                                <span class="cfg-label">Düşüş Adımları (%)</span>
+                                <span class="cfg-label" data-tip="Her DCA kademesinin hangi yuzde dususte tetiklenecegi. Ornek: 5,10,15,20.">Düşüş Adımları (%)</span>
                                 <input type="text" class="search-input strat-param" data-strategy="HULL_SRP" data-param="steps" value="2, 4, 6">
+                            </div>
+                            <div class="cfg-subtitle">🎯 Kısmi TP (Partial Take Profit)</div>
+                            <div class="cfg-row">
+                                <span class="cfg-label" data-tip="Pozisyon kara gectiginde tamamini kapatmak yerine bir kismini kapatir, kalani trendde tutar.">Kısmi TP Aktif</span>
+                                <label class="switch switch-small">
+                                    <input type="checkbox" class="strat-param" data-strategy="HULL_SRP" data-param="partialTPEnabled">
+                                    <span class="slider round"></span>
+                                </label>
+                            </div>
+                            <div class="cfg-row">
+                                <span class="cfg-label" data-tip="Kismi TP'de kapatilacak pozisyon yuzdesi. 50 = pozisyonun yarisi kapatilir.">Kapatma Oranı (%)</span>
+                                <input type="number" class="search-input strat-param" data-strategy="HULL_SRP" data-param="partialTPPercent" value="50" min="1" max="99" step="1">
+                            </div>
+                            <div class="cfg-row">
+                                <span class="cfg-label" data-tip="Kismi TP sonrasi kalan pozisyon icin DCA kademeleri aktif kalsin mi?">PT Sonrası DCA</span>
+                                <label class="switch switch-small">
+                                    <input type="checkbox" class="strat-param" data-strategy="HULL_SRP" data-param="partialTPKeepDCA" checked>
+                                    <span class="slider round"></span>
+                                </label>
                             </div>
                         </div>
                     </div>
@@ -739,7 +826,7 @@
                         </div>
                         <div class="strategy-body">
                             <div class="cfg-row">
-                                <span class="cfg-label">Zaman Dilimi</span>
+                                <span class="cfg-label" data-tip="Stratejinin hangi mum periyodunda calisacagi (1m, 5m, 15m, 1h, 4h).">Zaman Dilimi</span>
                                 <select class="search-input strat-interval" data-strategy="GRIDBOT">
                                     <option value="1m">1m</option>
                                     <option value="5m">5m</option>
@@ -749,51 +836,89 @@
                                 </select>
                             </div>
                             <div class="cfg-row">
-                                <span class="cfg-label">Geriye Dönük Tarama</span>
-                                <input type="number" class="search-input strat-param" data-strategy="GRIDBOT" data-param="lookback" value="8" min="2" max="50">
+                                <span class="cfg-label" data-tip="Geometrik: esit % araliklarla. Aritmetik: esit mutlak araliklarla.">Izgara Tipi</span>
+                                <select class="search-input strat-param" data-strategy="GRIDBOT" data-param="gridType">
+                                    <option value="geometric">Geometrik</option>
+                                    <option value="arithmetic">Aritmetik</option>
+                                </select>
+                            </div>
+                            <div class="cfg-row">
+                                <span class="cfg-label" data-tip="Toplam izgara seviyesi sayisi (merkez alti + ustu). 20 = 10 BUY + 10 SELL.">Izgara Sayısı</span>
+                                <input type="number" class="search-input strat-param" data-strategy="GRIDBOT" data-param="gridCount" value="20" min="4" max="100" step="2">
+                            </div>
+                            <div class="cfg-row">
+                                <span class="cfg-label" data-tip="Izgara merkezini belirleyen SMA periyodu. Buyuk deger = daha stabil merkez.">SMA Periyot</span>
+                                <input type="number" class="search-input strat-param" data-strategy="GRIDBOT" data-param="smaPeriod" value="100" min="10" max="500" step="10">
+                            </div>
+                            <div class="cfg-row">
+                                <span class="cfg-label" data-tip="ATR periyodu. Piyasa volatilitesini olcer.">ATR Periyot</span>
+                                <input type="number" class="search-input strat-param" data-strategy="GRIDBOT" data-param="atrPeriod" value="14" min="2" max="100">
+                            </div>
+                            <div class="cfg-row">
+                                <span class="cfg-label" data-tip="Izgara genisligi carpani. Genislik = ATR x bu deger. Buyuk = genis izgara.">ATR Çarpan</span>
+                                <input type="number" class="search-input strat-param" data-strategy="GRIDBOT" data-param="atrMultiplier" value="10" min="1" max="20" step="0.5">
                             </div>
                         </div>
                         <div class="strategy-body strategy-trade-section">
                             <div class="cfg-subtitle">💰 İşlem Ayarları</div>
                             <div class="cfg-row">
-                                <span class="cfg-label">İlk İşlem (USDT)</span>
+                                <span class="cfg-label" data-tip="Pozisyon acilisinda kullanilacak USDT miktari (kaldiracli degil, saf teminat).">İlk İşlem (USDT)</span>
                                 <input type="number" class="search-input strat-param" data-strategy="GRIDBOT" data-param="baseOrder" value="10" min="1" step="1" oninput="window.updateMarginPreview('GRIDBOT')">
                             </div>
                             <div class="cfg-row">
-                                <span class="cfg-label">Kaldıraç <span class="lev-badge">X</span></span>
-                                <input type="number" class="search-input strat-param" data-strategy="GRIDBOT" data-param="leverage" value="1" min="1" max="125" step="1" oninput="window.updateMarginPreview('GRIDBOT')">
+                                <span class="cfg-label" data-tip="1 = kaldiracli degil. 5x = 5 kat. Kar/zarar kaldiracli oraninda buyur, tasfiye riski artar.">Kaldıraç <span class="lev-badge">X</span></span>
+                                <input type="number" class="search-input strat-param" data-strategy="GRIDBOT" data-param="leverage" value="5" min="1" max="125" step="1" oninput="window.updateMarginPreview('GRIDBOT')">
                             </div>
                             <div class="cfg-row margin-row">
-                                <span class="cfg-label">💵 Marjin (Kilitlenen)</span>
+                                <span class="cfg-label" data-tip="Bu pozisyon icin hesabinizda kilitlenen gercek teminat = Ilk Islem / Kaldiracli.">💵 Marjin (Kilitlenen)</span>
                                 <span id="margin-preview-GRIDBOT" class="margin-preview">10.00 USDT</span>
                             </div>
                             <div class="cfg-row">
-                                <span class="cfg-label">Hedef Kâr (%)</span>
-                                <input type="number" class="search-input strat-param" data-strategy="GRIDBOT" data-param="takeProfit" value="1.0" min="0.1" step="0.1">
+                                <span class="cfg-label" data-tip="Pozisyon bu kar yuzdesine ulastiginda Izleyen Stop aktif olur. Ornek: 1.5 = %1.5 kar.">Hedef Kâr (%)</span>
+                                <input type="number" class="search-input strat-param" data-strategy="GRIDBOT" data-param="takeProfit" value="0.6" min="0.1" step="0.1">
                             </div>
                             <div class="cfg-row">
-                                <span class="cfg-label">İzleyen Stop (%)</span>
-                                <input type="number" class="search-input strat-param" data-strategy="GRIDBOT" data-param="trailing" value="0.2" min="0.1" step="0.1">
+                                <span class="cfg-label" data-tip="Fiyat tepe noktasindan bu yuzde kadar geri cekilirse pozisyon kapatilir. Kari korur.">İzleyen Stop (%)</span>
+                                <input type="number" class="search-input strat-param" data-strategy="GRIDBOT" data-param="trailing" value="0.15" min="0.1" step="0.1">
                             </div>
                             <div class="cfg-row">
-                                <span class="cfg-label">Stop Loss (%)</span>
-                                <input type="number" class="search-input strat-param" data-strategy="GRIDBOT" data-param="stopLoss" value="2.0" min="0.1" step="0.1">
+                                <span class="cfg-label" data-tip="Fiyat girise gore bu yuzde ters giderse pozisyon otomatik kapanir. Zarari sinirlar.">Stop Loss (%)</span>
+                                <input type="number" class="search-input strat-param" data-strategy="GRIDBOT" data-param="stopLoss" value="8.0" min="0.1" step="0.1">
                             </div>
                             <div class="cfg-subtitle">🔁 DCA (Kademeli Alım)</div>
                             <div class="cfg-row">
-                                <span class="cfg-label">DCA Aktif</span>
+                                <span class="cfg-label" data-tip="Kademeli alim. Fiyat ters giderse ek alim yapar ve ortalama maliyeti dusurur.">DCA Aktif</span>
                                 <label class="switch switch-small">
-                                    <input type="checkbox" class="strat-param" data-strategy="GRIDBOT" data-param="useDCA">
+                                    <input type="checkbox" class="strat-param" data-strategy="GRIDBOT" data-param="useDCA" checked>
                                     <span class="slider round"></span>
                                 </label>
                             </div>
                             <div class="cfg-row">
-                                <span class="cfg-label">Hacim Çarpanı</span>
+                                <span class="cfg-label" data-tip="Her DCA kademesinde eklenecek hacim carpani. 1.2 = her kademe 1.2x onceki hacim.">Hacim Çarpanı</span>
                                 <input type="number" class="search-input strat-param" data-strategy="GRIDBOT" data-param="volMultiplier" value="1.5" min="1" step="0.1">
                             </div>
                             <div class="cfg-row">
-                                <span class="cfg-label">Düşüş Adımları (%)</span>
-                                <input type="text" class="search-input strat-param" data-strategy="GRIDBOT" data-param="steps" value="1, 2, 3">
+                                <span class="cfg-label" data-tip="Her DCA kademesinin hangi yuzde dususte tetiklenecegi. Ornek: 5,10,15,20.">Düşüş Adımları (%)</span>
+                                <input type="text" class="search-input strat-param" data-strategy="GRIDBOT" data-param="steps" value="1, 2, 3, 5">
+                            </div>
+                            <div class="cfg-subtitle">🎯 Kısmi TP (Partial Take Profit)</div>
+                            <div class="cfg-row">
+                                <span class="cfg-label" data-tip="Pozisyon kara gectiginde tamamini kapatmak yerine bir kismini kapatir, kalani trendde tutar.">Kısmi TP Aktif</span>
+                                <label class="switch switch-small">
+                                    <input type="checkbox" class="strat-param" data-strategy="GRIDBOT" data-param="partialTPEnabled" checked>
+                                    <span class="slider round"></span>
+                                </label>
+                            </div>
+                            <div class="cfg-row">
+                                <span class="cfg-label" data-tip="Kismi TP'de kapatilacak pozisyon yuzdesi. 50 = pozisyonun yarisi kapatilir.">Kapatma Oranı (%)</span>
+                                <input type="number" class="search-input strat-param" data-strategy="GRIDBOT" data-param="partialTPPercent" value="50" min="1" max="99" step="1">
+                            </div>
+                            <div class="cfg-row">
+                                <span class="cfg-label" data-tip="Kismi TP sonrasi kalan pozisyon icin DCA kademeleri aktif kalsin mi?">PT Sonrası DCA</span>
+                                <label class="switch switch-small">
+                                    <input type="checkbox" class="strat-param" data-strategy="GRIDBOT" data-param="partialTPKeepDCA" checked>
+                                    <span class="slider round"></span>
+                                </label>
                             </div>
                         </div>
                     </div>

@@ -15,6 +15,8 @@ DEFAULT_CONFIG = {
     "scan_interval_seconds": 30,
     "position_check_seconds": 10,
     "max_symbols": 30,
+    "daily_max_loss": 0,
+    "max_open_positions": 0,
     "strategies": {
         "RSI_SCALPER": {
             "enabled": True,
@@ -24,7 +26,9 @@ DEFAULT_CONFIG = {
             "shortOp": ">", "shortVal": 80,
             "useDCA": True, "baseOrder": 10, "volMultiplier": 1.2,
             "steps": "1.5, 3, 5",
-            "takeProfit": 1.5, "trailing": 0.3, "stopLoss": 3.0
+            "takeProfit": 1.5, "trailing": 0.3, "stopLoss": 3.0,
+            "partialTPEnabled": False, "partialTPPercent": 50,
+            "partialTPKeepDCA": True
         },
         "HULL_SRP": {
             "enabled": False,
@@ -34,14 +38,24 @@ DEFAULT_CONFIG = {
             "longTrade": True,
             "shortTrade": False,
             "baseOrder": 10,
-            "takeProfit": 2.0, "trailing": 0.5, "stopLoss": 3.0
+            "takeProfit": 2.0, "trailing": 0.5, "stopLoss": 3.0,
+            "partialTPEnabled": False, "partialTPPercent": 50,
+            "partialTPKeepDCA": True
         },
         "GRIDBOT": {
             "enabled": False,
             "interval": "15m",
-            "lookback": 8,
+            "gridType": "geometric",
+            "gridCount": 20,
+            "smaPeriod": 100,
+            "atrPeriod": 14,
+            "atrMultiplier": 5,
             "baseOrder": 10,
-            "takeProfit": 1.0, "trailing": 0.2, "stopLoss": 3.0
+            "leverage": 5,
+            "takeProfit": 0.6, "trailing": 0.15, "stopLoss": 8.0,
+            "useDCA": True, "volMultiplier": 1.5, "steps": "1, 2, 3, 5",
+            "partialTPEnabled": True, "partialTPPercent": 50,
+            "partialTPKeepDCA": True
         }
     }
 }
@@ -129,6 +143,57 @@ class StrategyEngine:
         rows = conn.execute("SELECT * FROM active_trades").fetchall()
         conn.close()
         return [dict(r) for r in rows]
+
+    # ------------------------------------------------------------------
+    # A1/A2: RISK LIMIT KONTROLU
+    # ------------------------------------------------------------------
+    def _check_risk_limits(self) -> str:
+        """
+        A1: Gunluk max zarar limiti (TR saatine gore)
+        A2: Max acik pozisyon sayisi
+        Ihlal varsa sebep string'i, yoksa bos string doner.
+        """
+        cfg = self.config or {}
+
+        # --- A2: Max acik pozisyon ---
+        try:
+            max_open = int(cfg.get("max_open_positions", 0) or 0)
+        except Exception:
+            max_open = 0
+
+        if max_open > 0:
+            try:
+                conn = get_db_connection()
+                row = conn.execute("SELECT COUNT(*) as c FROM active_trades").fetchone()
+                conn.close()
+                cnt = row["c"] if row else 0
+                if cnt >= max_open:
+                    return f"Max acik pozisyon limiti ({cnt}/{max_open})"
+            except Exception as e:
+                print(f"[RISK] A2 kontrol hatasi: {e}")
+
+        # --- A1: Gunluk max zarar (TR saati = UTC+3) ---
+        try:
+            max_loss = float(cfg.get("daily_max_loss", 0) or 0)
+        except Exception:
+            max_loss = 0.0
+
+        if max_loss > 0:
+            try:
+                conn = get_db_connection()
+                row = conn.execute("""
+                    SELECT COALESCE(SUM(pnl_amount), 0) as total
+                    FROM trade_history
+                    WHERE DATE(exit_time + 10800, 'unixepoch') = DATE('now', '+3 hours')
+                """).fetchone()
+                conn.close()
+                today_pnl = float(row["total"]) if row else 0.0
+                if today_pnl <= -max_loss:
+                    return f"Gunluk max zarar limiti ({today_pnl:.2f}/{max_loss:.2f} USDT)"
+            except Exception as e:
+                print(f"[RISK] A1 kontrol hatasi: {e}")
+
+        return ""
 
     # ------------------------------------------------------------------
     # Mum çekme
@@ -280,6 +345,18 @@ class StrategyEngine:
                     self.last_signal_candle[signal_key] = candle_time
                     return
 
+                # ⚡ A1/A2: Risk limit kontrolu
+                risk_reason = self._check_risk_limits()
+                if risk_reason:
+                    print(f"[RISK] {symbol} sinyal atlandi: {risk_reason}")
+                    self._save_signal_to_db(
+                        signal_id, symbol, strategy_name, result["signal"],
+                        current_price, qty, base_order, candle_time, created_ms,
+                        opened=0, skip_reason=risk_reason
+                    )
+                    self.last_signal_candle[signal_key] = candle_time
+                    return
+
                 # ⚡ Emir aç
                 if self.order_manager:
                     side = "BUY" if result["signal"] == "LONG" else "SELL"
@@ -288,6 +365,15 @@ class StrategyEngine:
                     leverage = int(strat_cfg.get("leverage", 1))
                     
                     self.order_manager.symbol = symbol
+                    
+                    # ⚡ Kismi TP snapshot (acilis anindaki config)
+                    pt_enabled = 1 if strat_cfg.get("partialTPEnabled") else 0
+                    pt_percent = float(strat_cfg.get("partialTPPercent", 50))
+                    pt_keep_dca = 1 if strat_cfg.get("partialTPKeepDCA", True) else 0
+                    
+                    if pt_enabled:
+                        print(f"[PARTIAL-TP] {symbol} PT aktif: %{pt_percent:.0f} | KeepDCA={pt_keep_dca}")
+                    
                     try:
                         await asyncio.to_thread(
                             self.order_manager.open_dca_position,
@@ -295,6 +381,12 @@ class StrategyEngine:
                             base_amount_usdt=base_order,
                             strategy_name=strategy_name,
                             leverage=leverage,
+                            pt_enabled=pt_enabled,
+                            pt_percent=pt_percent,
+                            pt_keep_dca=pt_keep_dca,
+                            use_limit_order=bool(self.config.get("useLimitOrder", True)),
+                            limit_timeout_sec=int(self.config.get("limitTimeoutSec", 3)),
+                            fallback_market=bool(self.config.get("fallbackToMarket", True)),
                         )
                         self._save_signal_to_db(
                             signal_id, symbol, strategy_name, result["signal"],
@@ -484,6 +576,10 @@ class StrategyEngine:
         print("[*] Strategy Engine başlatıldı.")
 
         await self.refresh_symbol_list()
+
+        # ⚡ Test modunda yanlislikla kilitlenmis PT flag'lerini temizle
+        if self.position_manager and hasattr(self.position_manager, '_reset_stuck_pt_flags'):
+            self.position_manager._reset_stuck_pt_flags()
 
         self._scan_task = asyncio.create_task(self._scan_loop())
         self._position_task = asyncio.create_task(self._position_loop())
