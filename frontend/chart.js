@@ -392,7 +392,8 @@ window.renderHistoricalTrades = async function() {
                 <td class="left" style="font-weight:600; cursor:pointer; color:#79a0ff;" onclick="window.jumpToSymbolWithTrades('${t.symbol}.P')">${t.symbol}</td>
                 <td class="left ${tagClass}">${tagText}</td>
                 <td class="right">${volCell}</td>
-                <td class="right">${window.formatPrice(t.entry_price)}</td>
+                <td class="right" style="color:#848e9c;">${window.formatPrice(t.initial_price || t.entry_price)}</td>
+                <td class="right" style="color:#fcd535; font-weight:600;">${window.formatPrice(t.entry_price)}</td>
                 <td class="right">${window.formatPrice(t.exit_price)}</td>
                 <td class="right" style="color:${pnlColor}; font-weight:bold;">${sign}${t.pnl_pct.toFixed(2)}% (${sign}${t.pnl_amount.toFixed(2)}$)</td>
                 <td class="right" style="color:#848e9c;">-${comm.toFixed(4)}$</td>
@@ -518,7 +519,8 @@ window.renderDailyTrades = async function() {
                 <td class="left" style="font-weight:600; cursor:pointer; color:#79a0ff;" onclick="window.changeSymbol('${t.symbol}.P')">${t.symbol}</td>
                 <td class="left ${tagClass}">${tagText}</td>
                 <td class="right">${volCell}</td>
-                <td class="right">${window.formatPrice(t.entry_price)}</td>
+                <td class="right" style="color:#848e9c;">${window.formatPrice(t.initial_price || t.entry_price)}</td>
+                <td class="right" style="color:#fcd535; font-weight:600;">${window.formatPrice(t.entry_price)}</td>
                 <td class="right">${window.formatPrice(t.exit_price)}</td>
                 <td class="right" style="color:${pnlColor}; font-weight:bold;">${sign}${t.pnl_pct.toFixed(2)}% (${sign}${t.pnl_amount.toFixed(2)}$)</td>
                 <td class="right" style="color:#848e9c;">-${comm.toFixed(4)}$</td>
@@ -716,7 +718,7 @@ window.renderBottomTrades = async function() {
             const ptBadge = p.ptDone ? `<span title="Kısmi TP alındı" style="min-width:34px; text-align:center; font-size:10px; font-weight:600; padding:1px 4px; border-radius:3px; background:rgba(252,213,53,0.15); color:#fcd535;">PT✓</span>` : '';
             const volCell = `<span style="display:inline-flex; align-items:center; justify-content:flex-end; gap:6px;"><span style="min-width:68px; text-align:right; color:#EAECEF; font-weight:600;">${p.totalVol.toFixed(2)} USDT</span><span style="min-width:26px; text-align:right; color:#fcd535; font-weight:600; font-size:10px;">${leverage}x</span><span style="min-width:82px; text-align:right; color:#0ECB81; font-weight:600; font-size:10px;">Marjin: ${margin.toFixed(2)}</span><span style="min-width:44px; text-align:center; font-size:10px; font-weight:600; padding:1px 4px; border-radius:3px; ${dcaBg}">${p.dcaCount > 0 ? 'DCA:' + p.dcaCount : 'Ana'}</span>${ptBadge}</span>`;
             
-            html += `<tr class="${isActiveRow}" onclick="window.changeSymbol('${p.displaySymbol}')"><td class="center" style="color:#5d6471; font-size:11px;">${posArray.indexOf(p) + 1}</td><td class="left" style="font-weight:600; cursor:pointer;">${p.displaySymbol}</td><td class="left ${tagClass}">${typeIcon} ${p.type}</td><td class="right" style="font-size:11px;">${volCell}</td><td class="right">${window.formatPrice(p.avgPrice)}</td><td class="right">${window.formatPrice(p.currentPrice)}</td><td class="right" style="color:#F6465D; font-weight:600; font-size:11px;">${liqPrice > 0 ? window.formatPrice(liqPrice) : '—'}</td><td class="right" style="color:${pnlColor}; font-weight:bold;">${sign}${p.pnlPct.toFixed(2)}% (${sign}${p.pnl.toFixed(2)}$)</td><td class="right" style="color:#848e9c;">-${(p.totalVol * getDisplayCommission(p.symbol)).toFixed(4)}$</td><td class="right" style="color:#EAECEF; font-size:11px;">${window.formatDateTime(p.entryTime)}</td><td class="right" style="color:#848e9c;">${timeStr}</td></tr>`;
+            html += `<tr class="${isActiveRow}" onclick="window.changeSymbol('${p.displaySymbol}')"><td class="center" style="color:#5d6471; font-size:11px;">${posArray.indexOf(p) + 1}</td><td class="left" style="font-weight:600; cursor:pointer;">${p.displaySymbol}</td><td class="left ${tagClass}">${typeIcon} ${p.type}</td><td class="right" style="font-size:11px;">${volCell}</td><td class="right" style="color:#848e9c;">${window.formatPrice(p.initialPrice || p.avgPrice)}</td><td class="right" style="color:#fcd535; font-weight:600;">${window.formatPrice(p.avgPrice)}</td><td class="right">${window.formatPrice(p.currentPrice)}</td><td class="right" style="color:#F6465D; font-weight:600; font-size:11px;">${liqPrice > 0 ? window.formatPrice(liqPrice) : '—'}</td><td class="right" style="color:${pnlColor}; font-weight:bold;">${sign}${p.pnlPct.toFixed(2)}% (${sign}${p.pnl.toFixed(2)}$)</td><td class="right" style="color:#848e9c;">-${(p.totalVol * getDisplayCommission(p.symbol)).toFixed(4)}$</td><td class="right" style="color:#EAECEF; font-size:11px;">${window.formatDateTime(p.entryTime)}</td><td class="right" style="color:#848e9c;">${timeStr}</td></tr>`;
         });
         tbody.innerHTML = html;
         

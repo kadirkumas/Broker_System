@@ -5,7 +5,7 @@
   "max_symbols": 300,
   "auto_close_delisted": true,
   "daily_max_loss": 5,
-  "max_open_positions": 100,
+  "max_open_positions": 200,
   "useLimitOrder": true,
   "limitTimeoutSec": 5,
   "fallbackToMarket": true,

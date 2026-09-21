@@ -234,11 +234,12 @@ class PositionManager:
         conn = get_db_connection()
         conn.execute(
             """INSERT INTO trade_history 
-               (symbol, trade_type, total_vol, entry_price, exit_price,
+               (symbol, trade_type, total_vol, entry_price, initial_price, exit_price,
                 pnl_amount, pnl_pct, entry_time, exit_time,
                 strategy_name, dca_count, close_reason, leverage, funding_fee, is_partial, commission)
                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 1, ?)""",
-            (symbol, trade_type, close_vol_usdt, avg_price, exit_price,
+            (symbol, trade_type, close_vol_usdt, avg_price,
+             trade.get("initial_price") or avg_price, exit_price,
              net_pnl, pnl_pct * 100, trade["entry_time"], exit_time,
              strategy_name, dca_count, reason, leverage, exit_comm)
         )
@@ -383,12 +384,13 @@ class PositionManager:
         conn = get_db_connection()
         conn.execute(
             """INSERT INTO trade_history 
-               (symbol, trade_type, total_vol, entry_price, exit_price, 
+               (symbol, trade_type, total_vol, entry_price, initial_price, exit_price, 
                 pnl_amount, pnl_pct, entry_time, exit_time,
                 strategy_name, dca_count, close_reason, leverage, funding_fee, commission)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (symbol, trade["trade_type"], trade["total_vol"], avg_price,
-             exit_price, net_pnl, pnl_pct * 100, trade["entry_time"], exit_time,
+             trade.get("initial_price") or avg_price, exit_price,
+             net_pnl, pnl_pct * 100, trade["entry_time"], exit_time,
              strategy_name, dca_count, reason, leverage, funding_fee, commission)
         )
         conn.commit()
