@@ -1,5 +1,6 @@
 import asyncio
 import time
+import json
 from backend.database import get_db_connection
 from backend import telegram_notifier
 from backend.strategy_engine import load_config
@@ -93,13 +94,29 @@ class PositionManager:
         new_total_vol = old_total_vol + step_vol
         new_avg = ((old_avg * old_total_vol) + (current_price * step_vol)) / new_total_vol
 
+        # ⚡ DCA history kaydı (zaman + fiyat + kademe)
+        try:
+            old_history = json.loads(pos.get("dca_history") or "[]")
+        except Exception:
+            old_history = []
+
+        old_history.append({
+            "time": int(time.time()),
+            "price": float(current_price),
+            "step": int(new_count),
+            "vol": float(step_vol),
+            "avg_after": float(new_avg),
+        })
+
         conn = get_db_connection()
         conn.execute(
-            "UPDATE active_trades SET total_vol = ?, avg_price = ?, dca_count = ? WHERE symbol = ?",
-            (new_total_vol, new_avg, new_count, symbol)
+            "UPDATE active_trades SET total_vol = ?, avg_price = ?, dca_count = ?, dca_history = ? WHERE symbol = ?",
+            (new_total_vol, new_avg, new_count, json.dumps(old_history), symbol)
         )
         conn.commit()
         conn.close()
+
+        print(f"[DCA-LOG] {symbol} kademe {new_count} -> dca_history: {len(old_history)} kayit")
 
         print(f"[DCA] {symbol} Kademe {new_count}/{len(steps)} | "
               f"Fiyat: {current_price:.6f} | Tetik: {trigger_price:.6f} | "

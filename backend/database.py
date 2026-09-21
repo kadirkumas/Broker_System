@@ -67,6 +67,7 @@ def init_db():
         "pt_pnl": "ALTER TABLE active_trades ADD COLUMN pt_pnl REAL DEFAULT 0",
         "pt_keep_dca": "ALTER TABLE active_trades ADD COLUMN pt_keep_dca INTEGER DEFAULT 1",
         "entry_is_maker": "ALTER TABLE active_trades ADD COLUMN entry_is_maker INTEGER DEFAULT 0",
+        "dca_history": "ALTER TABLE active_trades ADD COLUMN dca_history TEXT DEFAULT '[]'",
     }
     for col, sql in migrations_at.items():
         if col not in cols_at:

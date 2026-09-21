@@ -70,5 +70,10 @@
       "partialTPPercent": 50,
       "partialTPKeepDCA": true
     }
+  },
+  "telegram": {
+    "notify_signals": false,
+    "notify_closes": true,
+    "notify_delisting": false
   }
 }

@@ -273,8 +273,8 @@ window.syncTradeLabels = function(idx) {
         if (x === null || yText === null || yLine === null) { lbl.el.style.display = 'none'; lbl.lineEl.style.display = 'none'; return; }
         lbl.el.style.display = 'block'; lbl.lineEl.style.display = 'block';
         let w = lbl.el.offsetWidth, h = lbl.el.offsetHeight, finalX = x - (w / 2), finalY;
-        if (lbl.position === 'aboveBar') { finalY = yText - h - 30; lbl.lineEl.style.left = (x - 15) + 'px'; lbl.lineEl.style.top = (yLine - 1) + 'px'; } 
-        else if (lbl.position === 'belowBar') { finalY = yText + 30; lbl.lineEl.style.left = (x - 15) + 'px'; lbl.lineEl.style.top = (yLine - 1) + 'px'; } 
+        if (lbl.position === 'aboveBar') { finalY = yText - h - 65; lbl.lineEl.style.left = (x - 15) + 'px'; lbl.lineEl.style.top = (yLine - 1) + 'px'; } 
+        else if (lbl.position === 'belowBar') { finalY = yText + 65; lbl.lineEl.style.left = (x - 15) + 'px'; lbl.lineEl.style.top = (yLine - 1) + 'px'; } 
         else if (lbl.position === 'onLine') { finalY = yText - h - 4; finalX = x + 8; lbl.lineEl.style.display = 'none'; }
         lbl.el.style.left = finalX + 'px'; lbl.el.style.top = finalY + 'px';
     });
@@ -624,6 +624,7 @@ window.renderBottomTrades = async function() {
                 typeRaw: t.trade_type,
                 totalVol: t.total_vol,
                 avgPrice: t.avg_price,
+                initialPrice: t.initial_price || t.avg_price,
                 entryTime: t.entry_time,
                 dcaCount: t.dca_count || 0,
                 strategyName: t.strategy_name || 'UNKNOWN',
@@ -2659,6 +2660,7 @@ window.showSymbolTrades = async function(symbol, idx = null) {
         symbolActive.forEach(pos => {
             const entryTime = _alignTf(pos.entry_time);
             const entryPrice = pos.avg_price;
+            const initialPrice = pos.initial_price || pos.avg_price;
             const isLong = pos.trade_type === 'BUY';
             
             // ⚡ Anormal avg_price kontrolu (0 veya negatifse atla)
@@ -2670,66 +2672,73 @@ window.showSymbolTrades = async function(symbol, idx = null) {
             markers.push({
                 time: entryTime,
                 position: isLong ? 'belowBar' : 'aboveBar',
-                color: isLong ? '#0ECB81' : '#F6465D',
+                color: '#FCD535',
                 shape: 'circle',
                 size: 1
             });
             
             const lineEndTime = lastTime > entryTime ? lastTime : entryTime + 60;
-            addLine(entryTime - 120, entryPrice, entryTime + 120, entryPrice, 'rgba(252,213,53,0.6)', 2, true);
+            // İlk giriş için çizgi yok - sadece marker ve etiket
             
             const dcaInfo = pos.dca_count > 0 ? ` · D${pos.dca_count}` : '';
+            // Etiket içeriği: giriş fiyatı + varsa ort. fiyat
+            const avgPrice = pos.avg_price;
+            const dcaCount = pos.dca_count || 0;
+            let entryLabelText = `Giriş: ${window.formatPrice(initialPrice)}`;
+            if (dcaCount > 0 && avgPrice && avgPrice !== initialPrice) {
+                entryLabelText += `<br>Ort: ${window.formatPrice(avgPrice)}`;
+            }
+
             tradeLabels.push({
                 time: entryTime,
-                price: entryPrice,
-                linePrice: entryPrice,
-                text: `${window.formatPrice(entryPrice)}${dcaInfo}`,
+                price: initialPrice,
+                linePrice: initialPrice,
+                text: entryLabelText,
                 type: isLong ? 'LONG' : 'SHORT',
                 isExit: false,
                 position: isLong ? 'belowBar' : 'aboveBar',
                 colorClass: isLong ? 'long-entry' : 'short-entry'
             });
             
-            // ⚡ DCA kademeleri icin ayri marker'lar
-            const dcaCount = pos.dca_count || 0;
-            const initialPrice = pos.initial_price || pos.avg_price;
-            if (dcaCount > 0 && initialPrice > 0) {
-                // Config'deki steps'i oku (varsayilan: 1.5, 3, 5)
-                let stepsStr = "1.5, 3, 5";
-                try {
-                    const cfg = window.botConfig && window.botConfig.strategies && window.botConfig.strategies[pos.strategy_name];
-                    if (cfg && cfg.steps) stepsStr = cfg.steps;
-                } catch(e) {}
-                
-                const steps = String(stepsStr).split(',').map(s => parseFloat(s.trim())).filter(s => !isNaN(s));
-                
-                for (let d = 1; d <= dcaCount && d <= steps.length; d++) {
-                    const pct = steps[d - 1] / 100;
-                    let dcaPrice;
-                    if (isLong) {
-                        dcaPrice = initialPrice * (1 - pct);
-                    } else {
-                        dcaPrice = initialPrice * (1 + pct);
-                    }
-                    
-                    // ⚡ KISA DCA çizgisi: giriş mumun ±2 mum
-                    addLine(entryTime - 120, dcaPrice, entryTime + 120, dcaPrice, 'rgba(252,213,53,0.5)', 1, true);
-                    
+            // ⚡ DCA kademeleri: dca_history'den gercek zaman + fiyat
+            let dcaHistory = [];
+            try {
+                if (pos.dca_history) {
+                    dcaHistory = typeof pos.dca_history === 'string'
+                        ? JSON.parse(pos.dca_history)
+                        : pos.dca_history;
+                }
+            } catch(e) {
+                console.warn('[DCA-HISTORY] parse hatasi:', e);
+                dcaHistory = [];
+            }
+
+            if (Array.isArray(dcaHistory) && dcaHistory.length > 0) {
+                dcaHistory.forEach(dca => {
+                    const dcaTime = _alignTf(dca.time);
+                    const dcaPrice = dca.price;
+                    const dcaStep = dca.step || 1;
+
+                    if (!dcaPrice || dcaPrice <= 0) return;
+
+                    // KIRMIZI cizgi: DCA tetiklenme mumu
+                    addLine(dcaTime - 120, dcaPrice, dcaTime + 120, dcaPrice, 'rgba(252,213,53,0.95)', 2, true);
+
                     // DCA etiketi
                     tradeLabels.push({
-                        time: entryTime,
+                        time: dcaTime,
                         price: dcaPrice,
                         linePrice: dcaPrice,
-                        text: `D${d}`,
+                        text: `DCA${dcaStep}`,
                         type: isLong ? 'LONG' : 'SHORT',
                         isExit: false,
                         position: 'onLine',
                         colorClass: 'avg-label'
                     });
-                }
+                });
             }
         });
-        
+
         symbolHistory.forEach(trade => {
             const entryTime = _alignTf(trade.entry_time);
             const exitTime = _alignTf(trade.exit_time);
