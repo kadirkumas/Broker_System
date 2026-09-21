@@ -237,7 +237,7 @@ class PositionManager:
                (symbol, trade_type, total_vol, entry_price, initial_price, exit_price,
                 pnl_amount, pnl_pct, entry_time, exit_time,
                 strategy_name, dca_count, close_reason, leverage, funding_fee, is_partial, commission)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 1, ?)""",
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 1, ?)""",
             (symbol, trade_type, close_vol_usdt, avg_price,
              trade.get("initial_price") or avg_price, exit_price,
              net_pnl, pnl_pct * 100, trade["entry_time"], exit_time,
