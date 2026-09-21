@@ -1,0 +1,38 @@
+SUNUCU BİLGİLERİ
+════════════════
+Ad:       broker-bot
+Bölge:    Frankfurt (eu-frankfurt-1)
+IP:       92.5.133.137
+User:     ubuntu
+Key:      C:\Users\kadir.kumas\.ssh\broker-bot.key
+
+KOMUTLAR
+════════
+SSH Bağlan:
+  ssh -i C:\Users\kadir.kumas\.ssh\broker-bot.key ubuntu@92.5.133.137
+
+Bot Durum:
+  sudo systemctl status broker-bot
+
+Bot Başlat:
+  sudo systemctl start broker-bot
+
+Bot Durdur:
+  sudo systemctl stop broker-bot
+
+Bot Loglar:
+  sudo journalctl -u broker-bot -f
+
+Oracle Console:
+  cloud.oracle.com
+
+----------------###---###-------------------
+
+#Faydalı Komutlar (Not Al)
+İşlem	Komut
+Bot durum	sudo systemctl status broker-bot
+Bot başlat	sudo systemctl start broker-bot
+Bot durdur	sudo systemctl stop broker-bot
+Canlı log	sudo journalctl -u broker-bot -f
+Son 50 log	sudo journalctl -u broker-bot -n 50
+Tarayıcı	http://92.5.133.137:8000

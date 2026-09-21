@@ -1,0 +1,463 @@
+================================================================================
+  BROKER SYSTEM - KAPSAMLI PROJE DOKUMANI
+================================================================================
+Versiyon: 1.0
+Tarih: 21 Eylul 2026
+Amac: Yeni sohbete gecildiginde asistanin projeyi tam anlamasi icin
+================================================================================
+
+
+================================================================================
+  1. PROJE OZETI
+================================================================================
+
+Adi     : Broker System - Binance Vadeli Trading Bot
+Amac    : Binance USDT-M vadeli piyasada kripto varliklari tarayip,
+          gosterge kosullarina uyanlar icin otomatik islem acan bot.
+Durum   : Testnet'te calisiyor + Oracle Cloud'a tasindi (Frankfurt)
+Sermaye : 1000 USDT (testnet)
+Hedef   : Aylik %2-5 getiri (20-50 USDT)
+
+
+================================================================================
+  2. TEKNOLOJI STACK
+================================================================================
+
+Backend     : Python 3.10, FastAPI, Uvicorn, python-binance
+Frontend    : Vanilla JS + HTML + CSS (framework yok)
+Grafik      : lightweight-charts@4.1.1 (CDN)
+DB          : SQLite (backend/bot_data.db)
+Deployment  : Local (Windows) + Oracle Cloud (Ubuntu 22.04 ARM)
+Testnet     : True (.env -> BINANCE_TESTNET=true)
+
+
+================================================================================
+  3. DIZIN YAPISI
+================================================================================
+
+Broker_System/
+|
++-- backend/
+|   +-- main.py                    (FastAPI + tum endpoint'ler)
+|   +-- strategy_engine.py         (Strateji motoru, paralel tarama)
+|   +-- position_manager.py        (TP/SL/Trailing/DCA/PT)
+|   +-- order_manager.py           (Emir acma/kapatma, LIMIT+Fallback)
+|   +-- indicators.py              (RSI, HMA, WMA, ATR)
+|   +-- database.py                (SQLite, migration)
+|   +-- backtest_engine.py         (Backtest motoru)
+|   +-- telegram_notifier.py       (Telegram)
+|   +-- strategies/
+|   |   +-- base.py
+|   |   +-- rsi_scalper.py
+|   |   +-- hull_srp.py
+|   |   +-- gridbot.py
+|   +-- bot_config.json
+|   +-- bot_data.db
+|
++-- frontend/
+|   +-- index.html
+|   +-- chart.js                   (~2600 satir)
+|   +-- style.css
+|   +-- favicon.svg
+|
++-- Patch/
+|   +-- eski/                      (Eski patch'ler)
+|   +-- yeni/                      (Yeni patch'ler)
+|
++-- .env
++-- .gitignore
+
+
+================================================================================
+  4. KULLANICI PROFILI
+================================================================================
+
+Isim            : Kadir Kumas
+Sistem          : Windows 11, Python 3.13, PowerShell + CMD
+Proje klasoru   : C:\Users\kadir.kumas\Desktop\Broker_System
+SSH key         : C:\Users\kadir.kumas\.ssh\broker-bot.key
+Cloud IP        : 92.5.133.137 (Oracle Frankfurt, Ubuntu 22.04 ARM, 2 OCPU / 12 GB)
+
+
+KULLANICI TERCIHLERI:
+  [+] Turkce iletisim
+  [+] Hizli, somut, tam calisan script'ler
+  [+] Adim adim ilerleme
+  [+] Riskli islemlerde yedek zorunlu
+  [+] Trading bilgisi orta-ileri seviye
+  [-] Gereksiz aciklama sevmez
+  [-] Basit SMA gibi naif stratejileri kabul etmez
+
+
+================================================================================
+  5. CALISMA YONTEMIMIZ (COK ONEMLI!)
+================================================================================
+
+KURAL 1: PATCH SCRIPT KURALI
+  Asla "su satiri bul, sunu degistir" deme.
+  HER ZAMAN tam Python patch script'i ver.
+
+KURAL 2: PATCH SCRIPT SABLONU
+
+  import shutil
+  import os
+
+  SRC = 'backend/dosya.py'
+  BAK = SRC + '.bak_ozellik_adi'
+
+  if not os.path.exists(SRC):
+      print(f"[HATA] {SRC} bulunamadi")
+      exit(1)
+  shutil.copy2(SRC, BAK)
+  print(f"[1/4] Yedek: {BAK}")
+
+  changes = 0
+
+  with open(SRC, 'r', encoding='utf-8', newline='') as f:
+      content = f.read().replace('\r\n', '\n')
+
+  old = "..."
+  new = "..."
+  if old in content:
+      content = content.replace(old, new, 1)
+      changes += 1
+      print(f"[2/4] Degisiklik uygulandi")
+  else:
+      print(f"[2/4] UYARI: hedef bulunamadi")
+
+  with open(SRC, 'w', encoding='utf-8', newline='') as f:
+      f.write(content.replace('\n', '\r\n'))
+
+  print(f"BASARILI: {changes} degisiklik")
+  print(f"Geri donmek icin: Copy-Item {BAK} {SRC} -Force")
+
+KURAL 3: HER PATCH ICIN
+  [+] Yedek zorunlu (.bak_ozellik_adi)
+  [+] changes sayaci
+  [+] Hata kontrolu
+  [+] Idempotent (tekrar calistirilabilir)
+  [+] Turkce print mesajlari
+  [+] Sonda "Geri donmek icin" komutlari
+
+KURAL 4: ONCE KONTROL, SONRA PATCH
+  Cipa metni tahmin etme. Patch yazmadan once check_*.py ile gercek kodu gor.
+
+KURAL 5: KULLANICI PATCH NASIL CALISTIRIR?
+  cd C:\Users\kadir.kumas\Desktop\Broker_System
+  notepad Patch\yeni\patch_xxx.py
+  py Patch\yeni\patch_xxx.py
+
+
+================================================================================
+  6. CLOUD YONETIMI
+================================================================================
+
+ORACLE CLOUD KURULUMU (Tamamlandi)
+  Bolge       : Germany Central (Frankfurt)
+  Instance    : broker-bot
+  IP          : 92.5.133.137
+  OS          : Ubuntu 22.04 Minimal aarch64
+  Shape       : VM.Standard.A1.Flex (2 OCPU / 12 GB RAM)
+  VCN         : broker-vcn
+  Subnet      : public subnet-broker-vcn
+  User        : ubuntu
+  Proje Yolu  : /home/ubuntu/Broker_System
+  venv        : /home/ubuntu/Broker_System/venv
+
+SYSTEMD SERVISI
+  Dosya: /etc/systemd/system/broker-bot.service
+
+  [Unit]
+  Description=Broker System Bot
+  After=network.target
+
+  [Service]
+  Type=simple
+  User=ubuntu
+  WorkingDirectory=/home/ubuntu/Broker_System
+  Environment="PATH=/home/ubuntu/Broker_System/venv/bin"
+  ExecStart=/home/ubuntu/Broker_System/venv/bin/python -m uvicorn backend.main:app --host 0.0.0.0 --port 8000
+  Restart=always
+  RestartSec=10
+  StandardOutput=append:/home/ubuntu/Broker_System/bot.log
+  StandardError=append:/home/ubuntu/Broker_System/bot.err
+
+  [Install]
+  WantedBy=multi-user.target
+
+CLOUD FIREWALL
+  Oracle Security List: Port 8000 acik (Ingress: 0.0.0.0/0 TCP 8000)
+  Ubuntu iptables (KRITIK):
+    sudo iptables -I INPUT 5 -p tcp --dport 8000 -j ACCEPT
+    sudo netfilter-persistent save
+  Ubuntu ufw: Port 8000 ve 22 acik
+
+CLOUD YONETIM BAT DOSYASI
+  Konum: C:\Users\kadir.kumas\Desktop\broker-yonetim.bat
+  Ozellikler:
+    - Menulu sistem
+    - Cloud/Local durumu otomatik kontrol
+    - [1] LOCAL moduna gec
+    - [2] CLOUD moduna gec
+    - [3] Tum sunuculari durdur
+    - [11-18] Cloud komutlari
+    - [21-23] Local komutlari
+
+
+================================================================================
+  7. AKTIF AYARLAR (bot_config.json)
+================================================================================
+
+{
+  "active": true,
+  "scan_interval_seconds": 1800,
+  "position_check_seconds": 6,
+  "max_symbols": 30,
+  "daily_max_loss": 5,
+  "max_open_positions": 100,
+  "auto_close_delisted": true,
+  "useLimitOrder": true,
+  "limitTimeoutSec": 3,
+  "fallbackToMarket": true,
+  "strategies": {
+    "RSI_SCALPER": {
+      "enabled": true,
+      "interval": "1m",
+      "period": 7,
+      "longOp": "<", "longVal": 20,
+      "shortOp": ">", "shortVal": 90,
+      "baseOrder": 5,
+      "leverage": 5,
+      "takeProfit": 1.5,
+      "trailing": 0.3,
+      "stopLoss": 50,
+      "useDCA": true,
+      "volMultiplier": 1.2,
+      "steps": "5,10,15,20,28,38,48,60",
+      "partialTPEnabled": true,
+      "partialTPPercent": 50,
+      "partialTPKeepDCA": true
+    },
+    "HULL_SRP": {
+      "enabled": true,
+      "interval": "4h",
+      "period": 20,
+      "source": "close",
+      "longTrade": true,
+      "shortTrade": true,
+      "baseOrder": 5,
+      "leverage": 5,
+      "takeProfit": 2.0,
+      "trailing": 0.5,
+      "stopLoss": 50,
+      "useDCA": true,
+      "volMultiplier": 1.2,
+      "steps": "5,10,15,20,28,38,48,60",
+      "partialTPEnabled": true,
+      "partialTPPercent": 50,
+      "partialTPKeepDCA": true,
+      "minVolatility": 2.0
+    },
+    "GRIDBOT": {
+      "enabled": false,
+      "interval": "15m",
+      "gridType": "geometric",
+      "gridCount": 20,
+      "smaPeriod": 100,
+      "atrPeriod": 14,
+      "atrMultiplier": 10,
+      "baseOrder": 10,
+      "leverage": 5,
+      "takeProfit": 0.6,
+      "trailing": 0.15,
+      "stopLoss": 8.0,
+      "useDCA": true,
+      "volMultiplier": 1.5,
+      "steps": "1, 2, 3, 5",
+      "partialTPEnabled": true,
+      "partialTPPercent": 50,
+      "partialTPKeepDCA": true
+    }
+  }
+}
+
+
+================================================================================
+  8. TAMAMLANAN OZELLIKLER
+================================================================================
+
+BACKEND (17 adet):
+  1. Backend + Testnet baglantisi
+  2. 3 strateji paralel tarama
+  3. DCA + ortalama fiyat
+  4. TP + Trailing Stop + Stop Loss
+  5. Kaldirak + Marjin
+  6. Kismi TP + PT sonrasi DCA
+  7. LIMIT + Fallback emir sistemi
+  8. Risk limitleri
+  9. Volatilite filtresi
+ 10. Grid stratejisi
+ 11. Funding takibi
+ 12. Delist kontrolu
+ 13. Gercek komisyon orani
+ 14. Rate limit korumasi
+ 15. Backtest Engine
+ 16. Pairs Trading (arsiv)
+ 17. Telegram bildirimleri
+
+FRONTEND (18 adet):
+  1. Pozisyonlar / Islem Gecmisi / Gunluk Islemler
+  2. Siralama + filtreleme
+  3. Sinyaller + Kapanislar birlesik
+  4. Sembol tikla -> grafik isaretleri
+  5. Fiyat validasyonu
+  6. Funding badge
+  7. Islem silme
+  8. Panel toggle
+  9. Toast v2
+ 10. Favicon + Chart Settings
+ 11. Istatistik Modali
+ 12. Backtest Modali
+ 13. Grid gorsellestirmesi
+ 14. PT rozeti
+ 15. Ort. Fiyat sutunu
+ 16. Grid dim mode
+ 17. Grid toggle
+ 18. PT satirinda link ikonu
+
+
+================================================================================
+  9. BEKLEYEN KONULAR
+================================================================================
+
+YAKIN ZAMANDA:
+  - Grid stratejisi canli test
+  - HULL volatilite filtresi test
+  - Cloud'da 24 saat stabilite gozlemi
+  - Mainnet gecis hazirlik
+
+FAZ 2 FIKIRLER:
+  - A4: Drawdown Korumasi
+  - B2: Equity Curve
+  - C1: Kismi TP kademeli
+  - C2: Manuel pozisyon kapatma
+  - C3: Pozisyon detay modali
+  - D1: Sembol bazli trailing
+
+
+================================================================================
+  10. SIK KARSILASILAN HATALAR
+================================================================================
+
+HATA 1: "16 values for 17 columns"
+  Cozum: sed -i 's/VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 1, ?)/VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 1, ?)/' backend/position_manager.py
+
+HATA 2: "table trade_history has no column named initial_price"
+  Cozum: python3 -c "import sqlite3; c=sqlite3.connect('backend/bot_data.db'); c.execute('ALTER TABLE trade_history ADD COLUMN initial_price REAL DEFAULT 0'); c.execute('UPDATE trade_history SET initial_price = entry_price WHERE initial_price = 0'); c.commit()"
+
+HATA 3: Binance IP Ban (code=-1003)
+  Cozum: max_symbols=30, scan_interval_seconds=1800, bekle
+
+HATA 4: Port 8000 erisilemiyor (cloud)
+  Cozum: sudo iptables -I INPUT 5 -p tcp --dport 8000 -j ACCEPT; sudo netfilter-persistent save
+
+HATA 5: systemd loop
+  Cozum: sudo systemctl stop broker-bot; sudo ss -tulnp | grep :8000; sudo kill PID; sudo systemctl reset-failed broker-bot; sudo systemctl start broker-bot
+
+HATA 6: Patch hedef bulamadi
+  Cozum: check_*.py ile ONCE gercek kodu gor
+
+HATA 7: Bat hemen kapaniyor
+  Cozum: ( ) yerine - , ucgen yerine ***
+
+
+================================================================================
+  11. ONEMLI KOMUTLAR
+================================================================================
+
+LOCAL:
+  Backend baslat: py -m uvicorn backend.main:app --reload
+  Patch calistir: py Patch\yeni\patch_xxx.py
+  Tum Python durdur: taskkill /F /IM python.exe
+  Config kontrol: curl.exe http://127.0.0.1:8000/api/engine/config
+
+CLOUD (SSH):
+  Baglan: ssh -i C:\Users\kadir.kumas\.ssh\broker-bot.key ubuntu@92.5.133.137
+  Bot durum: sudo systemctl status broker-bot
+  Bot baslat: sudo systemctl start broker-bot
+  Bot durdur: sudo systemctl stop broker-bot
+  Bot yeniden: sudo systemctl restart broker-bot
+  Canli log: sudo journalctl -u broker-bot -f
+  Port kontrol: sudo ss -tulnp | grep :8000
+  venv aktif: cd ~/Broker_System && source venv/bin/activate
+
+
+================================================================================
+  12. KRITIK NOTLAR
+================================================================================
+
+1. Backend local'de: py -m uvicorn backend.main:app --reload
+2. Cloud'da systemd devraldi
+3. Iki ortam ayni anda calismamali
+4. Testnet anormal fiyat hareketleri
+5. Rate limit: 6000 weight/dk
+6. CRLF sorunu: patch script'leri newline='' ile
+7. Sembol degisimi: window.changeSymbol('XYZ.P')
+8. Islem isaretleme: window.showSymbolTrades('XYZ')
+9. Cloud SSH key: broker-bot.key
+10. Patch oncesi yedek: .bak_ozellik_adi
+
+
+================================================================================
+  13. ILETISIM TARZI
+================================================================================
+
+KULLANICI ISTER:
+  - Kisa soru -> kisa cevap
+  - "Bunu yap" -> hemen yapilir
+  - Secenek sunulunca A/B/C formatinda
+  - Uzun patch tek blok halinde
+
+ASISTAN DAVRANMALI:
+  [+] Dogrudan cevap
+  [+] Kod blogu net
+  [+] Adim numaralari
+  [+] Turkce
+  [+] Once check script, sonra patch
+  [-] "Su satiri bul" deme
+  [-] Gereksiz uzun cevap
+  [-] Basit oneriler (SMA) sunma
+
+
+================================================================================
+  14. ILK MESAJ SABLONU (Yeni Sohbet Icin)
+================================================================================
+
+Merhaba! Devam eden bir projem var. Bu dokumani okuyarak
+baglami anlamani istiyorum. Sonra siradaki konudan devam edelim.
+
+[DOKUMANI YAPISTIR]
+
+SU ANKI DURUM: [KISA ACIKLAMA]
+
+Devam edelim, hazir misin?
+
+
+================================================================================
+  15. SON NOTLAR
+================================================================================
+
+Bu dokuman canli bir dokumandir. Yeni ozellik eklendikce,
+yeni hatalar ciktikca guncellenmelidir.
+
+Yeni sohbet acmadan once bu dokumani guncelleyip yapistir.
+
+Versiyon: 1.0
+Son guncelleme: 21 Eylul 2026
+Toplam konusma: ~130 mesaj
+Proje durumu: Cloud'da calisiyor, testnet stabil
+
+
+================================================================================
+  END OF DOCUMENT
+================================================================================
