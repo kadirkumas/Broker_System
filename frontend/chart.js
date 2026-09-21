@@ -4425,6 +4425,7 @@ document.addEventListener('keydown', function(e) {
         "HMA Length": "Hull Hareketli Ortalama periyodu. Trend yonunu belirler.",
         "Kaynak": "HMA hesaplamasinda kullanilacak fiyat kaynagi (hl2, close, open).",
         "Long Trade": "Yukari yonlu (alis) sinyalleri acilsin mi?",
+        "Min Volatilite (ATR %)": "Minimum ATR% volatilite. Bu degerin altindaki coinlerde sinyal uretilmez. 0 = filtre kapali.",
         "Short Trade": "Asagi yonlu (satis) sinyalleri acilsin mi?",
         "Geriye Dönük Tarama": "Pivot noktalarini bulmak icin geriye bakilacak mum sayisi.",
         "Izgara Tipi": "Geometrik: esit % araliklarla. Aritmetik: esit mutlak araliklarla.",

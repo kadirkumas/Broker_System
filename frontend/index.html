@@ -850,7 +850,7 @@
                             </div>
                             <div class="cfg-row">
                                 <span class="cfg-label" data-tip="Hull Hareketli Ortalama periyodu. Trend yonunu belirler.">HMA Length</span>
-                                <input type="number" class="search-input strat-param" data-strategy="HULL_SRP" data-param="period" value="10" min="2" max="100">
+                                <input type="number" class="search-input strat-param" data-strategy="HULL_SRP" data-param="period" value="20" min="2" max="100">
                             </div>
                             <div class="cfg-row">
                                 <span class="cfg-label" data-tip="HMA hesaplamasinda kullanilacak fiyat kaynagi (hl2, close, open).">Kaynak</span>
@@ -859,6 +859,10 @@
                                     <option value="close">Kapanış</option>
                                     <option value="open">Açılış</option>
                                 </select>
+                            </div>
+                            <div class="cfg-row">
+                                <span class="cfg-label" data-tip="Minimum ATR% volatilite. Bu degerin altindaki coinlerde sinyal uretilmez. 0 = filtre kapali.">Min Volatilite (ATR %)</span>
+                                <input type="number" class="search-input strat-param" data-strategy="HULL_SRP" data-param="minVolatility" value="2.0" min="0" max="20" step="0.1">
                             </div>
                             <div class="cfg-row">
                                 <span class="cfg-label" data-tip="Yukari yonlu (alis) sinyalleri acilsin mi?">Long Trade</span>
@@ -870,7 +874,7 @@
                             <div class="cfg-row">
                                 <span class="cfg-label" data-tip="Asagi yonlu (satis) sinyalleri acilsin mi?">Short Trade</span>
                                 <label class="switch switch-small">
-                                    <input type="checkbox" class="strat-param" data-strategy="HULL_SRP" data-param="shortTrade">
+                                    <input type="checkbox" class="strat-param" data-strategy="HULL_SRP" data-param="shortTrade" checked>
                                     <span class="slider round"></span>
                                 </label>
                             </div>
@@ -883,7 +887,7 @@
                             </div>
                             <div class="cfg-row">
                                 <span class="cfg-label" data-tip="1 = kaldiracli degil. 5x = 5 kat. Kar/zarar kaldiracli oraninda buyur, tasfiye riski artar.">Kaldıraç <span class="lev-badge">X</span></span>
-                                <input type="number" class="search-input strat-param" data-strategy="HULL_SRP" data-param="leverage" value="1" min="1" max="125" step="1" oninput="window.updateMarginPreview('HULL_SRP')">
+                                <input type="number" class="search-input strat-param" data-strategy="HULL_SRP" data-param="leverage" value="5" min="1" max="125" step="1" oninput="window.updateMarginPreview('HULL_SRP')">
                             </div>
                             <div class="cfg-row margin-row">
                                 <span class="cfg-label" data-tip="Bu pozisyon icin hesabinizda kilitlenen gercek teminat = Ilk Islem / Kaldiracli.">💵 Marjin (Kilitlenen)</span>
@@ -899,7 +903,7 @@
                             </div>
                             <div class="cfg-row">
                                 <span class="cfg-label" data-tip="Fiyat girise gore bu yuzde ters giderse pozisyon otomatik kapanir. Zarari sinirlar.">Stop Loss (%)</span>
-                                <input type="number" class="search-input strat-param" data-strategy="HULL_SRP" data-param="stopLoss" value="2.0" min="0.1" step="0.1">
+                                <input type="number" class="search-input strat-param" data-strategy="HULL_SRP" data-param="stopLoss" value="50" min="0.1" step="0.1">
                             </div>
                             <div class="cfg-subtitle">🔁 DCA (Kademeli Alım)</div>
                             <div class="cfg-row">

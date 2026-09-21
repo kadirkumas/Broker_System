@@ -2,6 +2,30 @@ import numpy as np
 from .base import BaseStrategy
 
 
+def _calc_atr(highs, lows, closes, period=14):
+    """Wilder ATR (Average True Range)"""
+    n = len(closes)
+    if n < period + 1:
+        return None
+    
+    trs = []
+    for i in range(1, n):
+        tr = max(
+            highs[i] - lows[i],
+            abs(highs[i] - closes[i - 1]),
+            abs(lows[i] - closes[i - 1])
+        )
+        trs.append(tr)
+    
+    if len(trs) < period:
+        return None
+    
+    atr = sum(trs[:period]) / period
+    for i in range(period, len(trs)):
+        atr = (atr * (period - 1) + trs[i]) / period
+    return atr
+
+
 def _calc_wma(data: list, period: int) -> list:
     """Ağırlıklı hareketli ortalama (WMA)"""
     result = []
@@ -49,6 +73,7 @@ class HullSRPStrategy(BaseStrategy):
         source = self.params.get("source", "hl2")
         long_enabled = self.params.get("longTrade", True)
         short_enabled = self.params.get("shortTrade", False)
+        min_volatility = float(self.params.get("minVolatility", 0))
 
         # Kapanmış mumları kullan
         closed = candles[:-1]
@@ -83,6 +108,21 @@ class HullSRPStrategy(BaseStrategy):
                 "reason": f"Pozisyon açık, HMA={current:.4f}",
                 "meta": {"hma": current}
             }
+
+        # ⚡ Volatilite filtresi (yeni sinyal oncesi)
+        if min_volatility > 0:
+            highs_all = [c["high"] for c in closed]
+            lows_all = [c["low"] for c in closed]
+            closes_all = [c["close"] for c in closed]
+            atr_val = _calc_atr(highs_all, lows_all, closes_all, 14)
+            if atr_val is not None:
+                atr_pct = (atr_val / closes_all[-1]) * 100 if closes_all[-1] > 0 else 0
+                if atr_pct < min_volatility:
+                    return {
+                        "signal": None,
+                        "reason": f"Volatilite dusuk (ATR%={atr_pct:.2f} < {min_volatility})",
+                        "meta": {"hma": current, "atr_pct": atr_pct}
+                    }
 
         if turn_green and long_enabled:
             return {
