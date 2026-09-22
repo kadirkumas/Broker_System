@@ -273,8 +273,8 @@ window.syncTradeLabels = function(idx) {
         if (x === null || yText === null || yLine === null) { lbl.el.style.display = 'none'; lbl.lineEl.style.display = 'none'; return; }
         lbl.el.style.display = 'block'; lbl.lineEl.style.display = 'block';
         let w = lbl.el.offsetWidth, h = lbl.el.offsetHeight, finalX = x - (w / 2), finalY;
-        if (lbl.position === 'aboveBar') { finalY = yText - h - 65; lbl.lineEl.style.left = (x - 15) + 'px'; lbl.lineEl.style.top = (yLine - 1) + 'px'; } 
-        else if (lbl.position === 'belowBar') { finalY = yText + 65; lbl.lineEl.style.left = (x - 15) + 'px'; lbl.lineEl.style.top = (yLine - 1) + 'px'; } 
+        const _yOff = lbl.yOffset || 0; if (lbl.position === 'aboveBar') { const _offset = lbl.colorClass === 'active-entry' ? 65 : 55; finalY = yText - h - _offset - _yOff; lbl.lineEl.style.left = (x - 15) + 'px'; lbl.lineEl.style.top = (yLine - 1) + 'px'; } 
+        else if (lbl.position === 'belowBar') { const _offset = lbl.colorClass === 'active-entry' ? 65 : 55; finalY = yText + _offset + _yOff; lbl.lineEl.style.left = (x - 15) + 'px'; lbl.lineEl.style.top = (yLine - 1) + 'px'; } 
         else if (lbl.position === 'onLine') { finalY = yText - h - 4; finalX = x + 8; lbl.lineEl.style.display = 'none'; }
         lbl.el.style.left = finalX + 'px'; lbl.el.style.top = finalY + 'px';
     });
@@ -635,6 +635,7 @@ window.renderBottomTrades = async function() {
                 ptEnabled: t.pt_enabled || 0,
                 ptDone: t.pt_done || 0,
                 ptPercent: t.pt_percent || 50,
+                dcaHistory: t.dca_history || [],
             });
         });
         
@@ -719,7 +720,47 @@ window.renderBottomTrades = async function() {
             const ptBadge = p.ptDone ? `<span title="Kısmi TP alındı" style="min-width:34px; text-align:center; font-size:10px; font-weight:600; padding:1px 4px; border-radius:3px; background:rgba(252,213,53,0.15); color:#fcd535;">PT✓</span>` : '';
             const volCell = `<span style="display:inline-flex; align-items:center; justify-content:flex-end; gap:6px;"><span style="min-width:68px; text-align:right; color:#EAECEF; font-weight:600;">${p.totalVol.toFixed(2)} USDT</span><span style="min-width:26px; text-align:right; color:#fcd535; font-weight:600; font-size:10px;">${leverage}x</span><span style="min-width:82px; text-align:right; color:#0ECB81; font-weight:600; font-size:10px;">Marjin: ${margin.toFixed(2)}</span><span style="min-width:44px; text-align:center; font-size:10px; font-weight:600; padding:1px 4px; border-radius:3px; ${dcaBg}">${p.dcaCount > 0 ? 'DCA:' + p.dcaCount : 'Ana'}</span>${ptBadge}</span>`;
             
-            html += `<tr class="${isActiveRow}" onclick="window.changeSymbol('${p.displaySymbol}')"><td class="center" style="color:#5d6471; font-size:11px;">${posArray.indexOf(p) + 1}</td><td class="left" style="font-weight:600; cursor:pointer;">${p.displaySymbol}</td><td class="left ${tagClass}">${typeIcon} ${p.type}</td><td class="right" style="font-size:11px;">${volCell}</td><td class="right" style="color:#848e9c;">${window.formatPrice(p.initialPrice || p.avgPrice)}</td><td class="right" style="color:#fcd535; font-weight:600;">${window.formatPrice(p.avgPrice)}</td><td class="right">${window.formatPrice(p.currentPrice)}</td><td class="right" style="color:#F6465D; font-weight:600; font-size:11px;">${liqPrice > 0 ? window.formatPrice(liqPrice) : '—'}</td><td class="right" style="color:${pnlColor}; font-weight:bold;">${sign}${p.pnlPct.toFixed(2)}% (${sign}${p.pnl.toFixed(2)}$)</td><td class="right" style="color:#848e9c;">-${(p.totalVol * getDisplayCommission(p.symbol)).toFixed(4)}$</td><td class="right" style="color:#EAECEF; font-size:11px;">${window.formatDateTime(p.entryTime)}</td><td class="right" style="color:#848e9c;">${timeStr}</td></tr>`;
+            html += `<tr class="${isActiveRow}" onclick="window.changeSymbol('${p.displaySymbol}')"><td class="center" onclick="event.stopPropagation(); window.toggleDcaExpand('${p.symbol}', event);" style="cursor:${p.dcaCount > 0 ? 'pointer' : 'default'}; color:#5d6471; font-size:11px; user-select:none; white-space:nowrap;">${posArray.indexOf(p) + 1}${p.dcaCount > 0 ? (window._expandedDca.has(p.symbol) ? ' <span style="color:#FCD535; font-weight:bold; font-size:9px;">&#9660;</span>' : ' <span style="color:#FCD535; font-size:9px;">&#9654;</span>') : ''}</td><td class="left" style="font-weight:600; cursor:pointer;">${p.displaySymbol}</td><td class="left ${tagClass}">${typeIcon} ${p.type}</td><td class="right" style="font-size:11px;">${volCell}</td><td class="right" style="color:#848e9c;">${window.formatPrice(p.initialPrice || p.avgPrice)}</td><td class="right" style="color:#fcd535; font-weight:600;">${window.formatPrice(p.avgPrice)}</td><td class="right">${window.formatPrice(p.currentPrice)}</td><td class="right" style="color:#F6465D; font-weight:600; font-size:11px;">${liqPrice > 0 ? window.formatPrice(liqPrice) : '—'}</td><td class="right" style="color:${pnlColor}; font-weight:bold;">${sign}${p.pnlPct.toFixed(2)}% (${sign}${p.pnl.toFixed(2)}$)</td><td class="right" style="color:#848e9c;">-${(p.totalVol * getDisplayCommission(p.symbol)).toFixed(4)}$</td><td class="right" style="color:#EAECEF; font-size:11px;">${window.formatDateTime(p.entryTime)}</td><td class="right" style="color:#848e9c;">${timeStr}</td></tr>`;
+
+            // ⚡ DCA Tree: her DCA için alt satır
+            let _dcaHistory = [];
+            try {
+                if (p.dcaHistory) {
+                    _dcaHistory = typeof p.dcaHistory === 'string'
+                        ? JSON.parse(p.dcaHistory)
+                        : p.dcaHistory;
+                }
+            } catch(e) {
+                _dcaHistory = [];
+            }
+
+            if (Array.isArray(_dcaHistory) && _dcaHistory.length > 0 && window._expandedDca.has(p.symbol)) {
+                _dcaHistory.forEach((_dca, _idx) => {
+                    const _isLast = (_idx === _dcaHistory.length - 1);
+                    const _branch = _isLast ? '&#9492;' : '&#9500;';
+                    const _step = _dca.step || (_idx + 1);
+                    const _price = _dca.price || 0;
+                    const _vol = _dca.vol || 0;
+                    const _time = _dca.time || 0;
+                    const _timeStr = _time ? window.formatShortDateTime(_time) : '—';
+
+                    html += `<tr style="background:rgba(252,213,53,0.04); cursor:pointer;" onclick="window.changeSymbol('${p.displaySymbol}')">
+                        <td class="center" style="color:#5d6471; font-size:11px; padding-left:6px;">${_branch}</td>
+                        <td class="left" style="color:#FCD535; font-size:11px; font-weight:600; padding-left:16px;">DCA${_step}</td>
+                        <td class="left"></td>
+                        <td class="right" style="color:#FCD535; font-size:11px; font-weight:600;">+${_vol.toFixed(2)} USDT</td>
+                        <td class="right" style="color:#EAECEF; font-size:11px;">${window.formatPrice(_price)}</td>
+                        <td class="right" style="color:#848e9c; font-size:11px;">${window.formatPrice(_dca.avg_after || _price)}</td>
+                        <td class="right"></td>
+                        <td class="right"></td>
+                        <td class="right"></td>
+                        <td class="right"></td>
+                        <td class="right" style="color:#848e9c; font-size:11px;">${_timeStr}</td>
+                        <td class="right"></td>
+                    </tr>`;
+                });
+            }
+            
         });
         tbody.innerHTML = html;
         
@@ -2673,7 +2714,7 @@ window.showSymbolTrades = async function(symbol, idx = null) {
                 time: entryTime,
                 position: isLong ? 'belowBar' : 'aboveBar',
                 color: '#FCD535',
-                shape: 'circle',
+                shape: 'square',
                 size: 1
             });
             
@@ -2681,24 +2722,37 @@ window.showSymbolTrades = async function(symbol, idx = null) {
             // İlk giriş için çizgi yok - sadece marker ve etiket
             
             const dcaInfo = pos.dca_count > 0 ? ` · D${pos.dca_count}` : '';
-            // Etiket içeriği: giriş fiyatı + varsa ort. fiyat
+            // ⚡ Aktif pozisyon: 2 ayrı etiket (G üstte, DCA altta)
             const avgPrice = pos.avg_price;
             const dcaCount = pos.dca_count || 0;
-            let entryLabelText = `Giriş: ${window.formatPrice(initialPrice)}`;
-            if (dcaCount > 0 && avgPrice && avgPrice !== initialPrice) {
-                entryLabelText += `<br>Ort: ${window.formatPrice(avgPrice)}`;
-            }
 
+            // 1) Giriş etiketi (üstte)
             tradeLabels.push({
                 time: entryTime,
                 price: initialPrice,
                 linePrice: initialPrice,
-                text: entryLabelText,
+                text: `G: ${window.formatPrice(initialPrice)}`,
                 type: isLong ? 'LONG' : 'SHORT',
                 isExit: false,
                 position: isLong ? 'belowBar' : 'aboveBar',
-                colorClass: isLong ? 'long-entry' : 'short-entry'
+                colorClass: 'active-entry',
+                yOffset: 0
             });
+
+            // 2) Ort./DCA etiketi (altta)
+            if (dcaCount > 0 && avgPrice && Math.abs(avgPrice - initialPrice) > 0.000001) {
+                tradeLabels.push({
+                    time: entryTime,
+                    price: initialPrice,
+                    linePrice: avgPrice,
+                    text: `DCA${dcaCount}: ${window.formatPrice(avgPrice)}`,
+                    type: isLong ? 'LONG' : 'SHORT',
+                    isExit: false,
+                    position: isLong ? 'belowBar' : 'aboveBar',
+                    colorClass: 'active-entry',
+                    yOffset: 34
+                });
+            }
             
             // ⚡ DCA kademeleri: dca_history'den gercek zaman + fiyat
             let dcaHistory = [];
@@ -2722,7 +2776,7 @@ window.showSymbolTrades = async function(symbol, idx = null) {
                     if (!dcaPrice || dcaPrice <= 0) return;
 
                     // KIRMIZI cizgi: DCA tetiklenme mumu
-                    addLine(dcaTime - 120, dcaPrice, dcaTime + 120, dcaPrice, 'rgba(252,213,53,0.95)', 2, true);
+                    addLine(dcaTime, dcaPrice, dcaTime + _tfSec, dcaPrice, 'rgba(252,213,53,0.95)', 2, true);
 
                     // DCA etiketi
                     tradeLabels.push({
@@ -5348,4 +5402,19 @@ window.resetBacktestForm = function() {
     document.getElementById('bt-result-section').style.display = 'none';
     window._btState.taskId = null;
     window._btState.currentResult = null;
+};
+
+// =============================================================
+// DCA EXPAND/COLLAPSE
+// =============================================================
+window._expandedDca = window._expandedDca || new Set();
+
+window.toggleDcaExpand = function(symbol, event) {
+    if (event) event.stopPropagation();
+    if (window._expandedDca.has(symbol)) {
+        window._expandedDca.delete(symbol);
+    } else {
+        window._expandedDca.add(symbol);
+    }
+    window.renderBottomTrades();
 };

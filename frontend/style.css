@@ -3017,3 +3017,20 @@ input:checked + .slider:before { transform: translateX(20px); }
     background: #2962ff;
     color: #fff;
 }
+
+/* ============================================================
+   AKTİF POZİSYON ETİKETİ (Geçmiş işlemlerden ayırt edici)
+   ============================================================ */
+.trade-label.active-entry {
+    background-color: #1e222d;
+    color: #FCD535;
+    font-weight: bold;
+    border: 1px solid #FCD535;
+    box-shadow: 0 0 6px rgba(252, 213, 53, 0.35);
+    font-size: 10px;
+    padding: 3px 8px;
+    line-height: 1.3;
+    white-space: nowrap;
+    min-width: 60px;
+    text-align: center;
+}
