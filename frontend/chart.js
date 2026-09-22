@@ -2714,8 +2714,8 @@ window.showSymbolTrades = async function(symbol, idx = null) {
                 time: entryTime,
                 position: isLong ? 'belowBar' : 'aboveBar',
                 color: '#FCD535',
-                shape: 'square',
-                size: 1
+                shape: 'circle',
+                size: 0.5
             });
             
             const lineEndTime = lastTime > entryTime ? lastTime : entryTime + 60;
@@ -2775,8 +2775,17 @@ window.showSymbolTrades = async function(symbol, idx = null) {
 
                     if (!dcaPrice || dcaPrice <= 0) return;
 
-                    // KIRMIZI cizgi: DCA tetiklenme mumu
+                    // DCA cizgi (mum uzerinde yatay)
                     addLine(dcaTime, dcaPrice, dcaTime + _tfSec, dcaPrice, 'rgba(252,213,53,0.95)', 2, true);
+
+                    // DCA icin minik yuvarlak marker (mum ustu/alti)
+                    markers.push({
+                        time: dcaTime,
+                        position: isLong ? 'belowBar' : 'aboveBar',
+                        color: '#FCD535',
+                        shape: 'circle',
+                        size: 0.5
+                    });
 
                     // DCA etiketi
                     tradeLabels.push({
@@ -3552,6 +3561,8 @@ window.defaultPanelSettings = {
     sidebarWidth: 340,
     watchlistWidth: 165,
     toastWidth: 320,
+    tradeLabelWidth: 55,
+    tradeLabelFont: 10,
 };
 
 window.currentPanelSettings = JSON.parse(localStorage.getItem('cryptoPanelSettings_v1')) || { ...window.defaultPanelSettings };
@@ -3562,6 +3573,8 @@ window.applyPanelSettings = function() {
     root.style.setProperty('--sidebar-width', s.sidebarWidth + 'px');
     root.style.setProperty('--watchlist-width', s.watchlistWidth + 'px');
     root.style.setProperty('--toast-width', s.toastWidth + 'px');
+    root.style.setProperty('--trade-label-width', (s.tradeLabelWidth || 55) + 'px');
+    root.style.setProperty('--trade-label-font', (s.tradeLabelFont || 10) + 'px');
     console.log('[PANEL] Genişlikler uygulandı:', s);
 };
 
@@ -3572,10 +3585,15 @@ window.savePanelSettings = function() {
     
     if (!sidebarEl || !watchlistEl || !toastEl) return;
     
+    const labelWEl = document.getElementById('cs-label-width');
+    const labelFEl = document.getElementById('cs-label-font');
+    
     window.currentPanelSettings = {
         sidebarWidth: parseInt(sidebarEl.value) || 340,
         watchlistWidth: parseInt(watchlistEl.value) || 165,
         toastWidth: parseInt(toastEl.value) || 320,
+        tradeLabelWidth: labelWEl ? (parseInt(labelWEl.value) || 55) : 55,
+        tradeLabelFont: labelFEl ? (parseInt(labelFEl.value) || 10) : 10,
     };
     
     localStorage.setItem('cryptoPanelSettings_v1', JSON.stringify(window.currentPanelSettings));
@@ -3592,6 +3610,11 @@ window.loadPanelSettingsToModal = function() {
     if (sidebarEl) sidebarEl.value = s.sidebarWidth;
     if (watchlistEl) watchlistEl.value = s.watchlistWidth;
     if (toastEl) toastEl.value = s.toastWidth;
+    
+    const labelWEl = document.getElementById('cs-label-width');
+    const labelFEl = document.getElementById('cs-label-font');
+    if (labelWEl) labelWEl.value = s.tradeLabelWidth || 55;
+    if (labelFEl) labelFEl.value = s.tradeLabelFont || 10;
 };
 
 window.resetPanelWidths = function() {
@@ -3599,10 +3622,14 @@ window.resetPanelWidths = function() {
     const sidebarEl = document.getElementById('cs-sidebar-width');
     const watchlistEl = document.getElementById('cs-watchlist-width');
     const toastEl = document.getElementById('cs-toast-width');
+    const labelWEl = document.getElementById('cs-label-width');
+    const labelFEl = document.getElementById('cs-label-font');
     
     if (sidebarEl) sidebarEl.value = s.sidebarWidth;
     if (watchlistEl) watchlistEl.value = s.watchlistWidth;
     if (toastEl) toastEl.value = s.toastWidth;
+    if (labelWEl) labelWEl.value = s.tradeLabelWidth;
+    if (labelFEl) labelFEl.value = s.tradeLabelFont;
 };
 
 // Sayfa açılışında uygula
