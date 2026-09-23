@@ -1,4 +1,5 @@
 import time
+import sqlite3
 from binance.client import Client
 from backend.database import get_db_connection
 
@@ -231,18 +232,46 @@ class OrderManager:
 
     def _save_to_db(self, symbol, side, total_vol, avg_price, dca_count, strategy_name, initial_price, initial_vol, leverage=1,
                     pt_enabled=0, pt_percent=50, pt_keep_dca=1, entry_is_maker=0):
-        conn = get_db_connection()
-        conn.execute(
-            """INSERT INTO active_trades 
-               (symbol, trade_type, total_vol, avg_price, dca_count, entry_time, strategy_name, initial_price, initial_vol, leverage,
-                pt_enabled, pt_percent, pt_done, pt_volume, pt_pnl, pt_keep_dca, entry_is_maker) 
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 0, 0, ?, ?)""",
-            (symbol, side, total_vol, avg_price, dca_count, int(time.time()),
-             strategy_name, initial_price, initial_vol, leverage,
-             pt_enabled, pt_percent, pt_keep_dca, entry_is_maker)
-        )
-        conn.commit()
-        conn.close()
+        """⚡ Retry + connection leak fix"""
+        max_retries = 3
+        conn = None
+        for attempt in range(max_retries):
+            try:
+                conn = get_db_connection()
+                conn.execute(
+                    """INSERT INTO active_trades 
+                       (symbol, trade_type, total_vol, avg_price, dca_count, entry_time, strategy_name, initial_price, initial_vol, leverage,
+                        pt_enabled, pt_percent, pt_done, pt_volume, pt_pnl, pt_keep_dca, entry_is_maker) 
+                       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 0, 0, ?, ?)""",
+                    (symbol, side, total_vol, avg_price, dca_count, int(time.time()),
+                     strategy_name, initial_price, initial_vol, leverage,
+                     pt_enabled, pt_percent, pt_keep_dca, entry_is_maker)
+                )
+                conn.commit()
+                return True
+            except sqlite3.IntegrityError:
+                # Duplicate - normal, sessizce don
+                return False
+            except sqlite3.OperationalError as e:
+                if 'database is locked' in str(e).lower() and attempt < max_retries - 1:
+                    time.sleep(0.5 * (attempt + 1))
+                    continue
+                print(f"[!] DB kayit hatasi ({symbol}): {e}")
+                return False
+            except Exception as e:
+                print(f"[!] DB kayit hatasi ({symbol}): {e}")
+                return False
+            finally:
+                # ⚡ HER DURUMDA connection'i kapat
+                if conn is not None:
+                    try:
+                        conn.close()
+                    except Exception:
+                        pass
+                    conn = None
+        return False
+
+
 
     def _place_entry_order_with_fallback(self, symbol, side, qty, price_prec, timeout_sec=3, fallback=True):
         """

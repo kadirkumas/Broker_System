@@ -5,7 +5,14 @@ DB_PATH = os.path.join(os.path.dirname(__file__), 'bot_data.db')
 
 
 def init_db():
-    conn = sqlite3.connect(DB_PATH)
+    conn = sqlite3.connect(DB_PATH, timeout=30.0)
+    # ⚡ WAL mode aktif et (tek seferlik, kalici)
+    try:
+        conn.execute("PRAGMA journal_mode=WAL")
+        conn.execute("PRAGMA busy_timeout=30000")
+        conn.execute("PRAGMA synchronous=NORMAL")
+    except Exception as e:
+        print(f"[DB] WAL init hatasi: {e}")
     cursor = conn.cursor()
 
     # 1. Açık İşlemler
@@ -137,6 +144,14 @@ def init_db():
 
 
 def get_db_connection():
-    conn = sqlite3.connect(DB_PATH)
+    # ⚡ SQLite WAL mode + busy_timeout (concurrent erisim icin)
+    conn = sqlite3.connect(DB_PATH, timeout=30.0)
     conn.row_factory = sqlite3.Row
+    try:
+        conn.execute("PRAGMA journal_mode=WAL")
+        conn.execute("PRAGMA busy_timeout=30000")
+        conn.execute("PRAGMA synchronous=NORMAL")
+        conn.execute("PRAGMA temp_store=MEMORY")
+    except Exception as e:
+        print(f"[DB] PRAGMA hatasi: {e}")
     return conn

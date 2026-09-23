@@ -2,8 +2,9 @@ import asyncio
 import json
 import os
 import time
+import sqlite3
 from binance.client import Client
-from backend.strategies import RSIScalperStrategy, HullSRPStrategy, GridbotScalperStrategy
+from backend.strategies import RSIScalperStrategy, HullSRPStrategy, DynamicGridStrategy
 from backend.database import get_db_connection
 from backend import telegram_notifier
 
@@ -42,21 +43,6 @@ DEFAULT_CONFIG = {
             "partialTPEnabled": False, "partialTPPercent": 50,
             "partialTPKeepDCA": True
         },
-        "GRIDBOT": {
-            "enabled": False,
-            "interval": "15m",
-            "gridType": "geometric",
-            "gridCount": 20,
-            "smaPeriod": 100,
-            "atrPeriod": 14,
-            "atrMultiplier": 5,
-            "baseOrder": 10,
-            "leverage": 5,
-            "takeProfit": 0.6, "trailing": 0.15, "stopLoss": 8.0,
-            "useDCA": True, "volMultiplier": 1.5, "steps": "1, 2, 3, 5",
-            "partialTPEnabled": True, "partialTPPercent": 50,
-            "partialTPKeepDCA": True
-        }
     }
 }
 
@@ -87,6 +73,10 @@ def save_config(cfg: dict):
     """Config'i diske yazar."""
     with open(CONFIG_PATH, "w", encoding="utf-8") as f:
         json.dump(cfg, f, indent=2, ensure_ascii=False)
+
+
+# ⚡ Global DB write lock - ayni anda tek yazici
+_DB_WRITE_LOCK = asyncio.Lock()
 
 
 class StrategyEngine:
@@ -198,7 +188,7 @@ class StrategyEngine:
     # ------------------------------------------------------------------
     # Mum çekme
     # ------------------------------------------------------------------
-    async def fetch_candles(self, symbol: str, interval: str, limit: int = 500):
+    async def fetch_candles(self, symbol: str, interval: str, limit: int = 200):
         try:
             klines = await asyncio.to_thread(
                 self.client.futures_klines,
@@ -229,8 +219,8 @@ class StrategyEngine:
             return RSIScalperStrategy(strat_cfg)
         elif strategy_name == "HULL_SRP":
             return HullSRPStrategy(strat_cfg)
-        elif strategy_name == "GRIDBOT":
-            return GridbotScalperStrategy(strat_cfg)
+        elif strategy_name == "DYNAMIC_GRID":
+            return DynamicGridStrategy(strat_cfg)
         return None
 
     # ------------------------------------------------------------------
@@ -238,20 +228,41 @@ class StrategyEngine:
     # ------------------------------------------------------------------
     def _save_signal_to_db(self, signal_id, symbol, strategy_name, signal_type,
                             price, qty, total_usdt, candle_time, created_ms, opened=1, skip_reason=None):
-        try:
-            conn = get_db_connection()
-            conn.execute(
-                """INSERT OR IGNORE INTO signals 
-                   (signal_id, symbol, strategy_name, signal, price, qty, total_usdt, 
-                    candle_time, created_at, opened_position, skip_reason)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-                (signal_id, symbol, strategy_name, signal_type, price, qty,
-                 total_usdt, candle_time, created_ms, opened, skip_reason)
-            )
-            conn.commit()
-            conn.close()
-        except Exception as e:
-            print(f"[!] Sinyal DB kayıt hatası: {e}")
+        """⚡ Retry + connection leak fix"""
+        max_retries = 3
+        conn = None
+        for attempt in range(max_retries):
+            try:
+                conn = get_db_connection()
+                conn.execute(
+                    """INSERT OR IGNORE INTO signals 
+                       (signal_id, symbol, strategy_name, signal, price, qty, total_usdt, 
+                        candle_time, created_at, opened_position, skip_reason)
+                       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                    (signal_id, symbol, strategy_name, signal_type, price, qty,
+                     total_usdt, candle_time, created_ms, opened, skip_reason)
+                )
+                conn.commit()
+                return True
+            except sqlite3.OperationalError as e:
+                if 'database is locked' in str(e).lower() and attempt < max_retries - 1:
+                    time.sleep(0.5 * (attempt + 1))
+                    continue
+                print(f"[!] Sinyal DB hatasi ({symbol}): {e}")
+                return False
+            except Exception as e:
+                print(f"[!] Sinyal DB hatasi ({symbol}): {e}")
+                return False
+            finally:
+                # ⚡ HER DURUMDA connection'i kapat
+                if conn is not None:
+                    try:
+                        conn.close()
+                    except Exception:
+                        pass
+                    conn = None
+        return False
+
 
     # ------------------------------------------------------------------
     # Tek stratejiyi tüm sembollerde çalıştır (PARALEL BATCH)
@@ -264,16 +275,21 @@ class StrategyEngine:
 
         interval = strat_cfg.get("interval", "5m")
 
-        BATCH_SIZE = 1
+        BATCH_SIZE = 3
         for batch_start in range(0, len(self.symbols), BATCH_SIZE):
             if not self.is_running:
+                return
+
+            # ⚡ RACE-CONDITION GUARD: Bot pasifse tarama derhal durdur
+            if not self.config.get("active", False):
+                print(f"[SCAN] Bot pasif -> tarama durduruldu (batch {batch_start}/{len(self.symbols)})")
                 return
             batch = self.symbols[batch_start:batch_start + BATCH_SIZE]
             await asyncio.gather(*[
                 self._process_symbol(sym, strategy_name, strategy, strat_cfg, interval, candle_cache)
                 for sym in batch
             ], return_exceptions=True)
-            await asyncio.sleep(1.2)
+            await asyncio.sleep(1.5)
 
     # ------------------------------------------------------------------
     # Tek sembol işleme
@@ -291,7 +307,7 @@ class StrategyEngine:
             if cache_key in candle_cache:
                 candles = candle_cache[cache_key]
             else:
-                candles = await self.fetch_candles(symbol, interval, 500)
+                candles = await self.fetch_candles(symbol, interval, 200)
                 candle_cache[cache_key] = candles
 
             if not candles:
@@ -353,6 +369,16 @@ class StrategyEngine:
                         signal_id, symbol, strategy_name, result["signal"],
                         current_price, qty, base_order, candle_time, created_ms,
                         opened=0, skip_reason=risk_reason
+                    )
+                    self.last_signal_candle[signal_key] = candle_time
+                    return
+
+                # ⚡ RACE-CONDITION GUARD: Emir açmadan önce bot aktif mi?
+                if not self.config.get("active", False):
+                    self._save_signal_to_db(
+                        signal_id, symbol, strategy_name, result["signal"],
+                        current_price, qty, base_order, candle_time, created_ms,
+                        opened=0, skip_reason="Bot pasif (guard)"
                     )
                     self.last_signal_candle[signal_key] = candle_time
                     return
@@ -434,7 +460,7 @@ class StrategyEngine:
                 self.config = load_config()
 
                 if not self.config.get("active", False):
-                    await asyncio.sleep(5)
+                    await asyncio.sleep(1.5)
                     continue
 
                 self.stats["scans"] += 1
@@ -566,7 +592,7 @@ class StrategyEngine:
                 return
             except Exception as e:
                 print(f"[!] Position loop hata: {e}")
-                await asyncio.sleep(5)
+                await asyncio.sleep(1.5)
 
     # ------------------------------------------------------------------
     # Başlat / durdur

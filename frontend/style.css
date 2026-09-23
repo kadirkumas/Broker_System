@@ -493,7 +493,7 @@ input:checked + .slider:before { transform: translateX(20px); }
    BOT CONFIG MODAL - KOMPAKT 3 SÜTUNLU TASARIM
    ============================================================ */
 .modal-wide {
-    width: 1080px !important;
+    width: 1300px !important;
     max-width: 95vw !important;
     height: auto !important;
     max-height: 88vh !important;
@@ -544,7 +544,7 @@ input:checked + .slider:before { transform: translateX(20px); }
 
 .strategies-grid {
     display: grid;
-    grid-template-columns: repeat(3, 1fr);
+    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
     gap: 10px;
 }
 
@@ -3033,4 +3033,23 @@ input:checked + .slider:before { transform: translateX(20px); }
     white-space: nowrap;
     min-width: var(--trade-label-width, 55px);
     text-align: center;
+}
+
+/* ============================================================
+   BACKTEST - BAT INDIR BUTONU
+   ============================================================ */
+.btn-warning {
+    background: #fcd535;
+    color: #0b0e14;
+    padding: 10px 30px;
+    font-size: 14px;
+    font-weight: bold;
+    border: none;
+    border-radius: 6px;
+    cursor: pointer;
+    transition: all 0.15s;
+}
+.btn-warning:hover {
+    background: #ffdd44;
+    box-shadow: 0 0 15px rgba(252, 213, 53, 0.5);
 }

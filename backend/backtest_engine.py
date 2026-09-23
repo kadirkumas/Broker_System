@@ -5,7 +5,7 @@ Async task olarak calisir, progress raporlanir.
 import time
 import traceback
 from datetime import datetime
-from backend.strategies import RSIScalperStrategy, HullSRPStrategy, GridbotScalperStrategy
+from backend.strategies import RSIScalperStrategy, HullSRPStrategy
 
 
 # In-memory task store
@@ -37,8 +37,6 @@ def get_strategy(name, params):
         return RSIScalperStrategy(params)
     elif name == "HULL_SRP":
         return HullSRPStrategy(params)
-    elif name == "GRIDBOT":
-        return GridbotScalperStrategy(params)
     return None
 
 

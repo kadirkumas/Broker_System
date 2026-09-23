@@ -1,17 +1,17 @@
 {
   "active": true,
-  "scan_interval_seconds": 1800,
+  "scan_interval_seconds": 900,
   "position_check_seconds": 6,
-  "max_symbols": 30,
+  "max_symbols": 300,
   "auto_close_delisted": true,
   "daily_max_loss": 5,
-  "max_open_positions": 200,
+  "max_open_positions": 100,
   "useLimitOrder": true,
   "limitTimeoutSec": 5,
   "fallbackToMarket": true,
   "strategies": {
     "RSI_SCALPER": {
-      "enabled": true,
+      "enabled": false,
       "interval": "1m",
       "period": 7,
       "longOp": "<",
@@ -31,7 +31,7 @@
       "partialTPKeepDCA": true
     },
     "HULL_SRP": {
-      "enabled": true,
+      "enabled": false,
       "interval": "4h",
       "period": 20,
       "source": "close",
@@ -50,30 +50,32 @@
       "partialTPPercent": 50,
       "partialTPKeepDCA": true
     },
-    "GRIDBOT": {
-      "enabled": false,
-      "interval": "15m",
-      "gridType": "geometric",
-      "gridCount": 6,
+    "DYNAMIC_GRID": {
+      "enabled": true,
+      "interval": "1m",
+      "mode": "neutral",
+      "distributionType": "arithmetic",
+      "gridCount": 20,
       "smaPeriod": 100,
+      "pivotLookback": 100,
       "atrPeriod": 14,
-      "atrMultiplier": 5,
-      "baseOrder": 5,
+      "atrMultiplier": 8,
+      "minWidthRatio": 0.4,
+      "maxWidthRatio": 0.8,
+      "asymmetryRatio": 1.3,
+      "recenterHours": 24,
+      "recenterBuffer": 0.03,
+      "baseOrder": 10,
       "leverage": 5,
-      "takeProfit": 0.6,
-      "trailing": 0.15,
-      "stopLoss": 8,
+      "takeProfit": 1,
+      "trailing": 0.2,
+      "stopLoss": 5,
       "useDCA": true,
-      "volMultiplier": 1.5,
-      "steps": "1, 2, 3, 5",
+      "volMultiplier": 1,
+      "steps": "1, 2, 3, 5, 8",
       "partialTPEnabled": true,
       "partialTPPercent": 50,
       "partialTPKeepDCA": true
     }
-  },
-  "telegram": {
-    "notify_signals": false,
-    "notify_closes": true,
-    "notify_delisting": false
   }
 }

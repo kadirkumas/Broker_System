@@ -472,6 +472,10 @@
 
                     <div class="bt-action-row">
                         <button class="btn-success" onclick="startBacktest()" id="bt-run-btn" style="padding: 10px 30px; font-size: 14px;">🚀 ÇALIŞTIR</button>
+                        <button class="btn-warning" onclick="downloadBacktestBat()" id="bt-bat-btn" style="padding: 10px 30px; font-size: 14px; background: #fcd535; color: #0b0e14; border: none; cursor: pointer; border-radius: 6px; font-weight: bold;">📥 BAT İndir (CMD Hızlı)</button>
+                    </div>
+                    <div style="text-align:center; font-size:10px; color:#848e9c; margin-top:6px;">
+                        BAT İndir → masaüstüne .bat kaydedilir → çift tıkla → CMD'de hızlı çalışır (tarayıcı beklemez)
                     </div>
                 </div>
 
@@ -614,12 +618,12 @@
                             <span class="ind-name">HULL/Hl2 - SRP EXIT</span>
                             <span class="ind-author">by_kadir</span>
                         </li>
-                        <li class="ind-li" onclick="openIndConfig('GRIDBOT')">
-                            <span class="ind-name">GRIDBOT Scalper</span>
-                            <span class="ind-author">Kullanıcı Stratejisi</span>
-                        </li>
                         <li class="ind-li" onclick="openIndConfig('RSI_SCALPER')">
                             <span class="ind-name">RSI Scalper</span>
+                            <span class="ind-author">Kullanıcı Stratejisi</span>
+                        </li>
+                        <li class="ind-li" onclick="openIndConfig('DYNAMIC_GRID')">
+                            <span class="ind-name">Dynamic Grid</span>
                             <span class="ind-author">Kullanıcı Stratejisi</span>
                         </li>
                     </ul>
@@ -946,21 +950,21 @@
                         </div>
                     </div>
 
-                    <div class="strategy-panel" data-strategy="GRIDBOT">
+                    <div class="strategy-panel" data-strategy="DYNAMIC_GRID">
                         <div class="strategy-header">
                             <div class="strategy-title">
-                                <span class="strategy-dot" style="background:#fcd535;"></span>
-                                GRIDBOT Scalper
+                                <span class="strategy-dot" style="background:#a855f7;"></span>
+                                Dynamic Grid
                             </div>
                             <label class="switch">
-                                <input type="checkbox" class="strat-enabled" data-strategy="GRIDBOT">
+                                <input type="checkbox" class="strat-enabled" data-strategy="DYNAMIC_GRID">
                                 <span class="slider round"></span>
                             </label>
                         </div>
                         <div class="strategy-body">
                             <div class="cfg-row">
-                                <span class="cfg-label" data-tip="Stratejinin hangi mum periyodunda calisacagi (1m, 5m, 15m, 1h, 4h).">Zaman Dilimi</span>
-                                <select class="search-input strat-interval" data-strategy="GRIDBOT">
+                                <span class="cfg-label">Zaman Dilimi</span>
+                                <select class="search-input strat-interval" data-strategy="DYNAMIC_GRID">
                                     <option value="1m">1m</option>
                                     <option value="5m">5m</option>
                                     <option value="15m">15m</option>
@@ -969,87 +973,125 @@
                                 </select>
                             </div>
                             <div class="cfg-row">
-                                <span class="cfg-label" data-tip="Geometrik: esit % araliklarla. Aritmetik: esit mutlak araliklarla.">Izgara Tipi</span>
-                                <select class="search-input strat-param" data-strategy="GRIDBOT" data-param="gridType">
-                                    <option value="geometric">Geometrik</option>
-                                    <option value="arithmetic">Aritmetik</option>
+                                <span class="cfg-label">Mod</span>
+                                <select class="search-input strat-param" data-strategy="DYNAMIC_GRID" data-param="mode">
+                                    <option value="neutral">Neutral (L+S)</option>
+                                    <option value="long">Long only</option>
+                                    <option value="short">Short only</option>
                                 </select>
                             </div>
                             <div class="cfg-row">
-                                <span class="cfg-label" data-tip="Toplam izgara seviyesi sayisi (merkez alti + ustu). 20 = 10 BUY + 10 SELL.">Izgara Sayısı</span>
-                                <input type="number" class="search-input strat-param" data-strategy="GRIDBOT" data-param="gridCount" value="20" min="4" max="100" step="2">
+                                <span class="cfg-label">Dağılım</span>
+                                <select class="search-input strat-param" data-strategy="DYNAMIC_GRID" data-param="distributionType">
+                                    <option value="arithmetic">Aritmetik</option>
+                                    <option value="geometric">Geometrik</option>
+                                </select>
                             </div>
                             <div class="cfg-row">
-                                <span class="cfg-label" data-tip="Izgara merkezini belirleyen SMA periyodu. Buyuk deger = daha stabil merkez.">SMA Periyot</span>
-                                <input type="number" class="search-input strat-param" data-strategy="GRIDBOT" data-param="smaPeriod" value="100" min="10" max="500" step="10">
+                                <span class="cfg-label">Izgara Sayısı</span>
+                                <input type="number" class="search-input strat-param" data-strategy="DYNAMIC_GRID" data-param="gridCount" value="20" min="4" max="100" step="2">
+                            </div>
+                        </div>
+                        <div class="strategy-body">
+                            <div class="cfg-subtitle">📊 Referans &amp; Genişlik</div>
+                            <div class="cfg-row">
+                                <span class="cfg-label">SMA Period</span>
+                                <input type="number" class="search-input strat-param" data-strategy="DYNAMIC_GRID" data-param="smaPeriod" value="100" min="20" max="500" step="10">
                             </div>
                             <div class="cfg-row">
-                                <span class="cfg-label" data-tip="ATR periyodu. Piyasa volatilitesini olcer.">ATR Periyot</span>
-                                <input type="number" class="search-input strat-param" data-strategy="GRIDBOT" data-param="atrPeriod" value="14" min="2" max="100">
+                                <span class="cfg-label">Pivot Lookback</span>
+                                <input type="number" class="search-input strat-param" data-strategy="DYNAMIC_GRID" data-param="pivotLookback" value="100" min="20" max="500" step="10">
                             </div>
                             <div class="cfg-row">
-                                <span class="cfg-label" data-tip="Izgara genisligi carpani. Genislik = ATR x bu deger. Buyuk = genis izgara.">ATR Çarpan</span>
-                                <input type="number" class="search-input strat-param" data-strategy="GRIDBOT" data-param="atrMultiplier" value="10" min="1" max="20" step="0.5">
+                                <span class="cfg-label">ATR Period</span>
+                                <input type="number" class="search-input strat-param" data-strategy="DYNAMIC_GRID" data-param="atrPeriod" value="14" min="2" max="100">
+                            </div>
+                            <div class="cfg-row">
+                                <span class="cfg-label">ATR Çarpan</span>
+                                <input type="number" class="search-input strat-param" data-strategy="DYNAMIC_GRID" data-param="atrMultiplier" value="8" min="1" max="20" step="0.5">
+                            </div>
+                            <div class="cfg-row">
+                                <span class="cfg-label">Min Genişlik (oran)</span>
+                                <input type="number" class="search-input strat-param" data-strategy="DYNAMIC_GRID" data-param="minWidthRatio" value="0.4" min="0.1" max="1" step="0.05">
+                            </div>
+                            <div class="cfg-row">
+                                <span class="cfg-label">Max Genişlik (oran)</span>
+                                <input type="number" class="search-input strat-param" data-strategy="DYNAMIC_GRID" data-param="maxWidthRatio" value="0.8" min="0.2" max="1" step="0.05">
+                            </div>
+                            <div class="cfg-row">
+                                <span class="cfg-label">Asimetri (1.0 = simetrik)</span>
+                                <input type="number" class="search-input strat-param" data-strategy="DYNAMIC_GRID" data-param="asymmetryRatio" value="1.3" min="0.5" max="1.5" step="0.05">
+                            </div>
+                        </div>
+                        <div class="strategy-body">
+                            <div class="cfg-subtitle">🔄 Recenter</div>
+                            <div class="cfg-row">
+                                <span class="cfg-label">Recenter (saat)</span>
+                                <input type="number" class="search-input strat-param" data-strategy="DYNAMIC_GRID" data-param="recenterHours" value="24" min="1" max="168" step="1">
+                            </div>
+                            <div class="cfg-row">
+                                <span class="cfg-label">Recenter Buffer (%)</span>
+                                <input type="number" class="search-input strat-param" data-strategy="DYNAMIC_GRID" data-param="recenterBuffer" value="3" min="0" max="20" step="0.5">
                             </div>
                         </div>
                         <div class="strategy-body strategy-trade-section">
                             <div class="cfg-subtitle">💰 İşlem Ayarları</div>
                             <div class="cfg-row">
-                                <span class="cfg-label" data-tip="Pozisyon acilisinda kullanilacak USDT miktari (kaldiracli degil, saf teminat).">İlk İşlem (USDT)</span>
-                                <input type="number" class="search-input strat-param" data-strategy="GRIDBOT" data-param="baseOrder" value="10" min="1" step="1" oninput="window.updateMarginPreview('GRIDBOT')">
+                                <span class="cfg-label">İlk İşlem (USDT)</span>
+                                <input type="number" class="search-input strat-param" data-strategy="DYNAMIC_GRID" data-param="baseOrder" value="5" min="1" step="1" oninput="window.updateMarginPreview('DYNAMIC_GRID')">
                             </div>
                             <div class="cfg-row">
-                                <span class="cfg-label" data-tip="1 = kaldiracli degil. 5x = 5 kat. Kar/zarar kaldiracli oraninda buyur, tasfiye riski artar.">Kaldıraç <span class="lev-badge">X</span></span>
-                                <input type="number" class="search-input strat-param" data-strategy="GRIDBOT" data-param="leverage" value="5" min="1" max="125" step="1" oninput="window.updateMarginPreview('GRIDBOT')">
+                                <span class="cfg-label">Kaldıraç <span class="lev-badge">X</span></span>
+                                <input type="number" class="search-input strat-param" data-strategy="DYNAMIC_GRID" data-param="leverage" value="5" min="1" max="125" step="1" oninput="window.updateMarginPreview('DYNAMIC_GRID')">
                             </div>
                             <div class="cfg-row margin-row">
-                                <span class="cfg-label" data-tip="Bu pozisyon icin hesabinizda kilitlenen gercek teminat = Ilk Islem / Kaldiracli.">💵 Marjin (Kilitlenen)</span>
-                                <span id="margin-preview-GRIDBOT" class="margin-preview">10.00 USDT</span>
+                                <span class="cfg-label">💵 Marjin (Kilitlenen)</span>
+                                <span id="margin-preview-DYNAMIC_GRID" class="margin-preview">1.00 USDT</span>
                             </div>
                             <div class="cfg-row">
-                                <span class="cfg-label" data-tip="Pozisyon bu kar yuzdesine ulastiginda Izleyen Stop aktif olur. Ornek: 1.5 = %1.5 kar.">Hedef Kâr (%)</span>
-                                <input type="number" class="search-input strat-param" data-strategy="GRIDBOT" data-param="takeProfit" value="0.6" min="0.1" step="0.1">
+                                <span class="cfg-label">Hedef Kâr (%)</span>
+                                <input type="number" class="search-input strat-param" data-strategy="DYNAMIC_GRID" data-param="takeProfit" value="0.5" min="0.1" step="0.1">
                             </div>
                             <div class="cfg-row">
-                                <span class="cfg-label" data-tip="Fiyat tepe noktasindan bu yuzde kadar geri cekilirse pozisyon kapatilir. Kari korur.">İzleyen Stop (%)</span>
-                                <input type="number" class="search-input strat-param" data-strategy="GRIDBOT" data-param="trailing" value="0.15" min="0.1" step="0.1">
+                                <span class="cfg-label">İzleyen Stop (%)</span>
+                                <input type="number" class="search-input strat-param" data-strategy="DYNAMIC_GRID" data-param="trailing" value="0.2" min="0.1" step="0.1">
                             </div>
                             <div class="cfg-row">
-                                <span class="cfg-label" data-tip="Fiyat girise gore bu yuzde ters giderse pozisyon otomatik kapanir. Zarari sinirlar.">Stop Loss (%)</span>
-                                <input type="number" class="search-input strat-param" data-strategy="GRIDBOT" data-param="stopLoss" value="8.0" min="0.1" step="0.1">
+                                <span class="cfg-label">Stop Loss (%)</span>
+                                <input type="number" class="search-input strat-param" data-strategy="DYNAMIC_GRID" data-param="stopLoss" value="8" min="0.1" step="0.1">
                             </div>
                             <div class="cfg-subtitle">🔁 DCA (Kademeli Alım)</div>
                             <div class="cfg-row">
-                                <span class="cfg-label" data-tip="Kademeli alim. Fiyat ters giderse ek alim yapar ve ortalama maliyeti dusurur.">DCA Aktif</span>
+                                <span class="cfg-label">DCA Aktif</span>
                                 <label class="switch switch-small">
-                                    <input type="checkbox" class="strat-param" data-strategy="GRIDBOT" data-param="useDCA" checked>
+                                    <input type="checkbox" class="strat-param" data-strategy="DYNAMIC_GRID" data-param="useDCA" checked>
                                     <span class="slider round"></span>
                                 </label>
                             </div>
                             <div class="cfg-row">
-                                <span class="cfg-label" data-tip="Her DCA kademesinde eklenecek hacim carpani. 1.2 = her kademe 1.2x onceki hacim.">Hacim Çarpanı</span>
-                                <input type="number" class="search-input strat-param" data-strategy="GRIDBOT" data-param="volMultiplier" value="1.5" min="1" step="0.1">
+                                <span class="cfg-label">Hacim Çarpanı</span>
+                                <input type="number" class="search-input strat-param" data-strategy="DYNAMIC_GRID" data-param="volMultiplier" value="1.2" min="1" step="0.1">
                             </div>
                             <div class="cfg-row">
-                                <span class="cfg-label" data-tip="Her DCA kademesinin hangi yuzde dususte tetiklenecegi. Ornek: 5,10,15,20.">Düşüş Adımları (%)</span>
-                                <input type="text" class="search-input strat-param" data-strategy="GRIDBOT" data-param="steps" value="1, 2, 3, 5">
+                                <span class="cfg-label">Düşüş Adımları (%)</span>
+                                <input type="text" class="search-input strat-param" data-strategy="DYNAMIC_GRID" data-param="steps" value="1, 2, 3, 5, 8">
                             </div>
-                            <div class="cfg-subtitle">🎯 Kısmi TP (Partial Take Profit)</div>
+                            <div class="cfg-subtitle">🎯 Kısmi TP</div>
                             <div class="cfg-row">
-                                <span class="cfg-label" data-tip="Pozisyon kara gectiginde tamamini kapatmak yerine bir kismini kapatir, kalani trendde tutar.">Kısmi TP Aktif</span>
+                                <span class="cfg-label">Kısmi TP Aktif</span>
                                 <label class="switch switch-small">
-                                    <input type="checkbox" class="strat-param" data-strategy="GRIDBOT" data-param="partialTPEnabled" checked>
+                                    <input type="checkbox" class="strat-param" data-strategy="DYNAMIC_GRID" data-param="partialTPEnabled" checked>
                                     <span class="slider round"></span>
                                 </label>
                             </div>
                             <div class="cfg-row">
-                                <span class="cfg-label" data-tip="Kismi TP'de kapatilacak pozisyon yuzdesi. 50 = pozisyonun yarisi kapatilir.">Kapatma Oranı (%)</span>
-                                <input type="number" class="search-input strat-param" data-strategy="GRIDBOT" data-param="partialTPPercent" value="50" min="1" max="99" step="1">
+                                <span class="cfg-label">Kapatma Oranı (%)</span>
+                                <input type="number" class="search-input strat-param" data-strategy="DYNAMIC_GRID" data-param="partialTPPercent" value="50" min="1" max="99" step="1">
                             </div>
                             <div class="cfg-row">
-                                <span class="cfg-label" data-tip="Kismi TP sonrasi kalan pozisyon icin DCA kademeleri aktif kalsin mi?">PT Sonrası DCA</span>
+                                <span class="cfg-label">PT Sonrası DCA</span>
                                 <label class="switch switch-small">
-                                    <input type="checkbox" class="strat-param" data-strategy="GRIDBOT" data-param="partialTPKeepDCA" checked>
+                                    <input type="checkbox" class="strat-param" data-strategy="DYNAMIC_GRID" data-param="partialTPKeepDCA" checked>
                                     <span class="slider round"></span>
                                 </label>
                             </div>
