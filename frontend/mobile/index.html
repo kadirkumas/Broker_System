@@ -1,0 +1,187 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <meta name="theme-color" content="#0b0e14">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="Broker">
+    <title>Broker Mobile</title>
+    <link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
+    <link rel="stylesheet" href="/static/mobile/mobile.css">
+</head>
+<body>
+
+    <!-- ⚡ PIN KILIDI OVERLAY -->
+    <div id="pin-overlay" class="pin-overlay" style="display:none;">
+        <div class="pin-box">
+            <div class="pin-logo">🔒</div>
+            <div class="pin-title" id="pin-title">PIN Girin</div>
+            <div class="pin-subtitle" id="pin-subtitle">Mobil dashboard kilidi</div>
+
+            <div class="pin-dots" id="pin-dots">
+                <span class="pin-dot"></span>
+                <span class="pin-dot"></span>
+                <span class="pin-dot"></span>
+                <span class="pin-dot"></span>
+            </div>
+
+            <div class="pin-error" id="pin-error"></div>
+
+            <div class="pin-keypad" id="pin-keypad">
+                <button class="pin-btn" data-key="1">1</button>
+                <button class="pin-btn" data-key="2">2</button>
+                <button class="pin-btn" data-key="3">3</button>
+                <button class="pin-btn" data-key="4">4</button>
+                <button class="pin-btn" data-key="5">5</button>
+                <button class="pin-btn" data-key="6">6</button>
+                <button class="pin-btn" data-key="7">7</button>
+                <button class="pin-btn" data-key="8">8</button>
+                <button class="pin-btn" data-key="9">9</button>
+                <button class="pin-btn pin-btn-empty"></button>
+                <button class="pin-btn" data-key="0">0</button>
+                <button class="pin-btn pin-btn-back" id="pin-back">⌫</button>
+            </div>
+
+            <div class="pin-links">
+                <a href="#" id="pin-forgot" class="pin-link">PIN'i sifirla</a>
+            </div>
+        </div>
+    </div>
+
+    <div class="app">
+
+        <!-- HEADER -->
+        <header class="hdr">
+            <div class="hdr-title">
+                <span class="hdr-logo">⚡</span>
+                <span>Broker</span>
+            </div>
+            <div class="hdr-actions">
+                <button class="hdr-btn" id="btn-refresh" title="Yenile">🔄</button>
+                <a class="hdr-btn" href="/?desktop=1" title="Masaüstü görünüm">🖥️</a>
+            </div>
+        </header>
+
+        <!-- DURUM ÇUBUĞU -->
+        <div class="status-bar" id="status-bar">
+            <span class="status-dot" id="bot-dot"></span>
+            <span id="bot-text">Yükleniyor...</span>
+        </div>
+
+        <!-- CÜZDAN + BUGÜN -->
+        <section class="card c-wallet">
+            <div class="row-2col">
+                <div>
+                    <div class="lbl">CÜZDAN</div>
+                    <div class="val-big" id="wallet-balance">--</div>
+                </div>
+                <div class="text-right">
+                    <div class="lbl">BUGÜN</div>
+                    <div class="val-big" id="daily-pnl">--</div>
+                </div>
+            </div>
+        </section>
+
+        <!-- RİSK -->
+        <section class="card c-risk" id="risk-card">
+            <div class="row-between">
+                <div class="lbl">⚠️ RİSK DURUMU</div>
+                <div class="risk-badge-inline" id="risk-badge">--</div>
+            </div>
+            <div class="risk-bar-track">
+                <div class="risk-bar-fill" id="risk-bar" style="width:0%"></div>
+            </div>
+            <div class="row-3col risk-stats">
+                <div>
+                    <div class="lbl-s">KULLANILAN</div>
+                    <div class="val-s" id="risk-used">--</div>
+                </div>
+                <div>
+                    <div class="lbl-s">SERBEST</div>
+                    <div class="val-s" id="risk-free">--</div>
+                </div>
+                <div>
+                    <div class="lbl-s">LİKİT MES.</div>
+                    <div class="val-s" id="risk-liq">--</div>
+                </div>
+            </div>
+        </section>
+
+        <!-- BUGÜN ÖZET -->
+        <section class="card">
+            <div class="lbl">📉 BUGÜN</div>
+            <div class="row-3col">
+                <div>
+                    <div class="lbl-s">İŞLEM</div>
+                    <div class="val-s" id="daily-count">--</div>
+                </div>
+                <div>
+                    <div class="lbl-s">KAZANAN</div>
+                    <div class="val-s val-green" id="daily-wins">--</div>
+                </div>
+                <div>
+                    <div class="lbl-s">KAYBEDEN</div>
+                    <div class="val-s val-red" id="daily-losses">--</div>
+                </div>
+            </div>
+        </section>  <!-- MOBILE-REORDER-APPLIED -->
+
+        <!-- POZİSYONLAR -->
+        <section class="card">
+            <div class="row-between">
+                <div class="lbl">📊 AÇIK POZİSYONLAR (<span id="pos-count">0</span>)</div>
+                <button class="collapse-btn" data-target="pos-list">▼</button>
+            </div>
+            <div class="list" id="pos-list">
+                <div class="empty">Yükleniyor...</div>
+            </div>
+        </section>
+
+        
+
+        <!-- SON SİNYALLER -->
+        <section class="card">
+            <div class="row-between">
+                <div class="lbl">🔔 SON SİNYALLER</div>
+                <button class="collapse-btn" data-target="sig-list">▼</button>
+            </div>
+            <div class="list" id="sig-list">
+                <div class="empty">Yükleniyor...</div>
+            </div>
+        </section>
+
+        <!-- BOT TOGGLE -->
+        <section class="card c-bot">
+            <div class="row-between">
+                <div class="lbl">🤖 BOT</div>
+                <button class="bot-toggle" id="bot-toggle">--</button>
+            </div>
+        </section>
+
+        <!-- FOOTER -->
+        <footer class="footer">
+            <span id="last-update">--</span>
+            <a href="/?desktop=1" class="footer-link">Masaüstü</a>
+        </footer>
+    </div>
+
+    <!-- POZİSYON DETAY MODAL -->
+    <div class="modal" id="pos-modal" style="display:none;">
+        <div class="modal-content">
+            <div class="modal-hdr">
+                <h3 id="pos-modal-title">Pozisyon</h3>
+                <button class="modal-close" onclick="closePosModal()">✕</button>
+            </div>
+            <div class="modal-body" id="pos-modal-body"></div>
+            <div class="modal-footer">
+                <button class="btn btn-danger" id="btn-close-pos">Pozisyonu Kapat</button>
+                <button class="btn btn-secondary" onclick="closePosModal()">İptal</button>
+            </div>
+        </div>
+    </div>
+
+    <script src="/static/mobile/mobile.js"></script>
+</body>
+</html>

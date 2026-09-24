@@ -6,7 +6,7 @@ import base64
 import secrets
 from pathlib import Path
 
-from fastapi import FastAPI
+from fastapi import Request, FastAPI
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, RedirectResponse
 from starlette.staticfiles import StaticFiles as StarletteStaticFiles
@@ -193,8 +193,31 @@ async def dev_restart():
 # ----------------------------------------------------------------------
 # TEMEL
 # ----------------------------------------------------------------------
+@app.get("/m")
+async def mobile_index():
+    """Mobil dashboard (izole)."""
+    return FileResponse(str(FRONTEND_DIR / "mobile" / "index.html"))
+
+
+@app.get("/mobile")
+async def mobile_index_alias():
+    """Mobil dashboard alias."""
+    return FileResponse(str(FRONTEND_DIR / "mobile" / "index.html"))
+
+
 @app.get("/")
-async def read_index():
+async def read_index(request: Request):
+    # Mobil UA -> /m yonlendir (desktop=1 ile opt-out)
+    try:
+        ua = request.headers.get("user-agent", "").lower()
+        is_mobile = any(x in ua for x in [
+            "iphone", "ipod", "android", "mobile",
+            "blackberry", "opera mini", "windows phone"
+        ])
+        if is_mobile and "desktop=1" not in str(request.url):
+            return RedirectResponse(url="/m")
+    except Exception as _e:
+        print(f"[MOBILE-REDIRECT] hata: {_e}")
     return FileResponse(str(FRONTEND_DIR / "index.html"))
 
 
@@ -438,6 +461,71 @@ async def close_all_trades():
         r = order_manager.close_position(symbol=t["symbol"])
         results.append({"symbol": t["symbol"], "result": r.get("status")})
     return {"status": "success", "closed": len(results), "details": results}
+
+
+@app.get("/api/trade/active-with-pnl")
+async def get_active_trades_with_pnl():
+    """Aktif pozisyonlar + anlik PnL (Binance fiyatlarindan hesaplanir)."""
+    conn = get_db_connection()
+    trades = conn.execute("SELECT * FROM active_trades").fetchall()
+    conn.close()
+    trades = [dict(t) for t in trades]
+
+    if not trades:
+        return []
+
+    # Anlik fiyatlari cek (async -> to_thread)
+    try:
+        tickers = await asyncio.to_thread(client.futures_ticker)
+        price_map = {}
+        for t in tickers:
+            sym = t.get("symbol")
+            p = t.get("price") or t.get("lastPrice")
+            if sym and p is not None:
+                price_map[sym] = float(p)
+    except Exception as e:
+        print(f"[!] PnL fiyat cekme hatasi: {e}")
+        # Fiyat yoksa DB verileri doner, pnl=0 olur
+        for t in trades:
+            t["unrealized_pnl"] = 0.0
+            t["unrealized_pnl_pct"] = 0.0
+            t["current_price"] = 0.0
+        return trades
+
+    # Her pozisyon icin PnL hesapla
+    for t in trades:
+        sym = t.get("symbol", "")
+        cur = price_map.get(sym)
+        if cur is None:
+            t["unrealized_pnl"] = 0.0
+            t["unrealized_pnl_pct"] = 0.0
+            t["current_price"] = 0.0
+            continue
+
+        avg = float(t.get("avg_price") or 0)
+        vol = float(t.get("total_vol") or 0)
+        ttype = t.get("trade_type", "BUY")
+
+        if avg <= 0:
+            t["unrealized_pnl"] = 0.0
+            t["unrealized_pnl_pct"] = 0.0
+            t["current_price"] = cur
+            continue
+
+        if ttype == "BUY":  # LONG
+            pnl_pct = (cur - avg) / avg
+        else:                # SHORT
+            pnl_pct = (avg - cur) / avg
+
+        # PnL (USDT) = hacim x pnl_pct
+        # total_vol zaten kaldiracli degil, marjinal bazli -> hacim = notional
+        pnl_usdt = vol * pnl_pct
+
+        t["current_price"] = cur
+        t["unrealized_pnl"] = round(pnl_usdt, 4)
+        t["unrealized_pnl_pct"] = round(pnl_pct * 100, 4)
+
+    return trades
 
 
 @app.get("/api/trade/active")
