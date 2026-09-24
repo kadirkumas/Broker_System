@@ -311,6 +311,7 @@ window.deleteHistoricalTrade = function(id, event) {
 
 window.refreshBottomPanel = function() {
     window.updateTabCounts();
+    if (window.updateRiskBadge) window.updateRiskBadge();
     if (document.getElementById('tab-positions') && document.getElementById('tab-positions').classList.contains('active')) window.renderBottomTrades();
     if (document.getElementById('tab-history') && document.getElementById('tab-history').classList.contains('active')) window.renderHistoricalTrades();
     if (document.getElementById('tab-daily') && document.getElementById('tab-daily').classList.contains('active')) window.renderDailyTrades();
@@ -783,7 +784,7 @@ document.addEventListener('mousemove', (e) => { if (isVResizing) { const newWidt
 document.addEventListener('mouseup', () => { if (isVResizing) { isVResizing = false; vResizer.classList.remove('active'); document.body.style.cursor = 'default'; document.getElementById('charts-grid').style.pointerEvents = 'auto'; localStorage.setItem('sidebarWidth', sidebar.style.width); } if (isHResizing) { isHResizing = false; hResizer.classList.remove('active'); document.body.style.cursor = 'default'; const flexStr = wlModule.style.flex; if (flexStr) { const flexParts = flexStr.split(' '); const basisVal = parseFloat(flexParts[flexParts.length - 1]); if (!isNaN(basisVal)) localStorage.setItem('watchlistFlexBasis', parseInt(basisVal)); } } });
 
 window.toggleRadarMode = function() { radarModeActive = !radarModeActive; localStorage.setItem('cryptoRadarMode', radarModeActive); const btn = document.getElementById('radar-toggle-btn'); if (btn) { if (radarModeActive) btn.classList.add('active'); else btn.classList.remove('active'); } window.renderActiveList(); };
-window.switchTab = function(tab) { activeTab = tab; localStorage.setItem('cryptoActiveTab', tab); document.querySelectorAll('.tabs')[0].querySelectorAll('.tab-btn').forEach(btn => { if (btn.id !== 'radar-toggle-btn') btn.classList.remove('active'); }); document.querySelectorAll('.watchlist').forEach(ul => ul.style.display = 'none'); if (tab === 'futures') { document.querySelectorAll('.tabs')[0].children[0].classList.add('active'); document.getElementById('watchlist-futures').style.display = 'block'; } else { document.querySelectorAll('.tabs')[0].children[1].classList.add('active'); document.getElementById('watchlist-spot').style.display = 'block'; } window.renderActiveList(); };
+window.switchTab = function(tab) { activeTab = tab; localStorage.setItem('cryptoActiveTab', tab); if (window.saveUiPrefToBackend) window.saveUiPrefToBackend('activeTab', tab); document.querySelectorAll('.tabs')[0].querySelectorAll('.tab-btn').forEach(btn => { if (btn.id !== 'radar-toggle-btn') btn.classList.remove('active'); }); document.querySelectorAll('.watchlist').forEach(ul => ul.style.display = 'none'); if (tab === 'futures') { document.querySelectorAll('.tabs')[0].children[0].classList.add('active'); document.getElementById('watchlist-futures').style.display = 'block'; } else { document.querySelectorAll('.tabs')[0].children[1].classList.add('active'); document.getElementById('watchlist-spot').style.display = 'block'; } window.renderActiveList(); };
 window.filterWatchlist = function(val) { watchlistSearchQuery = val.toUpperCase(); window.renderActiveList(); };
 window.sortBy = function(col) { if (sortCol === col) sortDir = sortDir === 'desc' ? 'asc' : 'desc'; else { sortCol = col; sortDir = 'desc'; } document.querySelectorAll('.sort-icon').forEach(el => el.innerHTML = ''); document.getElementById(`sort-${col}`).innerHTML = sortDir === 'desc' ? '↓' : '↑'; window.renderActiveList(); };
 window.switchBottomTab = function(tab) {
@@ -1690,8 +1691,8 @@ window.changeSymbol = function(sym) {
 };
 
 window.changeTimeframe = function(tf) {
-    let cObj = chartsData[activeChartId]; cObj.interval = tf; localStorage.setItem('cryptoInterval', tf);
-    document.querySelectorAll('.tf-btn').forEach(b => { if (b.dataset.tf === tf) b.classList.add('active'); else b.classList.remove('active'); });
+    let cObj = chartsData[activeChartId]; cObj.interval = tf; localStorage.setItem('cryptoInterval', tf); if (window.saveUiPrefToBackend) window.saveUiPrefToBackend('savedInterval', tf);
+    var _sel = document.getElementById('tf-select'); if (_sel) _sel.value = tf;
     if (cObj.ws) { cObj.ws.onclose = null; cObj.ws.close(); cObj.ws = null; }
     cObj.rawCandles = []; cObj.haCandles = []; cObj.candleMap.clear(); if (cObj.series) cObj.series.setData([]);
     if (cObj.tradeLineSeriesArr) { cObj.tradeLineSeriesArr.forEach(ls => { try { cObj.chart.removeSeries(ls); } catch(e){} }); cObj.tradeLineSeriesArr = []; }
@@ -2275,10 +2276,26 @@ setInterval(() => {
 // SAYFA YÜKLENMESİ
 // =============================================================
 window.onload = async () => {
+    // ⚡ Backend'den UI tercihleri yukle (localStorage'a yaz)
+    try {
+        if (window.loadUiPrefsFromBackend) {
+            const changed = await window.loadUiPrefsFromBackend();
+            if (changed) {
+                // Sayfayi bir kez yenile -> yeni degerler etkin olsun
+                if (!sessionStorage.getItem('uiPrefsReloaded')) {
+                    sessionStorage.setItem('uiPrefsReloaded', '1');
+                    console.log('[UI-PREF] Reload ediliyor...');
+                    location.reload();
+                    return;
+                }
+            }
+        }
+    } catch(e) { console.warn('[UI-PREF] onload hatasi:', e); }
+
     await window.fetchExchangeInfo();
     window.setLayout(chartCount);
 
-    document.querySelectorAll('.tf-btn').forEach(b => { if (b.dataset.tf === savedInterval) b.classList.add('active'); else b.classList.remove('active'); });
+    var _sel = document.getElementById('tf-select'); if (_sel) _sel.value = savedInterval;
     document.querySelectorAll('.type-btn').forEach(b => { if (b.dataset.type === savedChartType) b.classList.add('active'); else b.classList.remove('active'); });
 
     window.switchTab(activeTab);
@@ -2296,6 +2313,12 @@ window.onload = async () => {
 
     window.syncWalletWithBackend();
     window.updateBotUI();
+    if (window.updateRiskBadge) window.updateRiskBadge();
+
+    // ⚡ Grafik ayarlarini backend'den yukle (kalici - cihaz bagimsiz)
+    if (window.loadChartSettingsFromBackend) {
+        window.loadChartSettingsFromBackend();
+    }
     setTimeout(function() { if (window.resizeToastContainer) window.resizeToastContainer(); }, 1500);
     window.restoreSidebarPanels();  // ⚡ Panel toggle durumlarini yukle
     
@@ -2357,6 +2380,55 @@ setTimeout(() => {
     if (typeof window.updateBotUI === 'function') window.updateBotUI();
     if (typeof window.startScannerPolling === 'function') window.startScannerPolling();
 }, 100);
+
+// =============================================================
+// UI PREFERANSLARI - BACKEND SENKRONIZASYON
+// =============================================================
+window.saveUiPrefToBackend = async function(key, val) {
+    try {
+        const res = await fetch('/api/chart-settings');
+        if (!res.ok) return;
+        const settings = await res.json();
+        settings[key] = val;
+        await fetch('/api/chart-settings', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify(settings)
+        });
+        console.log('[UI-PREF] ' + key + ' = ' + val + ' (backend)');
+    } catch(e) {
+        console.warn('[UI-PREF] Kaydetme hatasi (' + key + '):', e);
+    }
+};
+
+window.loadUiPrefsFromBackend = async function() {
+    try {
+        const res = await fetch('/api/chart-settings');
+        if (!res.ok) return;
+        const s = await res.json();
+        let changed = false;
+        if (s.savedInterval && s.savedInterval !== localStorage.getItem('cryptoInterval')) {
+            localStorage.setItem('cryptoInterval', s.savedInterval);
+            changed = true;
+        }
+        if (s.layoutCount && s.layoutCount !== parseInt(localStorage.getItem('cryptoLayoutCount'))) {
+            localStorage.setItem('cryptoLayoutCount', s.layoutCount);
+            changed = true;
+        }
+        if (s.activeTab && s.activeTab !== localStorage.getItem('cryptoActiveTab')) {
+            localStorage.setItem('cryptoActiveTab', s.activeTab);
+            changed = true;
+        }
+        if (changed) {
+            console.log("[UI-PREF] Backend degerleri localStorage'a yazildi (reload gerekli)");
+            return true;
+        }
+        return false;
+    } catch(e) {
+        console.warn('[UI-PREF] Yukleme hatasi:', e);
+        return false;
+    }
+};
 
 // =============================================================
 // CHART SETTINGS MODAL
@@ -2426,6 +2498,20 @@ window.applyChartSettings = function() {
     window.currentChartSettings = settings;
     localStorage.setItem(CHART_SETTINGS_KEY, JSON.stringify(settings));
 
+    // ⚡ Backend'e de kaydet (kalici - cihaz bagimsiz)
+    try {
+        fetch('/api/chart-settings', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify(settings)
+        }).then(r => {
+            if (!r.ok) console.warn('[CHART-SETTINGS] Backend kayit basarisiz:', r.status);
+            else console.log('[CHART-SETTINGS] ✅ Backend\'e kaydedildi');
+        }).catch(e => console.warn('[CHART-SETTINGS] Backend kayit hatasi:', e));
+    } catch(e) {
+        console.warn('[CHART-SETTINGS] Fetch hatasi:', e);
+    }
+
     for (let i = 0; i < 4; i++) {
         window.applyChartSettingsToChart(i);
     }
@@ -2461,6 +2547,35 @@ window.applyChartSettingsToChart = function(idx) {
         borderDownColor: s.showCandleBorder ? s.borderDown : s.bgDown,
         borderVisible: s.showBorder,
     });
+};
+
+// ⚡ Grafik ayarlarini backend'den yukle (kalici - cihaz bagimsiz)
+window.loadChartSettingsFromBackend = async function() {
+    try {
+        const res = await fetch('/api/chart-settings');
+        if (!res.ok) {
+            console.warn('[CHART-SETTINGS] Backend yanit vermedi:', res.status);
+            return;
+        }
+        const backendSettings = await res.json();
+        console.log('[CHART-SETTINGS] Backend ayarlari alindi:', backendSettings);
+
+        if (backendSettings && Object.keys(backendSettings).length > 0) {
+            // Backend oncelikli (localStorage'i ez)
+            window.currentChartSettings = Object.assign(
+                {}, window.defaultChartSettings, backendSettings
+            );
+            localStorage.setItem(CHART_SETTINGS_KEY, JSON.stringify(window.currentChartSettings));
+            for (let i = 0; i < 4; i++) {
+                window.applyChartSettingsToChart(i);
+            }
+            console.log('[CHART-SETTINGS] ✅ Backend ayarlari uygulandi');
+        } else {
+            console.log('[CHART-SETTINGS] Backend bos - localStorage kullanilacak');
+        }
+    } catch(e) {
+        console.warn('[CHART-SETTINGS] Yukleme hatasi:', e);
+    }
 };
 
 window.resetChartMargins = function() {
@@ -3691,9 +3806,6 @@ window.defaultTelegramSettings = {
 window.currentTelegramSettings = JSON.parse(localStorage.getItem('cryptoTelegramSettings_v1')) || { ...window.defaultTelegramSettings };
 
 
-
-
-
 window.saveTelegramSettings = async function() {
     const el1 = document.getElementById('cs-tg-signals');
     const el2 = document.getElementById('cs-tg-closes');
@@ -3754,7 +3866,6 @@ window.testTelegram = async function() {
         if (btn) btn.disabled = false;
     }
 };
-
 
 
 // =============================================================
@@ -3854,7 +3965,7 @@ window.openDailyReportModal = async function() {
             else if (reason.includes('DELIST')) reasonShort = 'DEL';
             
             // DCA rozeti
-            const dcaBadge = t.dca_count > 0 ? ' <span style="color:#fcd535; font-size:10px;">DCA:' + t.dca_count + '</span>' : '';
+            const dcaBadge = t.dca_count > 0 ? ' <span title=\"DCA kademe: ' + t.dca_count + '\" style=\"color:#fcd535; font-size:10px; font-weight:700; padding:0 5px; background:rgba(252,213,53,0.15); border-radius:3px; line-height:16px; display:inline-block;\">D:' + t.dca_count + '</span>'  : ''; /* DCA-BADGE-D */
             
             const rowNum = todayTrades.length - i;
             
@@ -5828,3 +5939,159 @@ window.downloadBacktestBat = function() {
 
     console.log('[DYNAMIC-GRID] Chart visualizer aktif');
 })();
+
+
+window.devHardReload = async function() { try { await fetch('/api/dev/restart', {method: 'POST'}); setTimeout(() => location.reload(true), 2000); } catch(e) { console.error(e); } };
+
+// ============================================================
+// [RISK-PANEL] Risk gostergesi + modal + kritik overlay
+// ============================================================
+window._riskOverlayDismissedUntil = 0;
+
+window.calculateRiskMetrics = async function() {
+    try {
+        // 1. Cuzdan
+        const wRes = await fetch('/api/wallet');
+        const wallet = await wRes.json();
+        const balance = parseFloat(wallet.balance) || 0;
+
+        // 2. Aktif pozisyonlar
+        const tRes = await fetch('/api/trade/active');
+        const trades = await tRes.json();
+
+        let usedMargin = 0;
+        let totalPosition = 0;
+        let longCount = 0;
+        let shortCount = 0;
+        let totalLeverage = 0;
+
+        (trades || []).forEach(t => {
+            const vol = parseFloat(t.total_vol) || 0;
+            const lev = parseInt(t.leverage) || 1;
+            usedMargin += vol / lev;
+            totalPosition += vol;
+            totalLeverage += lev;
+            if (t.trade_type === 'BUY') longCount++;
+            else if (t.trade_type === 'SELL') shortCount++;
+        });
+
+        const tradeCount = (trades || []).length;
+        const avgLeverage = tradeCount > 0 ? totalLeverage / tradeCount : 0;
+        const marginRatio = balance > 0 ? (usedMargin / balance) * 100 : 0;
+        const freeMargin = balance - usedMargin;
+        const liqDistance = freeMargin; // basit: acik pnl yoksa
+        const liqPct = totalPosition > 0 ? (liqDistance / totalPosition) * 100 : 0;
+
+        let level = 'safe';
+        if (marginRatio >= 80) level = 'critical';
+        else if (marginRatio >= 60) level = 'high';
+        else if (marginRatio >= 40) level = 'warning';
+
+        return {
+            balance, usedMargin, freeMargin,
+            marginRatio, liqDistance, liqPct,
+            totalPosition, tradeCount,
+            longCount, shortCount, avgLeverage, level
+        };
+    } catch(e) {
+        console.warn('[RISK] Hesap hatasi:', e);
+        return null;
+    }
+};
+
+window.updateRiskBadge = async function() {
+    const m = await window.calculateRiskMetrics();
+    if (!m) return;
+
+    const badge = document.getElementById('risk-badge');
+    if (!badge) return;
+
+    badge.classList.remove('safe', 'warning', 'high', 'critical');
+    badge.classList.add(m.level);
+
+    const txt = badge.querySelector('.risk-text');
+    if (txt) txt.textContent = 'Risk: ' + m.marginRatio.toFixed(0) + '%';
+
+    // Kritik overlay
+    window.checkCriticalOverlay(m);
+};
+
+window.openRiskModal = async function() {
+    const m = await window.calculateRiskMetrics();
+    if (!m) return;
+
+    // Doldur
+    const fmt = v => v.toFixed(2) + ' USDT';
+    document.getElementById('risk-capital').textContent = fmt(m.balance);
+    document.getElementById('risk-used').textContent = fmt(m.usedMargin);
+    document.getElementById('risk-free').textContent = fmt(m.freeMargin);
+    document.getElementById('risk-liq-dist').textContent = fmt(m.liqDistance);
+    document.getElementById('risk-positions').textContent = m.tradeCount;
+    document.getElementById('risk-directions').textContent = m.longCount + ' / ' + m.shortCount;
+    document.getElementById('risk-leverage').textContent = m.avgLeverage.toFixed(1) + 'x';
+    document.getElementById('risk-total-pos').textContent = fmt(m.totalPosition);
+    document.getElementById('risk-bar-pct').textContent = m.marginRatio.toFixed(1) + '%';
+    document.getElementById('risk-bar-fill').style.width = Math.min(m.marginRatio, 100) + '%';
+
+    const banner = document.getElementById('risk-level-banner');
+    banner.classList.remove('safe', 'warning', 'high', 'critical');
+    banner.classList.add(m.level);
+
+    const levelMap = {
+        safe:     { icon: '🟢', text: 'GÜVENLİ' },
+        warning:  { icon: '🟡', text: 'ORTA RİSK' },
+        high:     { icon: '🟠', text: 'YÜKSEK RİSK' },
+        critical: { icon: '🔴', text: 'KRİTİK RİSK' },
+    };
+    document.getElementById('risk-level-icon').textContent = levelMap[m.level].icon;
+    document.getElementById('risk-level-text').textContent = levelMap[m.level].text;
+
+    // Uyari metni
+    const warnBox = document.getElementById('risk-warning-box');
+    const warnTxt = document.getElementById('risk-warning-text');
+    warnBox.classList.toggle('critical', m.level === 'critical');
+
+    if (m.level === 'critical') {
+        warnTxt.textContent = 'Marj oranı %' + m.marginRatio.toFixed(0) + '! Piyasa çok az daha ters giderse likit olabilirsin. Pozisyonları azaltmayı düşün.';
+    } else if (m.level === 'high') {
+        warnTxt.textContent = 'Marj oranı yüksek (%' + m.marginRatio.toFixed(0) + '). Dikkatli ol, kaldıraç/kademe sayısını gözden geçir.';
+    } else if (m.level === 'warning') {
+        warnTxt.textContent = 'Orta seviye risk (%' + m.marginRatio.toFixed(0) + '). Normal aralıkta ama izlemeye devam et.';
+    } else {
+        warnTxt.textContent = 'Risk seviyesi normal (%' + m.marginRatio.toFixed(0) + '). Sağlıklı aralık.';
+    }
+
+    document.getElementById('risk-modal').classList.add('active');
+};
+
+window.closeRiskModal = function() {
+    document.getElementById('risk-modal').classList.remove('active');
+};
+
+window.checkCriticalOverlay = function(m) {
+    if (!m) return;
+    const overlay = document.getElementById('risk-critical-overlay');
+    if (!overlay) return;
+
+    const now = Date.now();
+    if (now < window._riskOverlayDismissedUntil) return;
+
+    if (m.level === 'critical') {
+        // Doldur
+        document.getElementById('rc-margin').textContent = m.marginRatio.toFixed(1) + '%';
+        document.getElementById('rc-free').textContent = m.freeMargin.toFixed(0) + ' USDT';
+        document.getElementById('rc-liq').textContent = m.liqDistance.toFixed(0) + ' USDT';
+        overlay.style.display = 'flex';
+    } else {
+        overlay.style.display = 'none';
+    }
+};
+
+window.dismissCriticalOverlay = function() {
+    const overlay = document.getElementById('risk-critical-overlay');
+    if (overlay) overlay.style.display = 'none';
+    // 5 dk sustur
+    window._riskOverlayDismissedUntil = Date.now() + 5 * 60 * 1000;
+    console.log('[RISK] Critical overlay 5 dk susturuldu');
+};
+

@@ -4,7 +4,7 @@ import os
 import time
 import sqlite3
 from binance.client import Client
-from backend.strategies import RSIScalperStrategy, HullSRPStrategy, DynamicGridStrategy
+from backend.strategies import RSIScalperStrategy, HullSRPStrategy, DynamicGridStrategy, DeepHunterStrategy
 from backend.database import get_db_connection
 from backend import telegram_notifier
 
@@ -41,6 +41,30 @@ DEFAULT_CONFIG = {
             "baseOrder": 10,
             "takeProfit": 2.0, "trailing": 0.5, "stopLoss": 3.0,
             "partialTPEnabled": False, "partialTPPercent": 50,
+            "partialTPKeepDCA": True
+        },
+        "DEEP_HUNTER": {
+            "enabled": False,
+            "interval": "4h",
+            "emaPeriod": 200,
+            "emaSource": "close",
+            "rsiPeriod": 7,
+            "longTriggerPct": 5.5,
+            "shortTriggerPct": 15.0,
+            "longRsiMax": 30,
+            "shortRsiMin": 75,
+            "longTrade": True,
+            "shortTrade": True,
+            "useDCA": True,
+            "baseOrder": 5,
+            "leverage": 5,
+            "volMultiplier": 1.0,
+            "steps": "5, 13, 25, 40, 60",
+            "takeProfit": 1.5,
+            "trailing": 0.5,
+            "stopLoss": 50,
+            "partialTPEnabled": True,
+            "partialTPPercent": 50,
             "partialTPKeepDCA": True
         },
     }
@@ -221,6 +245,8 @@ class StrategyEngine:
             return HullSRPStrategy(strat_cfg)
         elif strategy_name == "DYNAMIC_GRID":
             return DynamicGridStrategy(strat_cfg)
+        elif strategy_name == "DEEP_HUNTER":
+            return DeepHunterStrategy(strat_cfg)
         return None
 
     # ------------------------------------------------------------------

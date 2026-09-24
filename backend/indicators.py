@@ -85,3 +85,37 @@ def calculate_rsi(prices: list, period: int = 7) -> float:
         return 100.0
     rs = avg_gain / avg_loss
     return round(float(100.0 - (100.0 / (1.0 + rs))), 2)
+
+def calculate_ema(prices: list, period: int = 200) -> list:
+    """
+    Exponential Moving Average (EMA).
+    Ilk deger SMA, sonra klasik EMA formul.
+
+    Args:
+        prices: kapanis fiyatlari listesi
+        period: EMA periyodu (varsayilan 200)
+
+    Returns:
+        EMA degerleri listesi (ilk period-1 eleman None)
+    """
+    if not prices or len(prices) < period:
+        return [None] * len(prices)
+
+    import numpy as _np
+    arr = _np.array(prices, dtype=float)
+    ema = [None] * (period - 1)
+
+    # Ilk EMA = SMA
+    first_sma = float(_np.mean(arr[:period]))
+    ema.append(first_sma)
+
+    # Sonraki EMA'lar
+    multiplier = 2.0 / (period + 1)
+    prev_ema = first_sma
+    for i in range(period, len(arr)):
+        curr = (arr[i] - prev_ema) * multiplier + prev_ema
+        ema.append(curr)
+        prev_ema = curr
+
+    return ema
+

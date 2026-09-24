@@ -2,6 +2,8 @@ import os
 import time
 import asyncio
 import contextlib
+import base64
+import secrets
 from pathlib import Path
 
 from fastapi import FastAPI
@@ -33,9 +35,15 @@ API_KEY = os.getenv("BINANCE_API_KEY")
 API_SECRET = os.getenv("BINANCE_API_SECRET")
 USE_TESTNET = os.getenv("BINANCE_TESTNET", "true").lower() == "true"
 
+# ⚡ Web arayuz sifre korumasi
+ADMIN_USERNAME = os.getenv("ADMIN_USERNAME", "admin").strip()
+ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD", "").strip()
+AUTH_ENABLED = bool(ADMIN_PASSWORD)
+
 print(f"[*] API_KEY yüklendi mi: {'EVET' if API_KEY else 'HAYIR'}")
 print(f"[*] API_SECRET yüklendi mi: {'EVET' if API_SECRET else 'HAYIR'}")
 print(f"[*] Testnet modu: {USE_TESTNET}")
+print(f"[*] Web Arayuz Auth: {'AKTIF' if AUTH_ENABLED else 'PASIF'} (kullanici: {ADMIN_USERNAME})")
 
 if not API_KEY or not API_SECRET:
     raise RuntimeError("HATA: .env dosyasında BINANCE_API_KEY veya BINANCE_API_SECRET eksik!")
@@ -80,6 +88,62 @@ async def lifespan(app: FastAPI):
 # FASTAPI
 # ----------------------------------------------------------------------
 app = FastAPI(title="Broker System API", lifespan=lifespan)
+
+
+# ======================================================================
+# HTTP BASIC AUTH MIDDLEWARE
+# ======================================================================
+from fastapi import Request
+from fastapi.responses import Response
+
+
+@app.middleware("http")
+async def auth_middleware(request: Request, call_next):
+    """Tum endpoint'leri HTTP Basic Auth ile korur."""
+    # Auth kapaliysa gecir
+    if not AUTH_ENABLED:
+        return await call_next(request)
+
+    # Favicon ve robots.txt bypass
+    if request.url.path in ("/favicon.ico", "/robots.txt"):
+        return await call_next(request)
+
+    auth_header = request.headers.get("Authorization", "")
+
+    # Header yoksa 401
+    if not auth_header.startswith("Basic "):
+        return Response(
+            content="Kimlik dogrulama gerekli",
+            status_code=401,
+            headers={"WWW-Authenticate": 'Basic realm="Broker System", charset="UTF-8"'}
+        )
+
+    # Decode
+    try:
+        encoded = auth_header[6:]
+        decoded = base64.b64decode(encoded).decode("utf-8")
+        username, password = decoded.split(":", 1)
+    except Exception:
+        return Response(
+            content="Gecersiz auth formati",
+            status_code=401,
+            headers={"WWW-Authenticate": 'Basic realm="Broker System", charset="UTF-8"'}
+        )
+
+    # Timing-safe karsilastirma
+    user_ok = secrets.compare_digest(username.encode(), ADMIN_USERNAME.encode())
+    pass_ok = secrets.compare_digest(password.encode(), ADMIN_PASSWORD.encode())
+
+    if not (user_ok and pass_ok):
+        print(f"[AUTH] BASARISIZ giris denemesi: {username} ({request.client.host})")
+        return Response(
+            content="Kullanici adi veya sifre hatali",
+            status_code=401,
+            headers={"WWW-Authenticate": 'Basic realm="Broker System", charset="UTF-8"'}
+        )
+
+    # Basarili
+    return await call_next(request)
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 FRONTEND_DIR = BASE_DIR / "frontend"
@@ -219,6 +283,33 @@ async def engine_signals():
 @app.get("/api/engine/config")
 async def get_engine_config():
     return bot.config
+
+
+# ============================================================
+# CHART SETTINGS ENDPOINTS (Kalici Grafik Ayarlari)
+# ============================================================
+@app.get("/api/chart-settings")
+def get_chart_settings():
+    """Grafik ayarlarini bot_config.json'dan dondurur."""
+    try:
+        cfg = load_config()
+        return cfg.get("chart_settings", {})
+    except Exception as e:
+        print(f"[CHART-SETTINGS] GET hata: {e}")
+        return {}
+
+
+@app.post("/api/chart-settings")
+def update_chart_settings(settings: dict):
+    """Grafik ayarlarini bot_config.json'a kaydeder."""
+    try:
+        cfg = load_config()
+        cfg["chart_settings"] = settings
+        save_config(cfg)
+        return {"status": "ok", "saved": True}
+    except Exception as e:
+        print(f"[CHART-SETTINGS] POST hata: {e}")
+        return {"status": "error", "message": str(e)}
 
 
 @app.post("/api/engine/config")

@@ -86,6 +86,27 @@ class PositionManager:
         if not hit:
             return False
 
+        # ⚡ DCA SIRA KONTROLU: Son DCA fiyatindan dusuk olmali (LONG icin)
+        # Boylece fiyat dalgalansa bile DCA2 < DCA1 garantilenir
+        try:
+            import json as _json
+            _dh = pos.get("dca_history") or "[]"
+            if isinstance(_dh, str):
+                _history = _json.loads(_dh)
+            else:
+                _history = _dh
+            if _history and len(_history) > 0:
+                _last_dca_price = float(_history[-1].get("price", 0))
+                if _last_dca_price > 0:
+                    if trade_type == "BUY" and current_price >= _last_dca_price:
+                        # Fiyat son DCA'dan yuksek -> yeni DCA yapma
+                        return False
+                    if trade_type == "SELL" and current_price <= _last_dca_price:
+                        # Fiyat son DCA'dan dusuk -> yeni DCA yapma (SHORT)
+                        return False
+        except Exception as _e:
+            print(f"[DCA-ORDER] history parse hatasi: {_e}")
+
         new_count = dca_count + 1
         step_vol = base_order * (vol_mult ** new_count)
 
@@ -508,10 +529,36 @@ class PositionManager:
                     else:
                         profit_pct = (entry_price - current_price) / entry_price
 
-            # 2. Stop Loss
-            if profit_pct <= -sl_pct:
+            # 2. Stop Loss ⚡ [SL-AFTER-DCA]
+            # SL_base = son DCA fiyati (varsa), yoksa avg_price
+            sl_base_price = entry_price
+            try:
+                import json as _json_sl
+                _dh_sl = pos.get("dca_history") or "[]"
+                _history_sl = _json_sl.loads(_dh_sl) if isinstance(_dh_sl, str) else _dh_sl
+                if _history_sl and len(_history_sl) > 0:
+                    _last_dca_price = float(_history_sl[-1].get("price", 0))
+                    if _last_dca_price > 0:
+                        sl_base_price = _last_dca_price
+            except Exception as _e_sl:
+                print(f"[SL-DCA] history parse hatasi ({symbol}): {_e_sl}")
+
+            if trade_type == "BUY":
+                sl_trigger = sl_base_price * (1 - sl_pct)
+                sl_hit = current_price <= sl_trigger
+            else:
+                sl_trigger = sl_base_price * (1 + sl_pct)
+                sl_hit = current_price >= sl_trigger
+
+            if sl_hit:
+                # Gercek zarar yuzdesi (avg_price bazli, rapor icin)
+                _real_pct = ((current_price - entry_price) / entry_price * 100) if trade_type == "BUY" \
+                            else ((entry_price - current_price) / entry_price * 100)
+                _base_label = "DCA" if sl_base_price != entry_price else "AVG"
+                print(f"[SL-DCA] {symbol} SL | base={sl_base_price:.6f} ({_base_label}) "
+                      f"trigger={sl_trigger:.6f} cur={current_price:.6f} real={_real_pct:.2f}%")
                 await self._execute_close(symbol, current_price,
-                                          f"STOP LOSS ({profit_pct*100:.2f}%)")
+                                          f"STOP LOSS ({_real_pct:.2f}%) [base={_base_label}]")
                 self.trailing_state.pop(position_key, None)
                 continue
 

@@ -24,6 +24,10 @@
                     <span id="scanner-signals" style="color:#fcd535; display:none;">0 sinyal</span>
                 </div>
                 
+                <button id="risk-badge" class="risk-badge safe" onclick="openRiskModal()" title="Risk durumu - tikla detay">
+                    <span class="risk-dot"></span>
+                    <span class="risk-text">Risk: --</span>
+                </button>
                 <button class="bot-settings-btn" style="border-color: #089981; color: #089981;" onclick="openWalletModal()">👛 Cüzdan</button>
                 <button class="bot-settings-btn" onclick="openBotConfigModal()">🤖 Bot Ayarları</button>
                 <button class="bot-settings-btn" onclick="openStatsModal()" style="border-color: #fcd535; color: #fcd535;" title="İstatistikler">📊 İstatistik</button>
@@ -42,15 +46,17 @@
                 <div class="chart-header">
                     <div class="header-left">
                         <div class="timeframes" id="timeframe-box">
-                            <span class="tf-btn" data-tf="1m" onclick="changeTimeframe('1m')">1d</span>
-                            <span class="tf-btn" data-tf="3m" onclick="changeTimeframe('3m')">3d</span>
-                            <span class="tf-btn" data-tf="5m" onclick="changeTimeframe('5m')">5d</span>
-                            <span class="tf-btn" data-tf="15m" onclick="changeTimeframe('15m')">15d</span>
-                            <span class="tf-btn" data-tf="30m" onclick="changeTimeframe('30m')">30d</span>
-                            <span class="tf-btn" data-tf="1h" onclick="changeTimeframe('1h')">1S</span>
-                            <span class="tf-btn active" data-tf="4h" onclick="changeTimeframe('4h')">4S</span>
-                            <span class="tf-btn" data-tf="1d" onclick="changeTimeframe('1d')">1G</span>
-                            <span class="tf-btn" data-tf="1w" onclick="changeTimeframe('1w')">1H</span>
+                            <select class="tf-select" id="tf-select" onchange="changeTimeframe(this.value)">
+                                <option value="1m">1d - 1 Dakika</option>
+                                <option value="3m">3d - 3 Dakika</option>
+                                <option value="5m">5d - 5 Dakika</option>
+                                <option value="15m">15d - 15 Dakika</option>
+                                <option value="30m">30d - 30 Dakika</option>
+                                <option value="1h">1S - 1 Saat</option>
+                                <option value="4h" selected>4S - 4 Saat</option>
+                                <option value="1d">1G - 1 Gün</option>
+                                <option value="1w">1H - 1 Hafta</option>
+                            </select>
                         </div>
                         
                         <span class="divider">|</span>
@@ -251,7 +257,8 @@
                             <span>İzleme Listesi</span>
                             <div class="dev-tools" style="display: flex; gap: 3px; flex-shrink: 0;">
                                 <button class="dev-btn" onclick="devRestartBackend()" title="🔄 Backend Yeniden Başlat (--reload)">🔄</button>
-                                <button class="dev-btn" onclick="devHardReload()" title="⚡ Hard Refresh (Ctrl+Shift+R)">⚡</button>
+                                <button class="dev-btn" onclick="devHardReload()" title="⚡ Hard Reload (Ctrl+Shift+R)">⚡</button>
+                                
                             </div>
                         </h3>
                         
@@ -809,7 +816,7 @@
                             </div>
                             <div class="cfg-row">
                                 <span class="cfg-label" data-tip="Her DCA kademesinin hangi yuzde dususte tetiklenecegi. Ornek: 5,10,15,20.">Düşüş Adımları (%)</span>
-                                <input type="text" class="search-input strat-param" data-strategy="RSI_SCALPER" data-param="steps" value="1.5, 3, 5">
+                                <input type="text" class="search-input strat-param" data-strategy="RSI_SCALPER" data-param="steps" value="5, 13, 25, 40, 60">
                             </div>
                             <div class="cfg-subtitle">🎯 Kısmi TP (Partial Take Profit)</div>
                             <div class="cfg-row">
@@ -926,7 +933,7 @@
                             </div>
                             <div class="cfg-row">
                                 <span class="cfg-label" data-tip="Her DCA kademesinin hangi yuzde dususte tetiklenecegi. Ornek: 5,10,15,20.">Düşüş Adımları (%)</span>
-                                <input type="text" class="search-input strat-param" data-strategy="HULL_SRP" data-param="steps" value="2, 4, 6">
+                                <input type="text" class="search-input strat-param" data-strategy="HULL_SRP" data-param="steps" value="5, 13, 25, 40, 60">
                             </div>
                             <div class="cfg-subtitle">🎯 Kısmi TP (Partial Take Profit)</div>
                             <div class="cfg-row">
@@ -1074,7 +1081,7 @@
                             </div>
                             <div class="cfg-row">
                                 <span class="cfg-label">Düşüş Adımları (%)</span>
-                                <input type="text" class="search-input strat-param" data-strategy="DYNAMIC_GRID" data-param="steps" value="1, 2, 3, 5, 8">
+                                <input type="text" class="search-input strat-param" data-strategy="DYNAMIC_GRID" data-param="steps" value="5, 13, 25, 40, 60">
                             </div>
                             <div class="cfg-subtitle">🎯 Kısmi TP</div>
                             <div class="cfg-row">
@@ -1097,8 +1104,135 @@
                             </div>
                         </div>
                     </div>
-                </div>
-            </div>
+                    <!-- [DH-REPOSITION] DEEP_HUNTER panel -->
+
+                    <div class="strategy-panel" data-strategy="DEEP_HUNTER">
+                    <div class="strategy-header">
+                    <div class="strategy-title">
+                    <span class="strategy-dot" style="background:#9c27b0;"></span>
+                    Deep Hunter
+                    </div>
+                    <label class="switch">
+                    <input type="checkbox" class="strat-enabled" data-strategy="DEEP_HUNTER">
+                    <span class="slider round"></span>
+                    </label>
+                    </div>
+                    <div class="strategy-body">
+                    <div class="cfg-row">
+                    <span class="cfg-label" data-tip="Stratejinin mum periyodu. 4h onerilir (uzun vade trend)">Zaman Dilimi</span>
+                    <select class="search-input strat-interval" data-strategy="DEEP_HUNTER">
+                    <option value="1m">1m</option>
+                    <option value="5m">5m</option>
+                    <option value="15m">15m</option>
+                    <option value="1h">1h</option>
+                    <option value="4h" selected>4h</option>
+                    </select>
+                    </div>
+                    <div class="cfg-row">
+                    <span class="cfg-label" data-tip="Trend belirleyici EMA periyodu. 200=uzun vade, 50=kisa vade">EMA Period</span>
+                    <input type="number" class="search-input strat-param" data-strategy="DEEP_HUNTER" data-param="emaPeriod" value="200" min="10" max="500" step="10">
+                    </div>
+                    <div class="cfg-row">
+                    <span class="cfg-label" data-tip="RSI periyodu. 7=hassas, 14=standart">RSI Period</span>
+                    <input type="number" class="search-input strat-param" data-strategy="DEEP_HUNTER" data-param="rsiPeriod" value="7" min="2" max="30" step="1">
+                    </div>
+                    <div class="cfg-subtitle">📉 LONG (Dip Al)</div>
+                    <div class="cfg-row">
+                    <span class="cfg-label" data-tip="Fiyat EMA'nin bu kadar ALTINA inerse LONG tetiklenir">Trend Altı (%)</span>
+                    <input type="number" class="search-input strat-param" data-strategy="DEEP_HUNTER" data-param="longTriggerPct" value="5.5" min="0.5" max="50" step="0.5">
+                    </div>
+                    <div class="cfg-row">
+                    <span class="cfg-label" data-tip="RSI bu degerin ALTINDA olmali">RSI Max</span>
+                    <input type="number" class="search-input strat-param" data-strategy="DEEP_HUNTER" data-param="longRsiMax" value="30" min="5" max="50" step="1">
+                    </div>
+                    <div class="cfg-row">
+                    <span class="cfg-label" data-tip="LONG aktif/pasif">LONG Aktif</span>
+                    <label class="switch switch-small">
+                    <input type="checkbox" class="strat-param" data-strategy="DEEP_HUNTER" data-param="longTrade" checked>
+                    <span class="slider round"></span>
+                    </label>
+                    </div>
+                    <div class="cfg-subtitle">📈 SHORT (Tepe Sat)</div>
+                    <div class="cfg-row">
+                    <span class="cfg-label" data-tip="Fiyat EMA'nin bu kadar USTUNE cikarsa SHORT tetiklenir">Trend Üstü (%)</span>
+                    <input type="number" class="search-input strat-param" data-strategy="DEEP_HUNTER" data-param="shortTriggerPct" value="15" min="0.5" max="50" step="0.5">
+                    </div>
+                    <div class="cfg-row">
+                    <span class="cfg-label" data-tip="RSI bu degerin USTUNDE olmali">RSI Min</span>
+                    <input type="number" class="search-input strat-param" data-strategy="DEEP_HUNTER" data-param="shortRsiMin" value="75" min="50" max="95" step="1">
+                    </div>
+                    <div class="cfg-row">
+                    <span class="cfg-label" data-tip="SHORT aktif/pasif">SHORT Aktif</span>
+                    <label class="switch switch-small">
+                    <input type="checkbox" class="strat-param" data-strategy="DEEP_HUNTER" data-param="shortTrade" checked>
+                    <span class="slider round"></span>
+                    </label>
+                    </div>
+                    </div>
+                    <div class="strategy-body strategy-trade-section">
+                    <div class="cfg-subtitle">💰 İşlem Ayarları</div>
+                    <div class="cfg-row">
+                    <span class="cfg-label" data-tip="Pozisyon acilisinda kullanilacak USDT miktari">İlk İşlem (USDT)</span>
+                    <input type="number" class="search-input strat-param" data-strategy="DEEP_HUNTER" data-param="baseOrder" value="5" min="1" step="1">
+                    </div>
+                    <div class="cfg-row">
+                    <span class="cfg-label" data-tip="Kaldıraç oranı (1 = kaldıraçsız)">Kaldıraç</span>
+                    <input type="number" class="search-input strat-param" data-strategy="DEEP_HUNTER" data-param="leverage" value="5" min="1" max="50" step="1">
+                    </div>
+                    <div class="cfg-row margin-row">
+                    <span class="cfg-label" data-tip="Kilitlenen gerçek teminat">💵 Marjin (Kilitlenen)</span>
+                    <span id="margin-preview-DEEP_HUNTER" class="margin-preview">1.00 USDT</span>
+                    </div>
+                    <div class="cfg-row">
+                    <span class="cfg-label" data-tip="Pozisyon bu kar yuzdesine ulasinca kapat">Hedef Kâr (%)</span>
+                    <input type="number" class="search-input strat-param" data-strategy="DEEP_HUNTER" data-param="takeProfit" value="1.5" min="0.1" step="0.1">
+                    </div>
+                    <div class="cfg-row">
+                    <span class="cfg-label" data-tip="Fiyat tepe noktasindan bu kadar geri çekilirse kapat">İzleyen Stop (%)</span>
+                    <input type="number" class="search-input strat-param" data-strategy="DEEP_HUNTER" data-param="trailing" value="0.5" min="0.05" step="0.05">
+                    </div>
+                    <div class="cfg-row">
+                    <span class="cfg-label" data-tip="Fiyat girise gore bu yuzde ters giderse pozisyon kapanir">Stop Loss (%)</span>
+                    <input type="number" class="search-input strat-param" data-strategy="DEEP_HUNTER" data-param="stopLoss" value="50" min="1" step="1">
+                    </div>
+                    <div class="cfg-subtitle">🔁 DCA (Kademeli Alım)</div>
+                    <div class="cfg-row">
+                    <span class="cfg-label" data-tip="Fiyat ters giderse ek alim yapar">DCA Aktif</span>
+                    <label class="switch switch-small">
+                    <input type="checkbox" class="strat-param" data-strategy="DEEP_HUNTER" data-param="useDCA" checked>
+                    <span class="slider round"></span>
+                    </label>
+                    </div>
+                    <div class="cfg-row">
+                    <span class="cfg-label" data-tip="Her DCA kademesinde hacim carpani">Hacim Çarpanı</span>
+                    <input type="number" class="search-input strat-param" data-strategy="DEEP_HUNTER" data-param="volMultiplier" value="1" min="1" step="0.1">
+                    </div>
+                    <div class="cfg-row">
+                    <span class="cfg-label" data-tip="Her DCA kademesinin tetiklenme yuzdesi">Düşüş Adımları (%)</span>
+                    <input type="text" class="search-input strat-param" data-strategy="DEEP_HUNTER" data-param="steps" value="5, 13, 25, 40, 60">
+                    </div>
+                    <div class="cfg-subtitle">🎯 Kısmi TP (Partial Take Profit)</div>
+                    <div class="cfg-row">
+                    <span class="cfg-label" data-tip="Karli pozisyonun bir kismini erken kapat">Kısmi TP Aktif</span>
+                    <label class="switch switch-small">
+                    <input type="checkbox" class="strat-param" data-strategy="DEEP_HUNTER" data-param="partialTPEnabled" checked>
+                    <span class="slider round"></span>
+                    </label>
+                    </div>
+                    <div class="cfg-row">
+                    <span class="cfg-label" data-tip="Kısmi TP'de kapatilacak yuzde">Kapatma Oranı (%)</span>
+                    <input type="number" class="search-input strat-param" data-strategy="DEEP_HUNTER" data-param="partialTPPercent" value="50" min="1" max="99" step="1">
+                    </div>
+                    <div class="cfg-row">
+                    <span class="cfg-label" data-tip="Kismi TP sonrasi DCA aktif mi">PT Sonrası DCA</span>
+                    <label class="switch switch-small">
+                    <input type="checkbox" class="strat-param" data-strategy="DEEP_HUNTER" data-param="partialTPKeepDCA" checked>
+                    <span class="slider round"></span>
+                    </label>
+                    </div>
+                    </div>
+                    </div>
+                </div>            </div>
 
             <div class="modal-footer bot-config-footer">
                 <div class="bot-footer-info">
@@ -1110,6 +1244,97 @@
                     <button class="btn-success" id="btn-start-bot" onclick="startBot()">▶ BOT BAŞLAT</button>
                     <button class="btn-danger" id="btn-stop-bot" onclick="stopBot()">⏹ BOT DURDUR</button>
                 </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ⚡ RİSK DETAY MODALİ -->
+    <div id="risk-modal" class="modal-overlay">
+        <div class="modal-content risk-modal-content">
+            <div class="modal-header">
+                <h2>⚠️ Risk Durumu</h2>
+                <span class="modal-close" onclick="closeRiskModal()">✕</span>
+            </div>
+            <div class="risk-modal-body">
+                <div class="risk-level-banner" id="risk-level-banner">
+                    <span class="risk-level-icon" id="risk-level-icon">🟢</span>
+                    <span class="risk-level-text" id="risk-level-text">GÜVENLİ</span>
+                </div>
+
+                <div class="risk-grid">
+                    <div class="risk-item">
+                        <div class="risk-item-label">SERMAYE</div>
+                        <div class="risk-item-value" id="risk-capital">--</div>
+                    </div>
+                    <div class="risk-item">
+                        <div class="risk-item-label">KULLANILAN MARJ</div>
+                        <div class="risk-item-value" id="risk-used">--</div>
+                    </div>
+                    <div class="risk-item">
+                        <div class="risk-item-label">SERBEST MARJ</div>
+                        <div class="risk-item-value" id="risk-free">--</div>
+                    </div>
+                    <div class="risk-item">
+                        <div class="risk-item-label">LİKİT MESAFE</div>
+                        <div class="risk-item-value" id="risk-liq-dist">--</div>
+                    </div>
+                </div>
+
+                <div class="risk-bar-wrap">
+                    <div class="risk-bar-label">
+                        <span>Marj Oranı</span>
+                        <span id="risk-bar-pct">--%</span>
+                    </div>
+                    <div class="risk-bar-track">
+                        <div class="risk-bar-fill" id="risk-bar-fill" style="width: 0%"></div>
+                    </div>
+                </div>
+
+                <div class="risk-grid">
+                    <div class="risk-item">
+                        <div class="risk-item-label">POZİSYON</div>
+                        <div class="risk-item-value" id="risk-positions">--</div>
+                    </div>
+                    <div class="risk-item">
+                        <div class="risk-item-label">LONG / SHORT</div>
+                        <div class="risk-item-value" id="risk-directions">--</div>
+                    </div>
+                    <div class="risk-item">
+                        <div class="risk-item-label">ORT. KALDIRAÇ</div>
+                        <div class="risk-item-value" id="risk-leverage">--</div>
+                    </div>
+                    <div class="risk-item">
+                        <div class="risk-item-label">TOPLAM HACİM</div>
+                        <div class="risk-item-value" id="risk-total-pos">--</div>
+                    </div>
+                </div>
+
+                <div class="risk-warning-box" id="risk-warning-box">
+                    <div class="risk-warning-icon">⚠️</div>
+                    <div class="risk-warning-text" id="risk-warning-text">
+                        Risk analiz ediliyor...
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ⚡ KRİTİK RİSK OVERLAY (devasa uyarı) -->
+    <div id="risk-critical-overlay" class="risk-critical-overlay" style="display:none;">
+        <div class="risk-critical-inner">
+            <div class="risk-critical-icon">🚨</div>
+            <div class="risk-critical-title">LİKİT RİSKİ KRİTİK!</div>
+            <div class="risk-critical-detail" id="risk-critical-detail">
+                Marj oranı çok yüksek
+            </div>
+            <div class="risk-critical-stats">
+                <div>Marj: <b id="rc-margin">--%</b></div>
+                <div>Serbest: <b id="rc-free">--</b></div>
+                <div>Likit Mesafe: <b id="rc-liq">--</b></div>
+            </div>
+            <div class="risk-critical-buttons">
+                <button class="rc-btn rc-btn-danger" onclick="openRiskModal()">Detay Gör</button>
+                <button class="rc-btn rc-btn-secondary" onclick="dismissCriticalOverlay()">5 dk Sustur</button>
             </div>
         </div>
     </div>

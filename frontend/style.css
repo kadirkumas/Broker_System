@@ -492,26 +492,57 @@ input:checked + .slider:before { transform: translateX(20px); }
 /* ============================================================
    BOT CONFIG MODAL - KOMPAKT 3 SÜTUNLU TASARIM
    ============================================================ */
+/* [MODAL-WIDE-FIX] */
 .modal-wide {
-    width: 1300px !important;
-    max-width: 95vw !important;
+    width: 1450px !important;
+    max-width: 98vw !important;
     height: auto !important;
     max-height: 88vh !important;
 }
 
+/* ⚡ Bot config modal - 4 strateji panel yan yana */
+#bot-config-modal .strategies-grid {
+    grid-template-columns: repeat(4, minmax(0, 1fr)) !important;
+    gap: 8px !important;
+}
+
+/* ⚡ Panel icindeki alanlar tasmasin */
+#bot-config-modal .strategy-panel {
+    min-width: 0 !important;
+    overflow: hidden !important;
+}
+
+/* ⚡ Orta boy ekran: 2 kolon */
+@media (max-width: 1200px) {
+    #bot-config-modal .strategies-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+    }
+    .modal-wide {
+        max-width: 96vw !important;
+    }
+}
+
+/* ⚡ Kucuk ekran: 1 kolon */
+@media (max-width: 700px) {
+    #bot-config-modal .strategies-grid {
+        grid-template-columns: 1fr !important;
+    }
+}
+
+/* [COMPACT-REDESIGN] */
 .bot-config-body {
-    padding: 14px !important;
+    padding: 10px !important;
     overflow-y: auto !important;
     display: flex !important;
     flex-direction: column !important;
-    gap: 12px !important;
+    gap: 8px !important;
 }
 
 .bot-global-row {
     display: grid;
     grid-template-columns: 1fr 1fr 1fr 1fr;
-    gap: 10px;
-    padding: 10px 12px;
+    gap: 8px;
+    padding: 7px 10px;
     background: rgba(41, 98, 255, 0.08);
     border: 1px solid rgba(41, 98, 255, 0.25);
     border-radius: 6px;
@@ -521,7 +552,7 @@ input:checked + .slider:before { transform: translateX(20px); }
 .bot-global-item {
     display: flex;
     flex-direction: column;
-    gap: 4px;
+    gap: 3px;
 }
 
 .bot-global-item .cfg-label {
@@ -532,20 +563,20 @@ input:checked + .slider:before { transform: translateX(20px); }
 
 .bot-global-item input {
     width: 100%;
-    padding: 5px 8px !important;
-    font-size: 12px !important;
+    padding: 4px 7px !important;
+    font-size: 11px !important;
 }
 
 .bot-global-item button {
-    height: 28px;
+    height: 24px;
     font-size: 10px !important;
-    padding: 4px 8px !important;
+    padding: 3px 7px !important;
 }
 
 .strategies-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
-    gap: 10px;
+    grid-template-columns: repeat(auto-fit, minmax(340px, 1fr));
+    gap: 8px;
 }
 
 .strategy-panel {
@@ -567,7 +598,7 @@ input:checked + .slider:before { transform: translateX(20px); }
     display: flex;
     justify-content: space-between;
     align-items: center;
-    padding: 8px 12px;
+    padding: 6px 10px;
     background: #181a20;
     border-bottom: 1px solid #2a2e39;
 }
@@ -589,10 +620,21 @@ input:checked + .slider:before { transform: translateX(20px); }
 }
 
 .strategy-body {
-    padding: 8px 12px;
-    display: flex;
-    flex-direction: column;
-    gap: 6px;
+    padding: 6px 10px;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 4px 10px;
+    align-items: center;
+}
+
+/* ⚡ Basliklar her zaman tam genislik */
+.strategy-body .cfg-subtitle {
+    grid-column: 1 / -1;
+}
+
+/* ⚡ 3-kolonlu ozel satirlar tam genislik */
+.strategy-body .cfg-row-3 {
+    grid-column: 1 / -1;
 }
 
 .strategy-trade-section {
@@ -604,7 +646,7 @@ input:checked + .slider:before { transform: translateX(20px); }
     display: flex;
     justify-content: space-between;
     align-items: center;
-    gap: 8px;
+    gap: 6px;
 }
 
 .cfg-row .cfg-label {
@@ -612,17 +654,22 @@ input:checked + .slider:before { transform: translateX(20px); }
     color: #d1d4dc;
     font-weight: 500;
     flex: 1;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
 }
 
 .cfg-row .search-input {
-    width: 85px !important;
-    padding: 4px 6px !important;
+    width: 70px !important;
+    padding: 3px 5px !important;
     font-size: 11px !important;
+    text-align: right;
 }
 
 .cfg-row select.search-input {
-    width: 95px !important;
+    width: 80px !important;
     cursor: pointer;
+    text-align: left;
 }
 
 .cfg-row-3 {
@@ -648,8 +695,8 @@ input:checked + .slider:before { transform: translateX(20px); }
     font-size: 10px;
     font-weight: 700;
     color: #fcd535;
-    margin-top: 4px;
-    padding-bottom: 3px;
+    margin-top: 2px;
+    padding-bottom: 2px;
     border-bottom: 1px solid #2a2e39;
     letter-spacing: 0.3px;
     text-transform: uppercase;
@@ -1280,12 +1327,13 @@ input:checked + .slider:before { transform: translateX(20px); }
 /* ============================================================
    KAPANAN İŞLEM (YEŞİL ÇERÇEVE)
    ============================================================ */
+/* [CLOSE-FUCHSIA] */
 .signal-item.close-item {
-    border-left-color: #0ECB81;
+    border-left-color: #FF00FF !important;
 }
 
 .signal-item.close-item:hover {
-    border-left-color: #0ab56e;
+    border-left-color: #FF4DFF !important;
     background: #2a2e39;
 }
 
@@ -3053,3 +3101,392 @@ input:checked + .slider:before { transform: translateX(20px); }
     background: #ffdd44;
     box-shadow: 0 0 15px rgba(252, 213, 53, 0.5);
 }
+
+/* [COMPACT-GLOBAL] - Global row dikey kompakt */
+.bot-config-body .bot-global-row {
+    grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)) !important;
+    gap: 4px 14px !important;
+    padding: 6px 10px !important;
+    align-items: center !important;
+}
+
+.bot-config-body .bot-global-item {
+    flex-direction: row !important;
+    align-items: center !important;
+    gap: 6px !important;
+    min-height: 22px !important;
+}
+
+.bot-config-body .bot-global-item .cfg-label {
+    flex: 1 !important;
+    font-size: 10px !important;
+    white-space: nowrap !important;
+    overflow: hidden !important;
+    text-overflow: ellipsis !important;
+    margin: 0 !important;
+}
+
+.bot-config-body .bot-global-item input,
+.bot-config-body .bot-global-item select {
+    width: 60px !important;
+    padding: 3px 6px !important;
+    font-size: 11px !important;
+    flex-shrink: 0 !important;
+    text-align: right !important;
+}
+
+.bot-config-body .bot-global-item .switch {
+    transform: scale(0.75) !important;
+    transform-origin: right center !important;
+    flex-shrink: 0 !important;
+    margin: 0 !important;
+}
+
+.bot-config-body .bot-global-item .switch.switch-small {
+    transform: scale(0.85) !important;
+}
+
+.bot-config-body .bot-global-item button {
+    height: 22px !important;
+    font-size: 10px !important;
+    padding: 2px 8px !important;
+    flex-shrink: 0 !important;
+}
+
+/* Subtitle (basliklar) margin'i kucult */
+.bot-config-body .cfg-subtitle {
+    margin-top: 0 !important;
+    margin-bottom: 2px !important;
+    padding: 2px 4px !important;
+    font-size: 10px !important;
+}
+/* [/COMPACT-GLOBAL] */
+
+/* ⚡ Zaman dilimi select (tf-btn yerine) */
+.tf-select {
+    background: #1e222d;
+    color: #EAECEF;
+    border: 1px solid #2a2e39;
+    border-radius: 4px;
+    padding: 4px 24px 4px 10px;
+    font-size: 12px;
+    font-weight: 500;
+    cursor: pointer;
+    height: 26px;
+    min-width: 140px;
+    appearance: none;
+    -webkit-appearance: none;
+    -moz-appearance: none;
+    background-image: url("data:image/svg+xml;charset=UTF-8,%3csvg xmlns='http://www.w3.org/2000/svg' width='10' height='10' viewBox='0 0 10 10'%3e%3cpath fill='%23787b86' d='M5 7L1 3h8z'/%3e%3c/svg%3e");
+    background-repeat: no-repeat;
+    background-position: right 8px center;
+    background-size: 10px;
+    transition: border-color 0.15s;
+}
+.tf-select:hover {
+    border-color: #2962ff;
+    color: #EAECEF;
+}
+.tf-select:focus {
+    outline: none;
+    border-color: #2962ff;
+    box-shadow: 0 0 0 2px rgba(41, 98, 255, 0.2);
+}
+.tf-select option {
+    background: #1e222d;
+    color: #EAECEF;
+    padding: 4px;
+}
+
+/* [TRADE-LABEL-FIX] - Tum trade etiketleri width/font degiskeni kullansin */
+.trade-label {
+    font-size: var(--trade-label-font, 10px) !important;
+    min-width: var(--trade-label-width, 55px) !important;
+    text-align: center !important;
+    box-sizing: border-box !important;
+}
+
+/* Aktif pozisyon ozel ayar - zaten var(), !important ile birlikte */
+.trade-label.active-entry {
+    font-size: var(--trade-label-font, 10px) !important;
+    min-width: var(--trade-label-width, 55px) !important;
+    text-align: center !important;
+}
+
+/* Geçmis islemler (LONG/SHORT) */
+.trade-label.trade-label_long-entry,
+.trade-label.trade-label_short-entry,
+.trade-label.long-entry,
+.trade-label.short-entry {
+    font-size: var(--trade-label-font, 10px) !important;
+    min-width: var(--trade-label-width, 55px) !important;
+    text-align: center !important;
+}
+
+/* DCA + exit + avg label */
+.trade-label.trade-label_exit,
+.trade-label.trade-label_avg-label,
+.trade-label.trade-label_Lig_Label {
+    font-size: var(--trade-label-font, 10px) !important;
+    min-width: var(--trade-label-width, 55px) !important;
+    text-align: center !important;
+}
+
+/* [DCA-BADGE-TD-FIX] - DCA rozeti kirpilmasin */
+#bottom-trade-panel td {
+    overflow: visible !important;
+    white-space: nowrap !important;
+}
+
+/* Alternatif: tabela hucresine ozel sadece DCA kolonu icin */
+#bottom-trade-panel td:has(> span[title^="DCA kademe"]) {
+    overflow: visible !important;
+    padding-right: 8px !important;
+}
+
+/* ============================================================
+   [RISK-PANEL] - Risk gostergesi + modal + overlay
+   ============================================================ */
+
+/* Header badge */
+.risk-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 12px;
+    border-radius: 4px;
+    font-size: 12px;
+    font-weight: 700;
+    cursor: pointer;
+    transition: all 0.2s;
+    border: 1px solid transparent;
+    background: transparent;
+    color: #848e9c;
+    font-family: inherit;
+}
+.risk-badge .risk-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: #848e9c;
+    flex-shrink: 0;
+}
+.risk-badge.safe { border-color: #0ECB81; color: #0ECB81; }
+.risk-badge.safe .risk-dot { background: #0ECB81; box-shadow: 0 0 6px #0ECB81; }
+
+.risk-badge.warning { border-color: #fcd535; color: #fcd535; }
+.risk-badge.warning .risk-dot { background: #fcd535; box-shadow: 0 0 6px #fcd535; }
+
+.risk-badge.high { border-color: #ff9800; color: #ff9800; }
+.risk-badge.high .risk-dot { background: #ff9800; box-shadow: 0 0 6px #ff9800; }
+
+.risk-badge.critical {
+    border-color: #f23645;
+    color: #f23645;
+    animation: riskPulse 1.4s ease-in-out infinite;
+}
+.risk-badge.critical .risk-dot {
+    background: #f23645;
+    box-shadow: 0 0 8px #f23645;
+}
+
+@keyframes riskPulse {
+    0%, 100% { opacity: 1; transform: scale(1); }
+    50% { opacity: 0.65; transform: scale(1.04); }
+}
+
+/* Risk modal */
+.risk-modal-content {
+    width: 580px !important;
+    max-width: 95vw !important;
+    height: auto !important;
+    max-height: 88vh !important;
+}
+.risk-modal-body {
+    padding: 16px 20px;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+}
+
+.risk-level-banner {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 12px 18px;
+    border-radius: 8px;
+    background: rgba(14, 203, 129, 0.12);
+    border: 1px solid rgba(14, 203, 129, 0.4);
+    font-weight: 700;
+    font-size: 15px;
+}
+.risk-level-banner.warning { background: rgba(252, 213, 53, 0.12); border-color: rgba(252, 213, 53, 0.4); color: #fcd535; }
+.risk-level-banner.high    { background: rgba(255, 152, 0, 0.12); border-color: rgba(255, 152, 0, 0.4); color: #ff9800; }
+.risk-level-banner.critical{ background: rgba(242, 54, 69, 0.12); border-color: rgba(242, 54, 69, 0.5); color: #f23645; animation: riskPulse 1.4s infinite; }
+.risk-level-banner.safe     { color: #0ECB81; }
+.risk-level-icon { font-size: 20px; }
+
+.risk-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+}
+.risk-item {
+    padding: 10px 14px;
+    background: #131722;
+    border: 1px solid #2a2e39;
+    border-radius: 6px;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+.risk-item-label {
+    font-size: 10px;
+    font-weight: 700;
+    color: #848e9c;
+    letter-spacing: 0.5px;
+}
+.risk-item-value {
+    font-size: 16px;
+    font-weight: 700;
+    color: #EAECEF;
+    font-family: 'Courier New', monospace;
+}
+
+.risk-bar-wrap { display: flex; flex-direction: column; gap: 6px; }
+.risk-bar-label {
+    display: flex;
+    justify-content: space-between;
+    font-size: 11px;
+    color: #848e9c;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.4px;
+}
+.risk-bar-track {
+    width: 100%;
+    height: 12px;
+    background: #131722;
+    border-radius: 6px;
+    overflow: hidden;
+    border: 1px solid #2a2e39;
+}
+.risk-bar-fill {
+    height: 100%;
+    background: linear-gradient(90deg, #0ECB81 0%, #fcd535 50%, #f23645 100%);
+    border-radius: 6px;
+    transition: width 0.4s ease;
+}
+
+.risk-warning-box {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 12px 14px;
+    background: rgba(41, 98, 255, 0.08);
+    border: 1px solid rgba(41, 98, 255, 0.3);
+    border-radius: 6px;
+    font-size: 12px;
+    color: #d1d4dc;
+    line-height: 1.5;
+}
+.risk-warning-box.critical {
+    background: rgba(242, 54, 69, 0.1);
+    border-color: rgba(242, 54, 69, 0.5);
+    color: #f23645;
+    font-weight: 600;
+}
+.risk-warning-icon { font-size: 20px; flex-shrink: 0; }
+
+/* Critical overlay */
+.risk-critical-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.85);
+    backdrop-filter: blur(6px);
+    z-index: 99999;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    animation: fadeIn 0.3s ease;
+}
+@keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+
+.risk-critical-inner {
+    background: linear-gradient(180deg, #2a0a0f 0%, #1a0608 100%);
+    border: 3px solid #f23645;
+    border-radius: 12px;
+    padding: 40px 50px;
+    max-width: 620px;
+    text-align: center;
+    box-shadow: 0 0 60px rgba(242, 54, 69, 0.5), 0 0 20px rgba(242, 54, 69, 0.3) inset;
+    animation: criticalPulse 1.6s ease-in-out infinite;
+}
+@keyframes criticalPulse {
+    0%, 100% { box-shadow: 0 0 60px rgba(242, 54, 69, 0.5), 0 0 20px rgba(242, 54, 69, 0.3) inset; transform: scale(1); }
+    50% { box-shadow: 0 0 90px rgba(242, 54, 69, 0.9), 0 0 30px rgba(242, 54, 69, 0.6) inset; transform: scale(1.015); }
+}
+
+.risk-critical-icon { font-size: 60px; margin-bottom: 10px; animation: shake 1s infinite; }
+@keyframes shake {
+    0%, 100% { transform: rotate(0); }
+    25% { transform: rotate(-8deg); }
+    75% { transform: rotate(8deg); }
+}
+
+.risk-critical-title {
+    font-size: 28px;
+    font-weight: 900;
+    color: #f23645;
+    letter-spacing: 2px;
+    margin-bottom: 16px;
+    text-shadow: 0 0 12px rgba(242, 54, 69, 0.7);
+}
+.risk-critical-detail {
+    font-size: 16px;
+    color: #EAECEF;
+    margin-bottom: 20px;
+}
+.risk-critical-stats {
+    display: flex;
+    justify-content: center;
+    gap: 24px;
+    margin-bottom: 24px;
+    padding: 14px 0;
+    border-top: 1px solid rgba(242, 54, 69, 0.3);
+    border-bottom: 1px solid rgba(242, 54, 69, 0.3);
+    font-size: 13px;
+    color: #d1d4dc;
+}
+.risk-critical-stats b { color: #f23645; font-size: 15px; }
+
+.risk-critical-buttons {
+    display: flex;
+    gap: 12px;
+    justify-content: center;
+}
+.rc-btn {
+    padding: 10px 22px;
+    border-radius: 6px;
+    font-size: 13px;
+    font-weight: 700;
+    cursor: pointer;
+    border: none;
+    transition: all 0.15s;
+    font-family: inherit;
+}
+.rc-btn-danger {
+    background: #f23645;
+    color: #fff;
+    box-shadow: 0 0 12px rgba(242, 54, 69, 0.5);
+}
+.rc-btn-danger:hover { background: #ff4d5c; transform: translateY(-1px); }
+
+.rc-btn-secondary {
+    background: transparent;
+    color: #848e9c;
+    border: 1px solid #2a2e39;
+}
+.rc-btn-secondary:hover { color: #d1d4dc; border-color: #4a4e59; }
+
