@@ -1,0 +1,481 @@
+================================================================================
+  CRYPTO AI (Broker System v2.0) — KAPSAMLI PROJE RAPORU
+================================================================================
+
+Tarih      : 26 Eylül 2026
+Versiyon   : v2.0
+Durum      : Testnet production-ready, Gerçek Grid + AI TTP entegre
+Hazırlayan : Kadir Kumaş + AI Asistan (Haydar)
+
+================================================================================
+  1. GENEL MİMARİ
+================================================================================
+
+┌─────────────────────────────────────────────────────────────┐
+│  LOCAL (Windows 11)         →  MASTER (Trading)             │
+│  ├─ Bot AKTİF (SYNC_MODE=master)                           │
+│  ├─ Emir açar/kapatır, DB yazar                            │
+│  ├─ py -m uvicorn --reload                                 │
+│  ├─ Arayüz: http://127.0.0.1:8000                          │
+│  ├─ Mobil : http://127.0.0.1:8000/m                        │
+│  └─ 30sn'de bir cloud'a DB push                            │
+└────────────────┬────────────────────────────────────────────┘
+                 │ HTTP POST /api/sync/db-receive
+                 │ X-Sync-Token
+                 ↓
+┌─────────────────────────────────────────────────────────────┐
+│  CLOUD (Oracle Frankfurt)   →  REPLICA (Viewer)             │
+│  ├─ Bot PASİF (readonly_middleware 403)                    │
+│  ├─ systemd broker-bot.service                             │
+│  ├─ 7/24 çalışır                                           │
+│  └─ Mobil + masaüstü viewer                                │
+└─────────────────────────────────────────────────────────────┘
+
+================================================================================
+  2. STRATEJİLER (5 Adet)
+================================================================================
+
+┌────┬──────────────────────┬──────────────────┬────────┬────────────┐
+│ #  │ Strateji             │ Mantık           │ DCA    │ AI TTP     │
+├────┼──────────────────────┼──────────────────┼────────┼────────────┤
+│ 1  │ RSI_SCALPER          │ RSI crossing     │ ✅     │ ✅         │
+│ 2  │ HULL_SRP             │ HMA dönüş        │ ✅     │ ✅         │
+│ 3  │ DYNAMIC_GRID (klasik)│ Hibrit ref+ATR   │ ✅     │ ✅         │
+│ 4  │ DYNAMIC_GRID_REEL    │ Gerçek grid      │ ❌     │ ❌ (grid)  │
+│ 5  │ DEEP_HUNTER          │ EMA + RSI dip/tepe│ ✅    │ ✅         │
+└────┴──────────────────────┴──────────────────┴────────┴────────────┘
+
+================================================================================
+  3. BU OTURUMDA EKLENEN / DEĞİŞTİRİLEN ÖZELLİKLER
+================================================================================
+
+### 3.1 DYNAMIC GRID REEL (Yeni Strateji) ⭐
+--------------------------------------------------------------------------------
+Tür      : Yeni strateji + tam altyapı
+Amaç     : Gerçek grid — her seviye bağımsız pozisyon
+Etki     : Klasik DYNAMIC_GRID BOZULMADI, paralel çalışıyor
+
+Backend:
+  • backend/strategies/dynamic_grid_reel.py (YENİ)
+  • database.py: 8 grid alanı + partial UNIQUE index
+    - is_grid_position, grid_group_id, grid_level, grid_side
+    - grid_entry_price, grid_tp_price, grid_created_at, grid_state
+  • order_manager.py: open_grid_position() + close_grid_position()
+  • position_manager.py: _check_grid_positions() + _execute_grid_close()
+  • strategy_engine.py: DYNAMIC_GRID_REEL dispatch + symbol state cache
+
+Frontend:
+  • index.html: Dynamic Grid REEL paneli (5. strateji)
+  • chart.js: calcDynamicGridReel() + dashboard-driven
+  • Grafik etiketleri: L1..L10 (pembe), S1..S10 (sarı)
+
+Grid mantığı:
+  • Referans etrafında N/2 SELL (üst) + N/2 BUY (alt)
+  • BUY seviyesi TP = üstteki komşu seviye
+  • SELL seviyesi TP = alttaki komşu seviye
+  • Recenter: eski grup kapat, yeni grup aç
+  • UNIQUE (symbol+group+level) → duplicate koruması
+
+### 3.2 AI TTP (Kademeli Trailing Stop) ⭐⭐
+--------------------------------------------------------------------------------
+Tür      : Yeni mekanizma
+Amaç     : Kâr arttıkça trail sıkılaşsın, kâr kilitlensin
+Eski isim: "İzleyen Stop (%)"
+Yeni isim: "🎯 AI TTP"
+
+Kademeler (default):
+  +1.5%  →  %0.30 trail  (aktivasyon)
+  +2.5%  →  %0.20
+  +4.0%  →  %0.12
+  +6.0%  →  %0.07
+  +10.0% →  %0.03 (zirve, kâr kilitli)
+
+Format: "1.5:0.3, 2.5:0.2, 4:0.12, 6:0.07, 10:0.03"
+  - kâr%:trail% ikilisi, virgülle ayrılmış
+  - Ratchet mantığı: seviyeler geri dönmez
+  - Boş = trailing yok
+
+Backend:
+  • position_manager.py: _parse_trailing_steps() + _get_ai_ttp_pct()
+  • backtest_engine.py: aynı mantık
+  • Log: [AI-TTP] SYMBOL AKTIF / Kademe geçişi
+
+Frontend:
+  • index.html: 4 stratejide text input + tooltip
+  • chart.js: getStrategyBotConfig trailingSteps + backtest modal
+
+Kapanış sebebi: "AI-TTP (2.35%)"
+
+### 3.3 Radar (Volatilite Filtresi) ⭐
+--------------------------------------------------------------------------------
+Tür      : İşlevsel hale getirme
+Amaç     : Yüksek volatilite coinleri hızlı bul
+
+Formül: A + B
+  A = |24s değişim %|
+  B = (High - Low) / Fiyat × 100
+  Skor = A + B
+
+Threshold: >= 10 (default)
+Min 24s  : >= 2%
+Sıralama : Skor DESC
+Görsel   : Buton sayacı "🔥 Radar (194)"
+Tooltip  : Formül açıklaması
+
+### 3.4 Radar → Grafik Otopilot ⭐
+--------------------------------------------------------------------------------
+Tür      : Otomasyon (AI POWER)
+Tetik    : Layout 4 seçilince + Radar aktif
+Davranış :
+  1. Skor hesapla
+  2. Threshold üstü filtrele
+  3. Top 4 al
+  4. 4 grafiğe yay
+  5. Toast: "AI POWER - 4 coin yüklendi"
+
+### 3.5 Measure Tool (Shift+Drag) ⭐
+--------------------------------------------------------------------------------
+Tür      : TradingView tarzı ölçüm
+Kullanım : Shift basılı tut + tıkla + sürükle
+Görsel   : Yeşil (yukarı) / Kırmızı (aşağı) kutu
+Bilgi    : Fiyat farkı + % + bar sayısı + süre + hacim
+Temizleme: 6 sn sonra otomatik / ESC
+
+### 3.6 STAR-0300 (Zaman İşaretleyici)
+--------------------------------------------------------------------------------
+Tür      : Görsel marker
+Davranış : Her gün TR 03:00 mumunun üstüne minik sarı yıldız
+Boyut    : Mum genişliğine göre dinamik (barSpacing)
+Ayarlama : window._starSetHour(h, m)
+
+### 3.7 Backtest - Kapsamlı Yenileme
+--------------------------------------------------------------------------------
+A) 5 strateji desteği
+   • backtest_engine.py: get_strategy() + dispatch
+   • DYNAMIC_GRID_REEL için özel simülasyon motoru (run_grid_reel_backtest)
+
+B) TradingView uyumlu limitler
+   1m  : 14 gün (2 hafta)      ~20K bar
+   3m  : 21 gün                ~10K bar
+   5m  : 45 gün                ~13K bar
+   15m : 90 gün                ~8.6K bar
+   30m : 180 gün               ~8.6K bar
+   1h  : 365 gün               ~8.7K bar
+   4h  : 730 gün               ~4.4K bar
+   1d  : 3650 gün              ~3.6K bar
+
+C) Onay penceresi
+   "⚠️ X günlük veri test edilecektir" (Çalıştır/BAT)
+
+D) Tarih otomatik maskeleme (GG-AA-YYYY)
+
+E) AI TTP entegrasyonu (klasik + grid)
+
+F) CLII BAT güncellemesi
+   • Artık 5 stratejiyi destekliyor
+   • Backend'in run_backtest_sync'ini çağırıyor (thin wrapper)
+   • Params ayırıcı: ';' (virgül değerlerin içinde kalır)
+
+G) Equity Curve düzeltmeleri
+   • Son nokta = final balance (tutarlılık)
+   • TR timezone (+3)
+   • Butonlar header'a taşındı
+
+H) Trade listesi
+   • Tarih-saat sütunu (G/Ç ayrı satır)
+   • Kümülatif Net USDT: "+X USDT (Σ +Y)"
+   • Yeniden eskiye sıralama
+   • END trade kaldırıldı (açık pozisyon sayılmaz)
+
+I) Kapanış istatistikleri
+   • AI-TTP + TRAILING tek grup (AI TTP)
+   • Emoji: 🎯
+
+### 3.8 UI Yeniden Düzenlemeleri
+--------------------------------------------------------------------------------
+A) Bot Ayarları → 2 sekme
+   • ⚙️ Bot Ayarları (genel)
+   • 📊 Strateji Ayarları (5 strateji paneli)
+   • localStorage hatırlama
+
+B) Bot Ayarları → Kart Izgarası
+   • 📡 TARAMA (mavi)
+   • 💼 İŞLEM AYARLARI (sarı)
+   • 🛡️ RİSK LİMİTLERİ (kırmızı)
+   • 3 kart dikey form, aynı görünüm
+
+C) Sidebar → Tek panel + 2 tab
+   • 📋 İzleme Listesi
+   • 🔔 Canlı Bildirimler
+   • localStorage hatırlama
+
+D) Chart type → Combobox
+   • 📊 Mum / 📈 H.Ashi (2 buton yerine tek dropdown)
+
+E) Rebrand
+   • "Broker System" → "Crypto AI"
+   • "fx Göstergeler" → "AI Göstergeler"
+
+F) BTC header badge
+   • Chart header sağ üstte sabit BTCUSDT fiyat + %
+   • Turuncu tema, canlı güncellenir
+
+G) Chart header
+   • Mum/H.Ashi tek dropdown
+   • Geri sayım solunda BTC badge
+
+H) İzleme listesi default sıralama
+   • Değ% büyükten küçüğe (BTC sabitlemesi kaldırıldı)
+   • 3-5 sn'de bir otomatik re-sort
+
+### 3.9 Mobile İyileştirmeleri
+--------------------------------------------------------------------------------
+A) Bot toggle fix
+   • active=false gönderilmiyordu → düzeltildi
+   • Mevcut durumu okuyup tersine çevirir
+   • close-all-force ile tüm pozisyonları kapatır
+   • Onay penceresi (açık pozisyon varsa)
+
+B) Masaüstü butonu kaldırıldı (top-right)
+
+C) Açık Pozisyonlar + Son Sinyaller default KAPALI
+
+### 3.10 Güvenlik ve Temizlik
+--------------------------------------------------------------------------------
+A) SPIKE-GUARD (Testnet)
+   • open_grid_position: fiyat vs seviye > %10 fark → REDDET
+   • _execute_grid_close: |pnl_pct| > %30 → kayıt yapma
+   • Admin endpoint: anormal kayıtları sil
+
+B) Recenter cleanup
+   • Recenter olunca eski grubun pozisyonları piyasa fiyatından kapatılır
+   • Tek grup aktif kalır
+
+C) Duplicate prevention
+   • (symbol+group+level) UNIQUE
+   • Son 5 dk aynı sembol+seviye kontrolü
+
+D) Preset (bot_config.default.json)
+   • Config silinirse preset'ten yüklenir
+   • Fabrika ayarı
+
+================================================================================
+  4. DOSYA YAPISI
+================================================================================
+
+Broker_System/
+├── backend/
+│   ├── main.py                     (FastAPI + auth + sync + 40+ endpoint)
+│   ├── strategy_engine.py          (scan + position loops + risk guard)
+│   ├── position_manager.py         (DCA + PT + AI-TTP + SL + funding)
+│   ├── order_manager.py            (emir + LIMIT fallback + grid)
+│   ├── database.py                 (SQLite WAL + migration + UNIQUE)
+│   ├── backtest_engine.py          (async backtest, 5 strateji)
+│   ├── indicators.py               (WMA/HMA/RSI/EMA)
+│   ├── telegram_notifier.py
+│   ├── bot_config.json             (aktif config)
+│   ├── bot_config.default.json     (preset/fabrika)
+│   └── strategies/
+│       ├── __init__.py
+│       ├── base.py
+│       ├── rsi_scalper.py
+│       ├── hull_srp.py
+│       ├── dynamic_grid.py         (klasik)
+│       ├── dynamic_grid_reel.py    (YENİ)
+│       └── deep_hunter.py
+├── frontend/
+│   ├── index.html                  (desktop dashboard)
+│   ├── style.css                   (~5000 satır)
+│   ├── chart.js                    (~8000 satır)
+│   └── mobile/
+│       ├── index.html
+│       ├── mobile.css
+│       └── mobile.js
+├── Patch/yeni/                     (~50+ patch script arşivi)
+└── Desktop batch:
+    ├── backend sunucu.bat
+    ├── Broker Yonetim Paneli.bat
+    ├── broker-yedek.bat
+    └── broker-cloud-yedek.bat
+
+================================================================================
+  5. ENDPOINT'LER (YENİ EKLENENLER)
+================================================================================
+
+Backend:
+  GET  /api/grid/state/{symbol}     → Grid durumu (tek kaynak)
+  GET  /api/grid/state-all          → Tüm grid'ler
+  GET  /api/backtest/limits/{iv}    → Interval max gün/bar
+  POST /api/trade/close-all-force   → Her şeyi sil (bot durdurma)
+  POST /api/engine/toggle?active=X  → Bot aç/kapat
+  POST /api/admin/clean-anomalies   → Anormal işlem temizle
+
+================================================================================
+  6. CONFIG YAPISI (bot_config.json)
+================================================================================
+
+{
+  "active": true,
+  "scan_interval_seconds": 900,
+  "position_check_seconds": 6,
+  "max_symbols": 300,
+  "daily_max_loss": 5,
+  "max_open_positions": 100,
+  "useLimitOrder": true,
+  "limitTimeoutSec": 3,
+  "fallbackToMarket": true,
+  "strategies": {
+    "RSI_SCALPER": {
+      "enabled": true,
+      "interval": "1m",
+      "period": 7,
+      "longVal": 20, "shortVal": 80,
+      "baseOrder": 10, "leverage": 5,
+      "takeProfit": 1.5,
+      "trailingSteps": "1.5:0.3, 2.5:0.2, 4:0.12, 6:0.07, 10:0.03",
+      "stopLoss": 65,
+      "useDCA": true, "steps": "5, 13, 25, 40, 60",
+      "partialTPEnabled": true, "partialTPPercent": 50
+    },
+    "HULL_SRP": {...},
+    "DYNAMIC_GRID": {...},
+    "DYNAMIC_GRID_REEL": {
+      "enabled": true,
+      "interval": "1m",
+      "mode": "neutral",
+      "gridCount": 20,
+      "smaPeriod": 100, "pivotLookback": 100,
+      "atrPeriod": 14, "atrMultiplier": 8,
+      "minWidthRatio": 0.4, "maxWidthRatio": 0.8,
+      "asymmetryRatio": 1.3,
+      "recenterHours": 24, "recenterBuffer": 0.03,
+      "baseOrder": 5, "leverage": 5,
+      "useDCA": false,
+      "test_symbol": "3"
+    },
+    "DEEP_HUNTER": {...}
+  }
+}
+
+================================================================================
+  7. YEDEK / GERİ ALMA
+================================================================================
+
+Her patch otomatik yedek alır:
+  • backend/*.py.bak_ozellik_adi
+  • frontend/*.js.bak_ozellik_adi
+  • frontend/*.css.bak_ozellik_adi
+  • frontend/*.html.bak_ozellik_adi
+
+Rollback:
+  Copy-Item <yedek_dosya> <orijinal> -Force
+
+Yedek türleri:
+  • Patch öncesi (otomatik)
+  • DB (bot_data.db.bak_*)
+  • Config (bot_config.json.bak_*)
+  • Local ZIP (broker-yedek.bat)
+  • Cloud ZIP (broker-cloud-yedek.bat)
+
+================================================================================
+  8. KOMUTLAR
+================================================================================
+
+Local:
+  Backend başlat  : py -m uvicorn backend.main:app --reload
+  Backend durdur  : Ctrl+C
+  Arayüz          : http://127.0.0.1:8000
+  Mobil           : http://127.0.0.1:8000/m
+
+Cloud:
+  Bağlan          : ssh -i C:\Users\kadir.kumas\.ssh\broker-bot.key ubuntu@92.5.133.137
+  Durum           : sudo systemctl status broker-bot
+  Restart         : sudo systemctl restart broker-bot
+  Canlı log       : sudo journalctl -u broker-bot -f
+  Arayüz          : http://92.5.133.137:8000
+
+Yönetim Paneli:
+  Masaüstü → Broker Yonetim Paneli.bat
+
+================================================================================
+  9. BİLİNEN SINIRLAMALAR
+================================================================================
+
+1. Testnet'te spot API izni yok
+   → /api/wallet'ta "Spot bakiye okuma hatası" (kritik değil)
+
+2. Testnet'te fiyat spike'ları
+   → SPIKE-GUARD ile korunuyor
+
+3. Grid REEL sadece 1 sinyal/mum
+   → Aynı mumda birden fazla seviye kırılırsa sadece biri açılır
+
+4. Grafik ve backend interval farkı
+   → Grafik "1d" = 1 dakika (küçük d), "1G" = 1 gün (büyük G)
+
+5. PnL hesaplaması açık pozisyonları saymaz
+   → Kullanıcı tercihi (kapalı trade bazlı)
+
+6. İki WS akışı farkı
+   → Grafik @kline (250ms) vs izleme !ticker@arr (1sn)
+   → %0.03 fark normal
+
+================================================================================
+  10. SONRAKI ADIMLAR (ROADMAP)
+================================================================================
+
+### Aşama 1 (Bu Hafta) - UX
+  ☐ Klavye kısayolları (Alt+G, Alt+S, Ctrl+Z, Tab)
+  ☐ Snapshot (Ctrl+Shift+S + clipboard)
+  ☐ Fullscreen pane (Alt+Click)
+  ☐ Chart senkronizasyonu (symbol, interval, crosshair)
+
+### Aşama 2 (Sonraki Hafta)
+  ☐ Volume Profile (POC + VAH/VAL)
+  ☐ Kullanıcı uyarıları (fiyat + gösterge)
+  ☐ Webhook (Telegram/Discord)
+  ☐ 1s/5s timeframe
+
+### Aşama 3 (İleride)
+  ☐ Bar Replay
+  ☐ Trend çizgisi + Fibonacci çizim araçları
+  ☐ DOM (Depth of Market)
+  ☐ Footprint chart
+
+### Mainnet Geçiş Planı
+  1. Bot durdur
+  2. .env: BINANCE_TESTNET=false
+  3. API key mainnet'e güncelle
+  4. Minimum pozisyonla başla (5-10 USDT)
+  5. SPIKE-GUARD loglarını izle
+  6. 1-2 hafta gözlem → tam kapasite
+
+================================================================================
+  11. ÖZET İSTATİSTİKLER
+================================================================================
+
+Bu oturumda:
+  • 50+ patch script çalıştırıldı
+  • 15+ dosya güncellendi
+  • 5 strateji tam entegre
+  • 4 yeni büyük özellik (Grid REEL, AI TTP, Radar, Measure)
+  • 20+ UI/UX iyileştirmesi
+  • 6 kritik bug fix
+
+Kod Satırları:
+  • backend/ : ~4500 satır
+  • frontend/chart.js : ~8000 satır
+  • frontend/style.css : ~5000 satır
+  • frontend/index.html : ~800 satır
+  • mobile/ : ~1400 satır
+
+================================================================================
+  RAPOR SONU
+================================================================================
+
+Hazırlayan : Kadir Kumaş + AI Asistan (Haydar)
+Tarih      : 26 Eylül 2026
+Versiyon   : v2.0
+Durum      : ✅ Testnet production-ready
+Sonraki    : Mainnet geçiş hazırlığı
+================================================================================

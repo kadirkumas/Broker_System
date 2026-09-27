@@ -266,7 +266,7 @@
                             <span class="sb-tab-ico">🔔</span>
                         </button>
                         <button class="sidebar-tab-btn" data-tab="manual" title="Manuel Emir" onclick="window.switchSidebarTab('manual')">
-                            <span class="sb-tab-ico">⚡</span>
+                            <span class="sb-tab-ico">👑</span>
                         </button>
 
                     </div>
@@ -320,7 +320,12 @@
                         <div class="mo-panel-scroll">
                             <div class="mo-p-field">
                                 <label>Sembol</label>
-                                <input type="text" id="mo-symbol" class="search-input" placeholder="BTCUSDT" autocomplete="off">
+                                <div class="mo-symbol-search">
+                                    <input type="text" id="mo-symbol" class="search-input" placeholder="Ara... (ornek: BTC)" autocomplete="off" style="padding-right: 32px;">
+                                    <button type="button" id="mo-symbol-clear" class="mo-symbol-clear" onclick="clearManualSymbol(event)" title="Temizle">✕</button>
+                                    <input type="hidden" id="mo-symbol-value" value="">
+                                    <div id="mo-symbol-list" class="mo-symbol-list" style="display:none;"></div>
+                                </div>
                             </div>
 
                             <div class="mo-p-field">
@@ -410,7 +415,7 @@
                         </div>
 
                         <div class="mo-p-footer">
-                            <button class="mo-p-submit" onclick="submitManualOrder()" id="mo-submit-btn">⚡ EMİR GÖNDER</button>
+                            <button class="mo-p-submit" onclick="submitManualOrder()" id="mo-submit-btn">👑 EMİR GÖNDER</button>
                         </div>
                     </div>
                     <!-- /MANUEL EMIR PANELI -->

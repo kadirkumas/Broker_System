@@ -1,0 +1,604 @@
+================================================================================
+  CRYPTO AI (Broker System) — KAPSAMLI PROJE RAPORU
+================================================================================
+
+Tarih      : 27 Eylül 2026
+Versiyon   : v2.3
+Durum      : Testnet production-ready + DCA Hibrit Koruma + Manuel Emir Paneli
+Hazırlayan : Kadir Kumaş + AI Asistan (Haydar)
+
+================================================================================
+  1. GENEL MİMARİ
+================================================================================
+
+LOCAL (Windows 11) - MASTER (Trading):
+  - Bot AKTİF (SYNC_MODE=master)
+  - Emir açar/kapatır, DB yazar
+  - py -m uvicorn --reload
+  - Arayüz: http://127.0.0.1:8000
+  - Mobil : http://127.0.0.1:8000/m
+  - 30sn'de bir cloud'a DB push
+
+CLOUD (Oracle Frankfurt) - REPLICA (Viewer):
+  - Bot PASİF (REPLICA-GUARD ile zorla)
+  - systemd broker-bot.service
+  - 7/24 çalışır
+  - Mobil + masaüstü viewer
+
+================================================================================
+  2. STRATEJİLER (5 Adet)
+================================================================================
+
+1. RSI_SCALPER         - RSI crossing     - DCA: Var - AI TTP: Var - Renk: Bordro (#800020)
+2. HULL_SRP            - HMA dönüş        - DCA: Var - AI TTP: Var - Renk: Mavi (#2962ff)
+3. DYNAMIC_GRID        - Hibrit ref+ATR   - DCA: Var - AI TTP: Var - Renk: Sarı (#fcd535)
+4. DYNAMIC_GRID_REEL   - Gerçek grid      - DCA: Yok - AI TTP: Yok - Renk: Kırmızı (#f6465d)
+5. DEEP_HUNTER         - EMA + RSI dip    - DCA: Var - AI TTP: Var - Renk: Mor (#9c27b0)
+
+MANUAL (yeni)          - Manuel emir      - Renk: Gri (#848e9c)
+UNKNOWN                - Renk: Gri (#848e9c)
+
+================================================================================
+  3. BU OTURUMDA EKLENEN / DEĞİŞTİRİLEN ÖZELLİKLER
+================================================================================
+
+### 3.1 DCA HİBRİT KORUMA (v2.3 YENİ) ⭐⭐⭐
+--------------------------------------------------------------------------------
+Sorun: Testnet'te sığ likidite nedeniyle anlık spike'lar -> arka arkaya
+       5 DCA açılıyordu (mesafe %0.06 gibi saçma değerler).
+Çözüm: Hibrit koruma kuralı.
+
+KURALLAR:
+  - Mesafe < %2               -> DCA açılmaz (gürültü)
+  - Mesafe %2-%5 VE süre <5dk -> DCA açılmaz (henüz erken)
+  - Mesafe %2-%5 VE süre >=5dk -> DCA açılır (normal)
+  - Mesafe > %5               -> HEMEN AÇ (pump/dump istisnası)
+
+Kod:
+  - position_manager._check_dca() içinde hibrit kontrol
+  - backtest_engine.run_backtest_sync() aynı mantık
+  - pos["_last_dca_price"] + pos["_last_dca_time"] ile takip
+
+Log Çıktıları:
+  [DCA-SKIP] SYMBOL mesafe yetersiz: %0.06 < %2
+  [DCA-SKIP] SYMBOL sure yetersiz: 45sn < 300sn (mesafe %3.20)
+  [DCA-OK] SYMBOL mesafe %6.30 kabul edildi
+
+DB Düzeltme:
+  - dca_anomaly_fix.py -> ESPUSDT + KAITOUSDT hatalı DCA'lar temizlendi
+  - initial_price bug'ı düzeltildi (4.868 -> 0.10315)
+
+### 3.2 MANUEL EMİR PANELİ (v2.2 + v2.3) ⭐⭐⭐
+--------------------------------------------------------------------------------
+Konum: Sidebar 3. tab "Manuel" (ikon-only, 👑)
+Kaynak: Vadeli piyasa (futures API)
+
+Backend:
+  - order_manager.py: open_manual_position()
+    * MARKET / LIMIT / LIMIT_WITH_FALLBACK
+    * TP/SL Binance emirleri
+    * Test + Real mode
+  - main.py: POST /api/trade/manual
+    * Duplicate kontrolü (confirm_overwrite)
+    * Validasyonlar
+  - database.py: UNIQUE index MANUAL stratejiyi muaf tutar
+  - main.py: GET /api/symbols/list (300 sembol)
+
+Frontend (Desktop):
+  - Sidebar 3. tab (👑)
+  - Sembol searchable dropdown
+    * Kaynak: futuresData + /api/symbols/list
+    * SpotData kaldırıldı (sadece vadeli)
+    * Yazdıkça filtre + match vurgu
+    * Temizle butonu (X) - soluk
+  - LONG/SHORT toggle
+  - MARKET/LIMIT toggle
+  - Kaldıraç, miktar
+  - TP / SL / AI TTP / Kısmi TP
+  - Canlı özet (marjin/komisyon/toplam)
+  - Sabit submit butonu (alt)
+  - Onay penceresi
+  - Duplicate uyarısı -> AYRI AÇ seçeneği
+
+Frontend (Mobile):
+  - Header'da 👑 butonu (refresh yanında)
+  - Bottom-sheet modal
+  - Sembol searchable dropdown
+  - Toast bildirim (başarılı/hata/uyarı)
+  - Cloud 403 -> "read-only" uyarı
+
+Kullanım:
+  1. Sidebar -> 👑
+  2. Sembol seç (otomatik dolar)
+  3. Yön / emir tipi / miktar
+  4. (Opsiyonel) TP/SL/AI TTP/Kısmi TP
+  5. Özet kontrol
+  6. EMİR GÖNDER
+  7. Onay -> GÖNDER
+
+### 3.3 TAB BAR İKON DÖNÜŞÜMÜ (v2.2 + v2.3)
+--------------------------------------------------------------------------------
+Şimdiki: [İzleme] [Bildirim] [👑]  (ikon-only)
+
+Özellikler:
+  - 3 eşit genişlikte buton
+  - Aktif tab parlak + mavi kenar
+  - Pasif soluk (gri filtre)
+  - Hover: renkli + tooltip
+  - localStorage hatırlama
+
+### 3.4 TAB PERSISTENCE (v2.3)
+--------------------------------------------------------------------------------
+Sorun: 'manual' tab F5 sonrası watchlist'e dönüyordu.
+Çözüm: Load validasyonu düzeltildi (3 tab kabul).
+
+Davranış:
+  - İzleme -> F5 -> İzleme
+  - Bildirim -> F5 -> Bildirim
+  - Manuel -> F5 -> Manuel  <- DÜZELTİLDİ
+
+localStorage: cryptoSidebarActiveTab_v1
+
+### 3.5 GRID GİZLİ DAVRANIŞI (v2.3)
+--------------------------------------------------------------------------------
+Yeni Kural:
+  - Göz AÇIK   -> grid çizgileri + işlemler
+  - Göz KAPALI -> grid çizgileri GİZLENİR, işlemler KALIR
+
+Kod:
+  - toggleIndicatorVisibility: gridLineSeries temizlenir, trades'e dokunulmaz
+  - recalculateAllIndicators: gizli ise fonksiyon çağrılmaz
+  - _hasVisibleDGR: always true (artık kullanılmıyor)
+
+Kapsam: DYNAMIC_GRID, DYNAMIC_GRID_REEL, GRIDBOT
+
+### 3.6 REPLICA FORCE PASSIVE (v2.3) ⭐
+--------------------------------------------------------------------------------
+Sorun: Cloud replica'da bot_config.active=true olunca bot sinyal üretiyordu.
+Çözüm: Startup'ta IS_REPLICA kontrolü.
+
+Kod:
+  - main.py lifespan: IS_REPLICA ise bot.start() ÇAĞRILMAZ
+  - strategy_engine.start(): SYNC_MODE=replica ise erken çıkış
+  - Config'de active=true olsa bile zorla false yapılır
+
+Log:
+  [REPLICA-GUARD] Replica modu algilandi - bot BASLATILMIYOR
+  [REPLICA-GUARD] bot_config.active = False (zorla)
+
+### 3.7 TOAST DUPLICATE TEMİZLİĞİ (v2.3)
+--------------------------------------------------------------------------------
+Sinyal toast'unda 3. satırdaki LONG/SHORT kaldırıldı.
+Zaten başlıkta "LONG SİNYAL" yazıyor.
+
+Önce:  PROMUSDT [RSI_SCALPER] LONG
+Sonra: PROMUSDT [RSI_SCALPER]
+
+### 3.8 YÖNETİM PANELİ SADELEŞTİRME (v2.3)
+--------------------------------------------------------------------------------
+19 seçenek -> 14 seçenek
+
+Kaldırılanlar:
+  - [11] Cloud Durum (menü zaten gösteriyor)
+  - [18] Cloud Sunucu Durumu
+  - [24] Local Backend ZORLA Kapat
+  - [41] Local DB Durum
+  - [43] Cloud DB Durum
+  - [92] Durum Raporu
+
+Yeni sıralama:
+  MOD: [1] [2] [3]
+  CLOUD: [11] [12] [13] [14] [15] [16]
+  LOCAL: [21] [22] [23]
+  SYNC: [31]
+  DB: [41] [42]
+  CIKIS: [0]
+
+Bilgi Kutuları (2 kutu yan yana):
+  +------------------------------------+  +------------------------------------+
+  | ASIL TEMIZLIK ICIN SIRA:           |  | LOCAL -> CLOUD GONDERIM:           |
+  |  1) [3]  TUM SUNUCULARI DURDUR     |  |  1) [31] Sync (dosyalari gonder)   |
+  |  2) [42] Cloud DB TEMIZLE          |  |  2) [14] Cloud Bot YENIDEN BASLAT  |
+  |  3) [41] Local DB TEMIZLE          |  |  3) [15] Son 50 Log (kontrol)      |
+  |  4) [1]  LOCAL Moduna Gec          |  |  4) [16] Cloud SSH (gerekirse)     |
+  |  5) [2]  CLOUD Moduna Gec          |  |  5) [13] Canli Log (izle)          |
+  +------------------------------------+  +------------------------------------+
+
+### 3.9 MOBILE BOT TOGGLE FIX (v2.2)
+--------------------------------------------------------------------------------
+Sorun: Durdur butonu çalışmıyordu (active=false gönderilmiyor).
+Çözüm: Mevcut durumu oku, tersine çevir.
+
+Davranış:
+  - Açık pozisyon varsa onay penceresi
+  - close-all-force ile HER ŞEYİ kapat
+  - Sonra status yenile
+
+### 3.10 PROJE TEMİZLİĞİ HAZIRLIK (v2.3)
+--------------------------------------------------------------------------------
+.gitignore güncelleme:
+  + *.db-wal
+  + *.db-shm
+  + *.tar.gz
+
+Silinecekler (517 dosya, 66 MB):
+  - 496 backup (.bak_*)
+  - 18 cache (__pycache__)
+  - 1 OS (desktop.ini)
+  - 2 ekstra (broker_cloud.tar.gz, cleanup_project.py)
+
+Hazır script:
+  - Patch/yeni/cleanup_and_push.py (dry-run)
+  - Patch/yeni/cleanup_execute.py (sil)
+
+### 3.11 DYNAMIC GRID REEL (v2.0-2.1)
+--------------------------------------------------------------------------------
+- Her seviye BAĞIMSIZ pozisyon (DCA yok)
+- Grid seviyeler: L1..L10 (BUY, pembe), S1..S10 (SELL, sarı)
+- TP = komşu seviye
+- Recenter: 24 saat VEYA range kırılımı
+- backend tek doğru kaynak: grid_state tablosu
+
+### 3.12 AI TTP (Kademeli Trailing Stop) (v2.0-2.1)
+--------------------------------------------------------------------------------
+Default kademeler:
+  +1.5%  ->  %0.30 trail
+  +2.5%  ->  %0.20
+  +4.0%  ->  %0.12
+  +6.0%  ->  %0.07
+  +10.0% ->  %0.03
+
+Format: "1.5:0.3, 2.5:0.2, 4:0.12, 6:0.07, 10:0.03"
+Ratchet mantığı (geri dönmez).
+
+### 3.13 DİĞER ÖZELLİKLER (v2.0-2.1)
+--------------------------------------------------------------------------------
+- Measure Tool (Shift+Drag)
+- STAR-0300 (03:00 mum yıldızı)
+- BTC Header Badge
+- Strateji Noktası (3 tabloda)
+- Zoom kontrolleri (-, +, geri)
+- UI State Persistence
+- Radar (volatilite filtresi + otopilot)
+- PT rozeti (yön sütununda)
+- DCA etiket iyileştirmeleri
+
+================================================================================
+  4. DOSYA YAPISI
+================================================================================
+
+Broker_System/
+  backend/
+    main.py                     (~1400 satır)
+    strategy_engine.py          (~700 satır)
+    position_manager.py         (~950 satır)
+    order_manager.py            (~600 satır)
+    database.py                 (~215 satır)
+    backtest_engine.py          (~850 satır)
+    indicators.py               (~120 satır)
+    telegram_notifier.py
+    bot_config.json
+    bot_config.default.json
+    strategies/
+      __init__.py
+      base.py
+      rsi_scalper.py
+      hull_srp.py
+      dynamic_grid.py
+      dynamic_grid_reel.py
+      deep_hunter.py
+  frontend/
+    index.html                  (~950 satır)
+    style.css                   (~6000 satır)
+    chart.js                    (~8900 satır)
+    zoom_controls.js            (~230 satır)
+    mobile/
+      index.html
+      mobile.css
+      mobile.js
+  Patch/yeni/                   (75+ patch script)
+
+Desktop batch:
+  backend sunucu.bat
+  Broker Yonetim Paneli.bat     (14 seçenek, 2 kutu)
+  broker-yedek.bat
+  broker-cloud-yedek.bat
+  GitHub Push.bat
+
+================================================================================
+  5. ENDPOINT'LER
+================================================================================
+
+Grid:
+  GET  /api/grid/state/{symbol}
+  GET  /api/grid/state-all
+
+Backtest:
+  POST /api/backtest/start
+  GET  /api/backtest/status/{task_id}
+  GET  /api/backtest/result/{task_id}
+  GET  /api/backtest/limits/{iv}
+  GET  /api/backtest/csv/{task_id}
+
+Trade:
+  POST /api/trade/manual              (YENİ v2.2)
+  POST /api/trade/open
+  POST /api/trade/close
+  POST /api/trade/close-all
+  POST /api/trade/close-all-force     (YENİ v2.2)
+  GET  /api/trade/active
+  GET  /api/trade/active-with-pnl
+  GET  /api/trade/history
+  DELETE /api/trade/history/{id}
+
+Engine:
+  GET  /api/engine/status
+  GET  /api/engine/config
+  POST /api/engine/config
+  POST /api/engine/toggle?active=X
+  POST /api/engine/symbols/refresh
+  GET  /api/engine/recent-signals
+
+Symbols (YENİ v2.2):
+  GET  /api/symbols/list               -> 300 sembol (manuel dropdown için)
+
+Stats:
+  GET  /api/stats/strategies
+  GET  /api/stats/symbols
+  GET  /api/stats/daily?days=N
+  GET  /api/stats/signals
+  GET  /api/stats/close-reasons
+  GET  /api/stats/symbols-by-count
+
+Admin:
+  POST /api/admin/reset-all
+  POST /api/admin/clean-anomalies
+
+Diğer:
+  GET  /api/wallet
+  GET  /api/commission/{symbol}
+  GET  /api/funding/{symbol}
+  GET  /api/telegram/status
+  POST /api/telegram/test
+
+================================================================================
+  6. CONFIG YAPISI (bot_config.json)
+================================================================================
+
+{
+  "active": true,
+  "scan_interval_seconds": 900,
+  "position_check_seconds": 6,
+  "max_symbols": 300,
+  "daily_max_loss": 5,
+  "max_open_positions": 100,
+  "useLimitOrder": true,
+  "limitTimeoutSec": 3,
+  "fallbackToMarket": true,
+  "strategies": {
+    "RSI_SCALPER": {
+      "enabled": true,
+      "interval": "1m",
+      "period": 7,
+      "longVal": 20, "shortVal": 80,
+      "baseOrder": 10, "leverage": 5,
+      "takeProfit": 1.5,
+      "trailingSteps": "1.5:0.3, 2.5:0.2, 4:0.12, 6:0.07, 10:0.03",
+      "stopLoss": 65,
+      "useDCA": true,
+      "steps": "5, 13, 25, 40, 60",
+      "partialTPEnabled": true, "partialTPPercent": 50,
+      "partialTPKeepDCA": true,
+      "test_symbol": ""
+    },
+    "HULL_SRP": {...},
+    "DYNAMIC_GRID": {...},
+    "DYNAMIC_GRID_REEL": {...},
+    "DEEP_HUNTER": {...}
+  },
+  "telegram": {
+    "notify_signals": false,
+    "notify_closes": true,
+    "notify_delisting": false
+  }
+}
+
+NOT: MANUAL strateji config'de yok (dinamik açılır).
+
+TEST SYMBOL SAYI FİLTRESİ:
+  - Boş  -> Tüm self.symbols (max_symbols)
+  - "3"  -> En volatil 3 coin (A+B skoru)
+
+================================================================================
+  7. YEDEK / GERİ ALMA
+================================================================================
+
+Otomatik (Her Patch):
+  - <dosya>.bak_ozellik_adi
+
+Manuel:
+  - Local ZIP -> broker-yedek.bat
+  - Cloud ZIP -> broker-cloud-yedek.bat
+  - Klasör: Desktop\Broker_Backups\
+
+DB Yedekleri:
+  - backend/bot_data.db.bak_*
+  - Cloud: /home/ubuntu/cloud_backups/
+
+Rollback:
+  Copy-Item <yedek_dosya> <orijinal> -Force
+
+================================================================================
+  8. KOMUTLAR
+================================================================================
+
+LOCAL:
+  Backend başlat  : py -m uvicorn backend.main:app --reload
+  Backend durdur  : Ctrl+C
+  Arayüz          : http://127.0.0.1:8000
+  Mobil           : http://127.0.0.1:8000/m
+
+CLOUD (SSH):
+  Bağlan          : ssh -i C:\Users\kadir.kumas\.ssh\broker-bot.key ubuntu@92.5.133.137
+  Durum           : sudo systemctl status broker-bot
+  Restart         : sudo systemctl restart broker-bot
+  Canlı log       : sudo journalctl -u broker-bot -f
+
+YÖNETİM PANELİ (14 seçenek):
+  [1]  LOCAL Moduna Gec
+  [2]  CLOUD Moduna Gec
+  [3]  TUMUNU DURDUR
+  [11] Cloud Bot DURDUR
+  [12] Cloud Bot YENIDEN BASLAT
+  [13] Cloud Canli Log
+  [14] Cloud Son 50 Log
+  [15] Cloud Arayuzu Ac
+  [16] Cloud SSH
+  [21] Local Backend DURDUR
+  [22] Local Backend Durum
+  [23] Local Arayuzu Ac
+  [31] Local -> Cloud Sync
+  [41] Local DB TEMIZLE
+  [42] Cloud DB TEMIZLE
+  [0]  Cikis
+
+================================================================================
+  9. GÜVENLİK
+================================================================================
+
+DCA HİBRİT KORUMA (YENİ v2.3):
+  - Min mesafe: %2
+  - Min süre: 5 dakika
+  - İstisna: >%5 düşüş (pump/dump hızlı açılır)
+
+SPIKE-GUARD (Testnet):
+  - open_grid_position: fiyat vs seviye >%10 -> REDDET
+  - _execute_grid_close: |pnl_pct| >%30 -> kayıt yapma
+
+REPLICA-GUARD (YENİ v2.3):
+  - IS_REPLICA=true ise bot.start() çağrılmaz
+  - Config'de active=true olsa bile zorla false
+
+DUPLICATE PREVENTION:
+  - Klasik: symbol UNIQUE WHERE strategy_name != 'MANUAL'
+  - Grid: (symbol+group+level) UNIQUE
+  - MANUAL: muaf
+
+READ-ONLY CLOUD:
+  - IS_REPLICA=true -> POST/PUT/DELETE 403
+  - Muaf: /api/sync/*
+
+AUTH:
+  - Local: Kapalı
+  - Cloud: Açık (admin / 9060Fk.1)
+  - Mobil: PIN kilidi (4 hane, SHA-256)
+
+================================================================================
+  10. BACKTEST
+================================================================================
+
+TRADINGVIEW UYUMLU LİMİTLER:
+  1m  : 14 gün (2 hafta)      ~20K bar
+  3m  : 21 gün                ~10K bar
+  5m  : 45 gün                ~13K bar
+  15m : 90 gün                ~8.6K bar
+  30m : 180 gün               ~8.6K bar
+  1h  : 365 gün               ~8.7K bar
+  4h  : 730 gün               ~4.4K bar
+  1d  : 3650 gün              ~3.6K bar
+
+ÖZELLİKLER:
+  - 5 strateji desteği
+  - AI TTP entegrasyonu
+  - DCA Hibrit Koruma (YENİ v2.3)
+  - Equity curve (TR timezone)
+  - Kümülatif Net USDT
+  - Tarih-saat sütunu
+  - Onay penceresi
+  - Tarih maskeleme
+  - BAT İndir (CMD hızlı)
+
+================================================================================
+  11. BİLİNEN SINIRLAMALAR
+================================================================================
+
+1. Testnet'te spot API izni yok
+2. Testnet fiyat spike'ları -> DCA Hibrit Koruma ile azaltıldı
+3. Grid REEL sadece 1 sinyal/mum
+4. Grafik "1d" = 1 dakika, "1G" = 1 gün
+5. PnL hesabı açık pozisyonları saymaz
+6. İki WS akışı farkı (~%0.03)
+7. Manuel emir + aynı sembol -> ayrı pozisyon
+8. Cloud replica manuel emir -> 403
+
+================================================================================
+  12. SONRAKİ ADIMLAR (ROADMAP)
+================================================================================
+
+AŞAMA 1 (Bu Hafta):
+  [ ] DCA Hibrit Koruma test (testnet)
+  [ ] Proje temizlik + GitHub push
+  [ ] Klavye kısayolları
+
+AŞAMA 2 (Sonraki Hafta):
+  [ ] Chart senkronizasyonu
+  [ ] Snapshot (Ctrl+Shift+S)
+  [ ] Kullanıcı uyarıları
+  [ ] Volume Profile
+
+AŞAMA 3 (İleride):
+  [ ] Bar Replay
+  [ ] Trend çizgisi + Fibonacci
+  [ ] DOM / Footprint
+
+MAINNET GEÇİŞ:
+  1. Bot durdur
+  2. .env: BINANCE_TESTNET=false
+  3. API key mainnet'e güncelle
+  4. Min pozisyonla başla (5-10 USDT)
+  5. DCA Hibrit Koruma + SPIKE-GUARD loglarını izle
+  6. 1-2 hafta gözlem -> tam kapasite
+
+================================================================================
+  13. ÖZET İSTATİSTİKLER
+================================================================================
+
+Bu oturumda:
+  - 80+ patch script çalıştırıldı
+  - 25+ dosya güncellendi
+  - 5 strateji tam entegre
+  - 11 yeni büyük özellik:
+      - DYNAMIC_GRID_REEL
+      - AI TTP (kademeli)
+      - Radar (volatilite)
+      - Radar -> Grafik otopilot
+      - Measure Tool
+      - STAR-0300
+      - Strateji Noktası
+      - MANUEL EMİR PANELİ
+      - Tab Bar İkon Dönüşümü
+      - DCA HİBRİT KORUMA (YENİ v2.3)
+      - REPLICA-GUARD (YENİ v2.3)
+  - 40+ UI/UX iyileştirmesi
+  - 15+ kritik bug fix
+
+Kod Satırları:
+  - backend/ : ~5200 satır
+  - frontend/chart.js : ~8900 satır
+  - frontend/style.css : ~6000 satır
+  - frontend/index.html : ~950 satır
+  - frontend/zoom_controls.js : ~230 satır
+  - mobile/ : ~1500 satır
+  TOPLAM: ~23.000+ satır
+
+================================================================================
+  RAPOR SONU
+================================================================================
+
+Hazırlayan : Kadir Kumaş + AI Asistan (Haydar)
+Tarih      : 27 Eylül 2026
+Versiyon   : v2.3
+Durum      : Testnet production-ready + DCA Hibrit Koruma + Manuel Emir
+Sonraki    : Mainnet geçiş hazırlığı + Proje temizlik
+
+================================================================================

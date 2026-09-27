@@ -376,18 +376,9 @@ window.syncGridReelLabels = function(idx) {
     }
 };
 
-// ⚡ DGR gorunurluk helper - DYNAMIC_GRID + DYNAMIC_GRID_REEL ikisi de
+// ⚡ DGR gorunurluk helper - ARTIK KULLANILMIYOR (trades her zaman gorunur)
 window._hasVisibleDGR = function(idx) {
-    const cObj = chartsData[idx];
-    if (!cObj) return false;
-    let found = false;
-    cObj.indicators.forEach(function(v) {
-        // ⚡ Klasik grid VEYA REEL grid gorunur ise -> trades goster
-        if ((v.type === 'DYNAMIC_GRID' || v.type === 'DYNAMIC_GRID_REEL') && !v.hidden) {
-            found = true;
-        }
-    });
-    return found;
+    return true;  // Her zaman true - trades hep gorunur
 };
 
 window.BotUI = { clearAll: function(idx) { let cObj = chartsData[idx]; if (!cObj) return; cObj.strategyMarkers = []; window.clearTradeLabels(idx); if (cObj.series) cObj.series.setMarkers([]); } };
@@ -2199,23 +2190,21 @@ window.toggleIndicatorVisibility = function(chartIdx, indKey) {
     const ind = cObj.indicators.get(indKey);
     ind.hidden = !ind.hidden;
 
-    // ⚡ DGR ise -> islem gecmisi de goster/gizle
-    if (ind.type === 'DYNAMIC_GRID_REEL') {
-        const cleanSym = cObj.symbol.replace('.P', '');
+    // ⚡ Grid temelli gostergeler icin ozel davranis
+    // YENI KURAL: Gizlense bile islem gecmisi KALIR, sadece grid cizgileri gizlenir
+    if (ind.type === 'DYNAMIC_GRID' || ind.type === 'DYNAMIC_GRID_REEL' || ind.type === 'GRIDBOT') {
         if (!ind.hidden) {
-            // Gorunur yapildi -> trades yukle
-            setTimeout(function() {
-                if (window.showSymbolTrades) window.showSymbolTrades(cleanSym, chartIdx);
-            }, 100);
+            // Gorunur yapildi -> grid cizgileri yeniden cizilsin
+            // (recalculateAllIndicators zaten cagrilacak)
         } else {
-            // Gizlendi -> trades temizle
-            if (window.clearSymbolTrades) window.clearSymbolTrades(chartIdx);
-            if (cObj.gridLineSeries && cObj.gridLineSeries.length > 0) {
+            // Gizlendi -> SADECE grid cizgilerini temizle, trades'e DOKUNMA
+            if (cObj.gridLineSeries && cObj.chart) {
                 cObj.gridLineSeries.forEach(function(ls) {
                     try { cObj.chart.removeSeries(ls); } catch(e) {}
                 });
                 cObj.gridLineSeries = [];
             }
+            cObj.reelGridMeta = null;
         }
     }
 
@@ -2275,7 +2264,28 @@ window.recalculateAllIndicators = function(idx) {
             let indData = val.type === 'SMA' ? window.calcIndicatorSMA(cObj.rawCandles, val.params.period) : window.calcIndicatorEMA(cObj.rawCandles, val.params.period);
             val.series.setData(indData); val.series.applyOptions({ visible: !val.hidden });
         } else {
-            hasStrategy = true; let result;
+            hasStrategy = true;
+
+            // ⚡ GIZLI kontrolu: grid cizgileri + trade lines temizle
+            if (val.hidden) {
+                if (cObj.gridLineSeries && cObj.chart) {
+                    cObj.gridLineSeries.forEach(ls => {
+                        try { cObj.chart.removeSeries(ls); } catch(e) {}
+                    });
+                    cObj.gridLineSeries = [];
+                }
+                if (cObj.tradeLineSeriesArr && cObj.chart) {
+                    cObj.tradeLineSeriesArr.forEach(ls => {
+                        try { cObj.chart.removeSeries(ls); } catch(e) {}
+                    });
+                    cObj.tradeLineSeriesArr = [];
+                }
+                cObj.reelGridMeta = null;
+                // Bu gostergeyi atla - digerlerine gec
+                return;
+            }
+
+            let result;
             if (val.type === 'HULL_SRP') result = window.calcHullSRP(cObj.rawCandles, val.params, cObj);
             else if (val.type === 'GRIDBOT') result = window.calcGridbotScalper(cObj.rawCandles, val.params, cObj);
             else if (val.type === 'RSI_SCALPER') result = window.calcRSIScalper(cObj.rawCandles, val.params, cObj);
@@ -3435,7 +3445,7 @@ window.renderSignals = async function() {
                 if (!window._seenSignalIds.has(uid)) {
                     if (evt.event_type === 'signal') {
                         const isLong = evt.signal === 'LONG';
-                        window.showToast(`${evt.symbol} [${evt.strategy}] ${evt.signal}`, isLong ? 'success' : 'error', 5000, isLong ? '📈 LONG SİNYAL' : '📉 SHORT SİNYAL');
+                        window.showToast(`${evt.symbol} [${evt.strategy}]`, isLong ? 'success' : 'error', 5000, isLong ? '📈 LONG SİNYAL' : '📉 SHORT SİNYAL');
                     } else {
                         const sign = evt.pnl_amount >= 0 ? '+' : '';
                         window.showToast(`${evt.symbol} KAPANDI ${sign}${evt.pnl_amount.toFixed(4)} USDT`, evt.pnl_amount >= 0 ? 'success' : 'error', 5000, evt.pnl_amount >= 0 ? '✅ KÂR' : '🛑 ZARAR');
@@ -3741,14 +3751,9 @@ window.autoCheckActivePositions = async function() {
     const cObj = chartsData[activeChartId];
     if (!cObj || !cObj.symbol || !cObj.series) return;
 
-    // ⚡ KRITIK: DGR gostergesi gorunur degilse islem gecmisi GOSTERME
-    if (!window._hasVisibleDGR || !window._hasVisibleDGR(activeChartId)) {
-        // DGR yok/gizli -> temizle
-        if (cObj.userTrades && (cObj.userTrades.markers || []).length > 0) {
-            window.clearSymbolTrades(activeChartId);
-        }
-        return;
-    }
+    // ⚡ YENI KURAL: Islem gecmisi HER ZAMAN gorunur
+    // Grid gostergesi gizli olsa bile trades kaldirilmaz
+    // (Kullanici tercihi: "gecmis islemler kalsin")
 
     const now = Date.now();
     if (now - window._lastAutoCheck < 5000) return;
@@ -7939,6 +7944,11 @@ window.dismissCriticalOverlay = function() {
 
         upper.dataset.activeTab = tab;
 
+        // ⚡ localStorage'a kaydet
+        try {
+            localStorage.setItem('cryptoSidebarActiveTab_v1', tab);
+        } catch(e) {}
+
         // Manual sekme ise sembol otomatik doldur
         if (tab === 'manual') {
             try {
@@ -7990,7 +8000,7 @@ window.dismissCriticalOverlay = function() {
         setTimeout(function() {
             try {
                 var saved = localStorage.getItem(STORAGE_KEY) || 'watchlist';
-                if (saved !== 'watchlist' && saved !== 'signals') saved = 'watchlist';
+                if (saved !== 'watchlist' && saved !== 'signals' && saved !== 'manual') saved = 'watchlist';
                 window.switchSidebarTab(saved);
             } catch(e) {}
         }, 500);
@@ -9253,7 +9263,7 @@ window.dismissCriticalOverlay = function() {
 
             var _ok = true;
             if (typeof window.showConfirm === 'function') {
-                _ok = await window.showConfirm('⚡ Manuel Emir', _msg, 'GÖNDER', 'İPTAL', 'warning');
+                _ok = await window.showConfirm('👑 Manuel Emir', _msg, 'GÖNDER', 'İPTAL', 'warning');
             } else {
                 _ok = confirm(_msg);
             }
@@ -9303,7 +9313,7 @@ window.dismissCriticalOverlay = function() {
             console.error('[MANUAL] Hata:', e);
             window.showToast('❌ Bağlantı hatası: ' + e.message, 'error', 5000);
         } finally {
-            if (btn) { btn.disabled = false; btn.textContent = '⚡ EMİR GÖNDER'; }
+            if (btn) { btn.disabled = false; btn.textContent = '👑 EMİR GÖNDER'; }
         }
     };
 
@@ -9315,3 +9325,225 @@ window.dismissCriticalOverlay = function() {
 
     console.log('[MANUAL-PANEL] Hazir');
 })();
+
+
+/* MO-SYMBOL-COMBO v1 */
+// =============================================================
+// Desktop manuel emir - sembol searchable dropdown
+// =============================================================
+(function() {
+    'use strict';
+
+    // ⚡ Izleme listesinden + API'den sembol listesi
+    window._moLoadSymbols = async function() {
+        // Cache kontrolu (5 dk)
+        var now = Date.now();
+        if (window._moSymCache && (now - window._moSymCache.ts) < 300000) {
+            return window._moSymCache.symbols;
+        }
+
+        var symbols = [];
+
+        // 1) Izleme listesi (futuresData)
+        try {
+            if (typeof futuresData !== 'undefined' && Array.isArray(futuresData)) {
+                futuresData.forEach(function(x) {
+                    if (x && x.symbol && typeof x.symbol === 'string') {
+                        symbols.push(x.symbol);
+                    }
+                });
+            }
+        } catch(e) {}
+
+        // ⚡ SPOT KALDIRILDI - sadece vadeli kullanilir
+        // 2) Yetersizse API'den cek (bot taranan vadeli coinler)
+        if (symbols.length < 30) {
+            try {
+                var res = await fetch('/api/symbols/list');
+                var data = await res.json();
+                if (data && Array.isArray(data.symbols)) {
+                    symbols = symbols.concat(data.symbols);
+                }
+            } catch(e) {}
+        }
+
+        // USDT filtre + uniq + sort
+        symbols = symbols.filter(function(s) {
+            return s && typeof s === 'string' && s.endsWith('USDT');
+        });
+        symbols = Array.from(new Set(symbols)).sort();
+
+        window._moSymCache = { ts: now, symbols: symbols };
+        console.log('[MO-COMBO] ' + symbols.length + ' sembol yuklendi (izleme + API)');
+        return symbols;
+    };
+
+    // ⚡ Filtrele
+    window._moFilterSymbols = function(q) {
+        var all = (window._moSymCache && window._moSymCache.symbols) || [];
+        q = String(q || '').trim().toUpperCase();
+        var filtered = all;
+        if (q.length > 0) {
+            filtered = all.filter(function(s) { return s.indexOf(q) >= 0; });
+        }
+        return filtered.slice(0, 50);
+    };
+
+    // ⚡ Render
+    window._moRenderList = function() {
+        var list = document.getElementById('mo-symbol-list');
+        if (!list) return;
+
+        var input = document.getElementById('mo-symbol');
+        var q = (input && input.value) ? input.value : '';
+        q = q.trim().toUpperCase();
+
+        var items = window._moFilterSymbols(q);
+
+        if (items.length === 0) {
+            list.innerHTML = '<div class="mo-symbol-empty">Sonuc yok: ' + q + '</div>';
+            list.style.display = 'block';
+            return;
+        }
+
+        var html = '';
+        items.forEach(function(s) {
+            var display = s;
+            if (q.length > 0 && s.indexOf(q) >= 0) {
+                var idx = s.indexOf(q);
+                display = s.substring(0, idx) +
+                          '<span class="match">' + s.substring(idx, idx + q.length) + '</span>' +
+                          s.substring(idx + q.length);
+            }
+            html += '<div class="mo-symbol-item" data-sym="' + s + '">' + display + '</div>';
+        });
+        list.innerHTML = html;
+        list.style.display = 'block';
+
+        list.querySelectorAll('.mo-symbol-item').forEach(function(el) {
+            el.addEventListener('click', function(e) {
+                e.stopPropagation();
+                window._moSelectSymbol(el.dataset.sym);
+            });
+        });
+    };
+
+    // ⚡ Sec
+    window._moSelectSymbol = function(sym) {
+        var input = document.getElementById('mo-symbol');
+        var hidden = document.getElementById('mo-symbol-value');
+        var list = document.getElementById('mo-symbol-list');
+        if (input) input.value = sym;
+        if (hidden) hidden.value = sym;
+        if (list) list.style.display = 'none';
+        if (window.showToast) window.showToast(sym + ' secildi', 'success', 1500);
+    };
+
+    // ⚡ Secili sembolu al
+    window._moGetSelected = function() {
+        var hidden = document.getElementById('mo-symbol-value');
+        if (hidden && hidden.value) return hidden.value;
+
+        var input = document.getElementById('mo-symbol');
+        var raw = (input && input.value) ? input.value.trim().toUpperCase() : '';
+        if (!raw) return '';
+
+        var all = (window._moSymCache && window._moSymCache.symbols) || [];
+        if (all.indexOf(raw) >= 0) return raw;
+        if (all.indexOf(raw + 'USDT') >= 0) return raw + 'USDT';
+        return raw;
+    };
+
+    // ⚡ Event delegation
+    document.addEventListener('input', function(e) {
+        if (e.target && e.target.id === 'mo-symbol') {
+            var hidden = document.getElementById('mo-symbol-value');
+            if (hidden) hidden.value = '';
+            if (!window._moSymCache) {
+                window._moLoadSymbols().then(window._moRenderList);
+            } else {
+                window._moRenderList();
+            }
+        }
+    });
+
+    document.addEventListener('focusin', function(e) {
+        if (e.target && e.target.id === 'mo-symbol') {
+            if (!window._moSymCache) {
+                window._moLoadSymbols().then(window._moRenderList);
+            } else {
+                window._moRenderList();
+            }
+        }
+    });
+
+    document.addEventListener('focusout', function(e) {
+        if (e.target && e.target.id === 'mo-symbol') {
+            setTimeout(function() {
+                var list = document.getElementById('mo-symbol-list');
+                if (list) list.style.display = 'none';
+            }, 220);
+        }
+    });
+
+    // ⚡ openManualOrderModal'i sarmala - sembol yukleme tetikle
+    if (typeof window.openManualOrderModal === 'function' && !window.openManualOrderModal._comboWrapped) {
+        var _origOpen = window.openManualOrderModal;
+        window.openManualOrderModal = function() {
+            _origOpen.apply(this, arguments);
+            setTimeout(function() {
+                var input = document.getElementById('mo-symbol');
+                var hidden = document.getElementById('mo-symbol-value');
+                if (input) input.value = '';
+                if (hidden) hidden.value = '';
+                window._moLoadSymbols();
+            }, 100);
+        };
+        window.openManualOrderModal._comboWrapped = true;
+    }
+
+    // ⚡ submitManualOrder'i sarmala - sembol degerini _moGetSelected'ten al
+    if (typeof window.submitManualOrder === 'function' && !window.submitManualOrder._comboWrapped) {
+        var _origSubmit = window.submitManualOrder;
+        window.submitManualOrder = async function() {
+            // Sembol input'undan _moGetSelected degerini input.value'ya yaz
+            try {
+                var input = document.getElementById('mo-symbol');
+                var sel = window._moGetSelected();
+                if (input && sel) input.value = sel;
+            } catch(e) {}
+            return _origSubmit.apply(this, arguments);
+        };
+        window.submitManualOrder._comboWrapped = true;
+    }
+
+    console.log('[MO-COMBO] Desktop sembol combobox hazir');
+})();
+
+
+/* MO-CLEAR-BTN v1 */
+// =============================================================
+// Sembol temizle butonu
+// =============================================================
+window.clearManualSymbol = function(event) {
+    if (event) {
+        event.preventDefault();
+        event.stopPropagation();
+    }
+
+    var input = document.getElementById('mo-symbol');
+    var hidden = document.getElementById('mo-symbol-value');
+    var list = document.getElementById('mo-symbol-list');
+
+    if (input) {
+        input.value = '';
+        input.focus();
+    }
+    if (hidden) hidden.value = '';
+    if (list) list.style.display = 'none';
+
+    // Kullaniciya ufak bir geri bildirim
+    if (window.showToast) {
+        window.showToast('Sembol temizlendi', 'info', 1200);
+    }
+};

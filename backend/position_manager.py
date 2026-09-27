@@ -137,10 +137,14 @@ class PositionManager:
         if not hit:
             return False
 
-        # ⚡ DCA SIRA KONTROLU: Son DCA fiyatindan dusuk olmali (LONG icin)
-        # Boylece fiyat dalgalansa bile DCA2 < DCA1 garantilenir
+        # ⚡ DCA HIBRIT KORUMA
+        # 1) Sira: fiyat son DCA'dan dogru yonde olmali
+        # 2) Mesafe < %2 -> ATLA
+        # 3) Mesafe %2-%5 ve sure <5dk -> ATLA
+        # 4) Mesafe >%5 -> HEMEN AC (pump/dump istisnasi)
         try:
             import json as _json
+            import time as _time
             _dh = pos.get("dca_history") or "[]"
             if isinstance(_dh, str):
                 _history = _json.loads(_dh)
@@ -148,13 +152,35 @@ class PositionManager:
                 _history = _dh
             if _history and len(_history) > 0:
                 _last_dca_price = float(_history[-1].get("price", 0))
+                _last_dca_time = int(_history[-1].get("time", 0))
                 if _last_dca_price > 0:
+                    # 1) SIRA: fiyat son DCA'dan dogru yonde mi?
                     if trade_type == "BUY" and current_price >= _last_dca_price:
-                        # Fiyat son DCA'dan yuksek -> yeni DCA yapma
                         return False
                     if trade_type == "SELL" and current_price <= _last_dca_price:
-                        # Fiyat son DCA'dan dusuk -> yeni DCA yapma (SHORT)
                         return False
+
+                    # 2) MESAFE HESABI
+                    if trade_type == "BUY":
+                        _diff_pct = (_last_dca_price - current_price) / _last_dca_price * 100
+                    else:
+                        _diff_pct = (current_price - _last_dca_price) / _last_dca_price * 100
+
+                    # 3) MESAFE < %2 -> ATLA
+                    if _diff_pct < 2.0:
+                        print(f"[DCA-SKIP] {symbol} mesafe yetersiz: %{_diff_pct:.3f} < %2")
+                        return False
+
+                    # 4) MESAFE %2-%5 VE SURE <5DK -> ATLA
+                    if _diff_pct < 5.0 and _last_dca_time > 0:
+                        _age = int(_time.time()) - _last_dca_time
+                        if _age < 300:
+                            print(f"[DCA-SKIP] {symbol} sure yetersiz: {_age}sn < 300sn (mesafe %{_diff_pct:.2f})")
+                            return False
+                    # >%5 -> HIZLI PUMP/DUMP, sure kontrolunu ATLA
+
+                    # Log basarili
+                    print(f"[DCA-OK] {symbol} mesafe %{_diff_pct:.2f} kabul edildi")
         except Exception as _e:
             print(f"[DCA-ORDER] history parse hatasi: {_e}")
 

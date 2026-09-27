@@ -730,6 +730,9 @@ def run_backtest_sync(task_id, client, symbol, strategy_name, params, initial_ba
                                     if "_dca_history" not in pos:
                                         pos["_dca_history"] = []
                                     pos["_dca_history"].append({"price": price, "step": new_count})
+                                    # ⚡ Hibrit koruma icin son DCA bilgisi
+                                    pos["_last_dca_price"] = price
+                                    pos["_last_dca_time"] = candle["time"]
                                     # DCA olduktan sonra pnl_pct guncelle
                                     if is_long:
                                         pnl_pct = (price - pos["avg_price"]) / pos["avg_price"]

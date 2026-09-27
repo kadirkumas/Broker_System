@@ -5420,3 +5420,119 @@ body[data-measure-ready] .tvchart-container {
 }
 
 /* [/TAB-ICONS-ONLY] */
+
+
+/* ============================================================
+   [MO-SYMBOL-COMBO-DESKTOP]
+   Sembol arama - searchable input + liste (desktop manuel panel)
+   ============================================================ */
+
+.mo-symbol-search {
+    position: relative;
+    width: 100%;
+}
+
+.mo-symbol-list {
+    position: absolute;
+    top: 100%;
+    left: 0;
+    right: 0;
+    max-height: 260px;
+    overflow-y: auto;
+    background: #1e222d;
+    border: 1px solid #2a2e39;
+    border-radius: 6px;
+    margin-top: 4px;
+    z-index: 500;
+    box-shadow: 0 8px 24px rgba(0,0,0,0.6);
+}
+
+.mo-symbol-item {
+    padding: 9px 12px;
+    font-size: 12px;
+    color: #EAECEF;
+    cursor: pointer;
+    font-family: 'Courier New', monospace;
+    font-weight: 600;
+    border-bottom: 1px solid rgba(255,255,255,0.03);
+    transition: background 0.1s;
+    letter-spacing: 0.3px;
+}
+.mo-symbol-item:last-child {
+    border-bottom: none;
+}
+.mo-symbol-item:hover,
+.mo-symbol-item.active {
+    background: rgba(41,98,255,0.22);
+    color: #fff;
+}
+
+.mo-symbol-item .match {
+    color: #79a0ff;
+    font-weight: 800;
+    background: rgba(41,98,255,0.15);
+    border-radius: 2px;
+    padding: 0 1px;
+}
+
+.mo-symbol-empty {
+    padding: 14px;
+    text-align: center;
+    color: #848e9c;
+    font-size: 11px;
+    font-style: italic;
+}
+
+.mo-symbol-list::-webkit-scrollbar { width: 5px; }
+.mo-symbol-list::-webkit-scrollbar-track { background: transparent; }
+.mo-symbol-list::-webkit-scrollbar-thumb { background: #363c4e; border-radius: 3px; }
+.mo-symbol-list::-webkit-scrollbar-thumb:hover { background: #5d6471; }
+
+/* [/MO-SYMBOL-COMBO-DESKTOP] */
+
+
+/* ============================================================
+   [MO-CLEAR-BTN]
+   Sembol input temizle butonu
+   ============================================================ */
+
+.mo-symbol-clear {
+    position: absolute;
+    right: 8px;
+    top: 50%;
+    transform: translateY(-50%);
+    width: 20px;
+    height: 20px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: transparent;
+    border: none;
+    border-radius: 50%;
+    color: #5d6471;
+    font-size: 14px;
+    font-weight: 700;
+    line-height: 1;
+    cursor: pointer;
+    transition: all 0.15s;
+    padding: 0;
+    font-family: inherit;
+    z-index: 5;
+    opacity: 0.5;
+}
+.mo-symbol-clear:hover {
+    color: #EAECEF;
+    background: rgba(255,255,255,0.08);
+    opacity: 1;
+}
+.mo-symbol-clear:active {
+    transform: translateY(-50%) scale(0.9);
+    opacity: 1;
+}
+
+/* Input focus oldugunda buton belirginlesin */
+.mo-symbol-search input#mo-symbol:focus ~ .mo-symbol-clear {
+    opacity: 0.8;
+}
+
+/* [/MO-CLEAR-BTN] */

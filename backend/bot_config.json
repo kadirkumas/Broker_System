@@ -4,8 +4,8 @@
   "position_check_seconds": 6,
   "max_symbols": 300,
   "auto_close_delisted": true,
-  "daily_max_loss": 5,
-  "max_open_positions": 100,
+  "daily_max_loss": 10,
+  "max_open_positions": 150,
   "useLimitOrder": true,
   "limitTimeoutSec": 3,
   "fallbackToMarket": true,
@@ -126,6 +126,11 @@
   },
   "chart_settings": {
     "activeTab": "futures",
-    "savedInterval": "1m"
+    "savedInterval": "15m"
+  },
+  "telegram": {
+    "notify_signals": false,
+    "notify_closes": true,
+    "notify_delisting": false
   }
 }
