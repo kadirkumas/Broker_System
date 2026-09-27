@@ -63,6 +63,24 @@ window.deleteTradePermanently = function(id, event) {
     proceed();
 };
 
+// ⚡ Strateji nokta renkleri (3 tabloda kullanilir)
+window._strategyColors = {
+    'RSI_SCALPER':       { color: '#800020', name: 'RSI Scalper' },
+    'HULL_SRP':          { color: '#2962ff', name: 'HULL / HL2 - SRP' },
+    'DYNAMIC_GRID':      { color: '#fcd535', name: 'Dynamic Grid (DCA)' },
+    'DYNAMIC_GRID_REEL': { color: '#f6465d', name: 'Dynamic Grid REEL' },
+    'DEEP_HUNTER':       { color: '#9c27b0', name: 'Deep Hunter' },
+    'MANUAL':            { color: '#848e9c', name: 'Manual' },
+    'UNKNOWN':           { color: '#848e9c', name: 'Bilinmeyen' }
+};
+
+window.getStrategyDot = function(strategyName) {
+    var s = String(strategyName || 'UNKNOWN').trim();
+    var info = window._strategyColors[s] || { color: '#848e9c', name: s };
+    return '<span class="strat-dot" style="background:' + info.color + ';" '
+         + 'title="' + info.name + '"></span>';
+};
+
 let futuresData = [], spotData = [];
 let oldPrices = new Map(), fWsList = null, sWsList = null, pumpDumpMemory = new Map();
 
@@ -97,7 +115,15 @@ if (!botConfig.selectedStrategy) botConfig.selectedStrategy = 'RSI_SCALPER';
 
 window.getStrategyBotConfig = function(strategyType, params = {}) {
     let strat = (botConfig.strategies && botConfig.strategies[strategyType]) ? botConfig.strategies[strategyType] : botConfig;
-    return { useDCA: params.useDCA !== undefined ? params.useDCA : (strat.useDCA !== undefined ? strat.useDCA : botConfig.useDCA), baseOrder: parseFloat(params.baseOrder || strat.baseOrder || botConfig.baseOrder) || 10, volMultiplier: parseFloat(params.volMultiplier || strat.volMultiplier || botConfig.volMultiplier) || 1.0, steps: params.steps || strat.steps || botConfig.steps || "3, 5, 10", takeProfit: parseFloat(params.takeProfit || strat.takeProfit || botConfig.takeProfit) || 1.5, trailing: parseFloat(params.trailing || strat.trailing || botConfig.trailing) || 0.3 };
+    return {
+        useDCA: params.useDCA !== undefined ? params.useDCA : (strat.useDCA !== undefined ? strat.useDCA : botConfig.useDCA),
+        baseOrder: parseFloat(params.baseOrder || strat.baseOrder || botConfig.baseOrder) || 10,
+        volMultiplier: parseFloat(params.volMultiplier || strat.volMultiplier || botConfig.volMultiplier) || 1.0,
+        steps: params.steps || strat.steps || botConfig.steps || "3, 5, 10",
+        takeProfit: parseFloat(params.takeProfit || strat.takeProfit || botConfig.takeProfit) || 1.5,
+        trailing: parseFloat(params.trailing || strat.trailing || botConfig.trailing) || 0.3,
+        trailingSteps: params.trailingSteps || strat.trailingSteps || botConfig.trailingSteps || "1.5:0.3, 2.5:0.2, 4:0.12, 6:0.07, 10:0.03"
+    };
 };
 
 let signalLogData = JSON.parse(localStorage.getItem('cryptoSignals_v1')) || [];
@@ -278,6 +304,90 @@ window.syncTradeLabels = function(idx) {
         else if (lbl.position === 'onLine') { finalY = yText - h - 4; finalX = x + 8; lbl.lineEl.style.display = 'none'; }
         lbl.el.style.left = finalX + 'px'; lbl.el.style.top = finalY + 'px';
     });
+    // ⚡ Grid REEL seviye etiketlerini de guncelle
+    if (window.syncGridReelLabels) window.syncGridReelLabels(idx);
+};
+
+// ⚡ GRID REEL grafik seviye etiketleri (sag tarafta L1/S1)
+window.syncGridReelLabels = function(idx) {
+    const cObj = chartsData[idx];
+    if (!cObj || !cObj.chart || !cObj.series) return;
+
+    const wrapper = document.getElementById('chart-wrapper-' + idx);
+    if (!wrapper) return;
+
+    let container = document.getElementById('grid-labels-' + idx);
+    if (!container) {
+        container = document.createElement('div');
+        container.id = 'grid-labels-' + idx;
+        container.className = 'grid-labels-container';
+        wrapper.appendChild(container);
+        console.log('[GRID-LABELS] container yaratildi: chart-' + idx);
+    }
+
+    const meta = cObj.reelGridMeta;
+    if (!meta || !meta.levels || meta.levels.length === 0) {
+        container.innerHTML = '';
+        return;
+    }
+
+    let hasReel = false;
+    cObj.indicators.forEach(function(v) {
+        if (v.type === 'DYNAMIC_GRID_REEL' && !v.hidden) hasReel = true;
+    });
+    if (!hasReel) {
+        container.innerHTML = '';
+        return;
+    }
+
+    // Etiketleri yarat (bir kez)
+    if (container.children.length !== meta.levels.length) {
+        container.innerHTML = '';
+        meta.levels.forEach(function(lvl) {
+            const div = document.createElement('div');
+            div.className = 'grid-reel-label ' + (lvl.side === 'BUY' ? 'long' : 'short');
+            const text = lvl.side === 'BUY' ? 'L' + Math.abs(lvl.index) : 'S' + lvl.index;
+            div.textContent = text;
+            container.appendChild(div);
+        });
+    }
+
+    // ⚡ rAF ile konumlandir (layout tamamlanmasini bekle)
+    const _doPosition = function() {
+        const h = wrapper.clientHeight || container.clientHeight;
+        if (!h || h < 10) return;  // layout henuz hazir degil
+        meta.levels.forEach(function(lvl, i) {
+            const el = container.children[i];
+            if (!el) return;
+            const y = cObj.series.priceToCoordinate(lvl.price);
+            if (y === null || y === undefined || y < 0 || y > h) {
+                el.style.display = 'none';
+                return;
+            }
+            el.style.display = 'block';
+            el.style.top = y + 'px';
+        });
+    };
+
+    if (window.requestAnimationFrame) {
+        requestAnimationFrame(_doPosition);
+    } else {
+        _doPosition();
+    }
+};
+
+// ⚡ DGR gorunurluk helper - DYNAMIC_GRID + DYNAMIC_GRID_REEL ikisi de
+window._hasVisibleDGR = function(idx) {
+    const cObj = chartsData[idx];
+    if (!cObj) return false;
+    let found = false;
+    cObj.indicators.forEach(function(v) {
+        // ⚡ Klasik grid VEYA REEL grid gorunur ise -> trades goster
+        if ((v.type === 'DYNAMIC_GRID' || v.type === 'DYNAMIC_GRID_REEL') && !v.hidden) {
+            found = true;
+        }
+    });
+    return found;
 };
 
 window.BotUI = { clearAll: function(idx) { let cObj = chartsData[idx]; if (!cObj) return; cObj.strategyMarkers = []; window.clearTradeLabels(idx); if (cObj.series) cObj.series.setMarkers([]); } };
@@ -370,7 +480,8 @@ window.renderHistoricalTrades = async function() {
             let reasonShort = '-';
             let reasonFull = t.close_reason || 'Bilinmiyor';
             if (reasonFull.includes('PARTIAL')) reasonShort = 'PT';
-            else if (reasonFull.includes('TRAILING')) reasonShort = 'T';
+            else if (reasonFull.includes('AI-TTP') || reasonFull.includes('AI TTP')) reasonShort = 'TTP';
+            else if (reasonFull.includes('TRAILING')) reasonShort = 'TTP';
             else if (reasonFull.includes('STOP')) reasonShort = 'SL';
             else if (reasonFull.includes('TAKE')) reasonShort = 'TP';
             
@@ -391,7 +502,7 @@ window.renderHistoricalTrades = async function() {
                     <span title="${reasonFull}" style="font-size:10px; padding:2px 5px; background:rgba(252,213,53,0.1); color:#fcd535; border-radius:3px; cursor:help; margin-left:4px;">${reasonShort}</span>
                 </td>
                 <td class="left" style="font-weight:600; cursor:pointer; color:#79a0ff;" onclick="window.jumpToSymbolWithTrades('${t.symbol}.P')">${t.symbol}</td>
-                <td class="left ${tagClass}">${tagText}</td>
+                <td class="left ${tagClass}">${tagText}${window.getStrategyDot(t.strategy_name)}</td>
                 <td class="right">${volCell}</td>
                 <td class="right" style="color:#848e9c;">${window.formatPrice(t.initial_price || t.entry_price)}</td>
                 <td class="right" style="color:#fcd535; font-weight:600;">${window.formatPrice(t.entry_price)}</td>
@@ -518,7 +629,7 @@ window.renderDailyTrades = async function() {
             html += `<tr class="${isActiveRow}">
                 <td class="center">${(t.is_partial == 1) ? '<span title="Kısmi TP kapanışı - ana işleme bağlıdır" style="font-size:11px; color:#5d6471; cursor:help;">🔗</span>' : `<span class="btn-del-trade" onclick="window.deleteTradePermanently(${t.id}, event)" title="Sil">✖</span>`}</td>
                 <td class="left" style="font-weight:600; cursor:pointer; color:#79a0ff;" onclick="window.changeSymbol('${t.symbol}.P')">${t.symbol}</td>
-                <td class="left ${tagClass}">${tagText}</td>
+                <td class="left ${tagClass}">${tagText}${window.getStrategyDot(t.strategy_name)}</td>
                 <td class="right">${volCell}</td>
                 <td class="right" style="color:#848e9c;">${window.formatPrice(t.initial_price || t.entry_price)}</td>
                 <td class="right" style="color:#fcd535; font-weight:600;">${window.formatPrice(t.entry_price)}</td>
@@ -617,6 +728,22 @@ window.renderBottomTrades = async function() {
             const pnlPct = priceValid ? (((currentPrice - t.avg_price) / t.avg_price) * 100 * (t.trade_type === 'BUY' ? 1 : -1)) : 0;
             const netPnl = (t.total_vol * (pnlPct / 100)) - (t.total_vol * 0.0008);  // taker x2 (giris+cikis)
             
+            // ⚡ GRID REEL tespit
+            const isGrid = (t.is_grid_position || 0) == 1;
+            const gridLevel = t.grid_level;
+            const gridGroupId = t.grid_group_id || '';
+            const gridTpPrice = t.grid_tp_price || 0;
+            const gridSide = t.grid_side || '';
+
+            // ⚡ Rozet metni: LONG ise L1/L2/L3, SHORT ise S1/S2/S3
+            let gridBadge = '';
+            if (isGrid && gridLevel !== null && gridLevel !== undefined) {
+                const lvlNum = parseInt(gridLevel);
+                if (lvlNum < 0) gridBadge = 'L' + Math.abs(lvlNum);   // LONG
+                else if (lvlNum > 0) gridBadge = 'S' + lvlNum;         // SHORT
+                else gridBadge = 'L0';
+            }
+
             posArray.push({
                 priceValid: priceValid,
                 symbol: symbol,
@@ -637,6 +764,13 @@ window.renderBottomTrades = async function() {
                 ptDone: t.pt_done || 0,
                 ptPercent: t.pt_percent || 50,
                 dcaHistory: t.dca_history || [],
+                // ⚡ GRID alanlari
+                isGrid: isGrid,
+                gridLevel: gridLevel,
+                gridBadge: gridBadge,
+                gridGroupId: gridGroupId,
+                gridTpPrice: gridTpPrice,
+                gridSide: gridSide,
             });
         });
         
@@ -719,9 +853,25 @@ window.renderBottomTrades = async function() {
             
             const dcaBg = p.dcaCount > 0 ? 'color:#fcd535; background:rgba(252,213,53,0.1);' : 'color:#848e9c;';
             const ptBadge = p.ptDone ? `<span title="Kısmi TP alındı" style="min-width:34px; text-align:center; font-size:10px; font-weight:600; padding:1px 4px; border-radius:3px; background:rgba(252,213,53,0.15); color:#fcd535;">PT✓</span>` : '';
-            const volCell = `<span style="display:inline-flex; align-items:center; justify-content:flex-end; gap:6px;"><span style="min-width:68px; text-align:right; color:#EAECEF; font-weight:600;">${p.totalVol.toFixed(2)} USDT</span><span style="min-width:26px; text-align:right; color:#fcd535; font-weight:600; font-size:10px;">${leverage}x</span><span style="min-width:82px; text-align:right; color:#0ECB81; font-weight:600; font-size:10px;">Marjin: ${margin.toFixed(2)}</span><span style="min-width:44px; text-align:center; font-size:10px; font-weight:600; padding:1px 4px; border-radius:3px; ${dcaBg}">${p.dcaCount > 0 ? 'DCA:' + p.dcaCount : 'Ana'}</span>${ptBadge}</span>`;
+            // ⚡ GRID rozeti (pembe)
+            let gridBadgeHtml = '';
+            if (p.isGrid && p.gridBadge) {
+                const _gbc = p.type === 'LONG' ? 'rgba(236,72,153,0.18)' : 'rgba(252,213,53,0.18)';
+                const _gfc = p.type === 'LONG' ? '#ec4899' : '#fcd535';
+                const _tpStr = p.gridTpPrice > 0 ? ` title="Grid TP: ${window.formatPrice(p.gridTpPrice)} | Grup: ${p.gridGroupId}"` : ` title="Grup: ${p.gridGroupId}"`;
+                gridBadgeHtml = `<span${_tpStr} style="min-width:36px; text-align:center; font-size:11px; font-weight:700; padding:2px 8px; border-radius:4px; background:${_gbc}; color:${_gfc}; white-space:nowrap; letter-spacing:0.3px;">🔷 ${p.gridBadge}</span>`;
+            }
+            // ⚡ GRID pozisyonlari icin "GRID" tag'i YOK - sadece L1/S1 rozeti
+            let tagOrBadge = '';
+            if (p.isGrid && p.gridBadge) {
+                tagOrBadge = gridBadgeHtml;
+            } else {
+                const _tagText = p.dcaCount > 0 ? 'DCA:' + p.dcaCount : 'Ana';
+                tagOrBadge = `<span style="min-width:44px; text-align:center; font-size:10px; font-weight:600; padding:1px 4px; border-radius:3px; ${dcaBg}">${_tagText}</span>`;
+            }
+            const volCell = `<span style="display:inline-flex; align-items:center; justify-content:flex-end; gap:6px;"><span style="min-width:68px; text-align:right; color:#EAECEF; font-weight:600;">${p.totalVol.toFixed(2)} USDT</span><span style="min-width:26px; text-align:right; color:#fcd535; font-weight:600; font-size:10px;">${leverage}x</span><span style="min-width:82px; text-align:right; color:#0ECB81; font-weight:600; font-size:10px;">Marjin: ${margin.toFixed(2)}</span>${tagOrBadge}</span>`;
             
-            html += `<tr class="${isActiveRow}" onclick="window.changeSymbol('${p.displaySymbol}')"><td class="center" onclick="event.stopPropagation(); window.toggleDcaExpand('${p.symbol}', event);" style="cursor:${p.dcaCount > 0 ? 'pointer' : 'default'}; color:#5d6471; font-size:11px; user-select:none; white-space:nowrap;">${posArray.indexOf(p) + 1}${p.dcaCount > 0 ? (window._expandedDca.has(p.symbol) ? ' <span style="color:#FCD535; font-weight:bold; font-size:9px;">&#9660;</span>' : ' <span style="color:#FCD535; font-size:9px;">&#9654;</span>') : ''}</td><td class="left" style="font-weight:600; cursor:pointer;">${p.displaySymbol}</td><td class="left ${tagClass}">${typeIcon} ${p.type}</td><td class="right" style="font-size:11px;">${volCell}</td><td class="right" style="color:#848e9c;">${window.formatPrice(p.initialPrice || p.avgPrice)}</td><td class="right" style="color:#fcd535; font-weight:600;">${window.formatPrice(p.avgPrice)}</td><td class="right">${window.formatPrice(p.currentPrice)}</td><td class="right" style="color:#F6465D; font-weight:600; font-size:11px;">${liqPrice > 0 ? window.formatPrice(liqPrice) : '—'}</td><td class="right" style="color:${pnlColor}; font-weight:bold;">${sign}${p.pnlPct.toFixed(2)}% (${sign}${p.pnl.toFixed(2)}$)</td><td class="right" style="color:#848e9c;">-${(p.totalVol * getDisplayCommission(p.symbol)).toFixed(4)}$</td><td class="right" style="color:#EAECEF; font-size:11px;">${window.formatDateTime(p.entryTime)}</td><td class="right" style="color:#848e9c;">${timeStr}</td></tr>`;
+            html += `<tr class="${isActiveRow}" onclick="window.changeSymbol('${p.displaySymbol}')"><td class="center" onclick="event.stopPropagation(); window.toggleDcaExpand('${p.symbol}', event);" style="cursor:${p.dcaCount > 0 ? 'pointer' : 'default'}; color:#5d6471; font-size:11px; user-select:none; white-space:nowrap;">${posArray.indexOf(p) + 1}${p.dcaCount > 0 ? (window._expandedDca.has(p.symbol) ? ' <span style="color:#FCD535; font-weight:bold; font-size:9px;">&#9660;</span>' : ' <span style="color:#FCD535; font-size:9px;">&#9654;</span>') : ''}</td><td class="left" style="font-weight:600; cursor:pointer;">${p.displaySymbol}</td><td class="left ${tagClass}">${typeIcon} ${p.type}${window.getStrategyDot(p.strategyName)}${ptBadge}</td><td class="right" style="font-size:11px;">${volCell}</td><td class="right" style="color:#848e9c;">${window.formatPrice(p.initialPrice || p.avgPrice)}</td><td class="right" style="color:#fcd535; font-weight:600;">${window.formatPrice(p.avgPrice)}</td><td class="right">${window.formatPrice(p.currentPrice)}</td><td class="right" style="color:#F6465D; font-weight:600; font-size:11px;">${liqPrice > 0 ? window.formatPrice(liqPrice) : '—'}</td><td class="right" style="color:${pnlColor}; font-weight:bold;">${sign}${p.pnlPct.toFixed(2)}% (${sign}${p.pnl.toFixed(2)}$)</td><td class="right" style="color:#848e9c;">-${(p.totalVol * getDisplayCommission(p.symbol)).toFixed(4)}$</td><td class="right" style="color:#EAECEF; font-size:11px;">${window.formatDateTime(p.entryTime)}</td><td class="right" style="color:#848e9c;">${timeStr}</td></tr>`;
 
             // ⚡ DCA Tree: her DCA için alt satır
             let _dcaHistory = [];
@@ -862,11 +1012,22 @@ window.renderActiveList = function() {
     let dataToRender = activeTab === 'futures' ? [...futuresData] : [...spotData];
     const ulId = activeTab === 'futures' ? 'watchlist-futures' : 'watchlist-spot';
     if (watchlistSearchQuery) dataToRender = dataToRender.filter(item => item.symbol.toUpperCase().includes(watchlistSearchQuery));
-    if (radarModeActive) dataToRender = dataToRender.filter(item => item.change03 !== null && Math.abs(item.change03) >= 10);
+    // ⚡ Radar filtresi KALDIRILDI - yeni A+B skoru kullanilir (_applyRadarFilterAndSort)
     dataToRender.sort((a, b) => {
-        if (a.symbol === 'BTCUSDT' && !watchlistSearchQuery && !radarModeActive) return -1; if (b.symbol === 'BTCUSDT' && !watchlistSearchQuery && !radarModeActive) return 1;
-        let valA, valB; if (sortCol === 'symbol') { valA = a.symbol; valB = b.symbol; } else if (sortCol === 'price') { valA = parseFloat(a.lastPrice); valB = parseFloat(b.lastPrice); } else if (sortCol === 'change') { valA = parseFloat(a.priceChangePercent); valB = parseFloat(b.priceChangePercent); } else { valA = parseFloat(a.quoteVolume); valB = parseFloat(b.quoteVolume); }
-        if (valA < valB) return sortDir === 'asc' ? -1 : 1; if (valA > valB) return sortDir === 'asc' ? 1 : -1; return 0;
+        // ⚡ BTCUSDT sabitleme KALDIRILDI - saf siralamaya tabi
+        let valA, valB;
+        if (sortCol === 'symbol') {
+            valA = a.symbol; valB = b.symbol;
+        } else if (sortCol === 'price') {
+            valA = parseFloat(a.lastPrice); valB = parseFloat(b.lastPrice);
+        } else if (sortCol === 'change') {
+            valA = parseFloat(a.priceChangePercent); valB = parseFloat(b.priceChangePercent);
+        } else {
+            valA = parseFloat(a.quoteVolume); valB = parseFloat(b.quoteVolume);
+        }
+        if (valA < valB) return sortDir === 'asc' ? -1 : 1;
+        if (valA > valB) return sortDir === 'asc' ? 1 : -1;
+        return 0;
     });
     const ul = document.getElementById(ulId); if (!ul) return; let html = '', activeSym = chartsData[activeChartId] ? chartsData[activeChartId].symbol : '';
     dataToRender.forEach(item => {
@@ -919,9 +1080,45 @@ window.filterWallet = function() { const query = document.getElementById('wallet
 // BOT CONFIG MODAL
 // =============================================================
 
+// ============================================================
+// TEST SYMBOL input enjeksiyonu (her strategy paneline)
+// ============================================================
+window.injectTestSymbolInputs = function() {
+    document.querySelectorAll('.strategy-panel[data-strategy]').forEach(function(panel) {
+        const strat = panel.dataset.strategy;
+        if (!strat) return;
+        const body = panel.querySelector('.strategy-body');
+        if (!body) return;
+        if (body.querySelector('.strat-test-symbol')) return;  // zaten var
+
+        const row = document.createElement('div');
+        row.className = 'cfg-row';
+        row.style.gridColumn = '1 / -1';
+        row.style.background = 'rgba(41,98,255,0.08)';
+        row.style.border = '1px dashed rgba(41,98,255,0.35)';
+        row.style.borderRadius = '4px';
+        row.style.padding = '4px 8px';
+        row.style.marginBottom = '4px';
+        row.innerHTML =
+            '<span class="cfg-label" style="color:#79a0ff; font-weight:600;" ' +
+            'data-tip="Kac adet en volatil coin islem acsin. Bos = normal tarama. Ornek: 3">' +
+            '🎯 Test Sembol Sayı</span>' +
+            '<input type="number" class="search-input strat-test-symbol" ' +
+            'data-strategy="' + strat + '" placeholder="sayı" ' +
+            'min="1" max="50" step="1" ' +
+            'style="width:80px; font-size:11px; text-align:center;" ' +
+            'autocomplete="off">';
+
+        body.insertBefore(row, body.firstChild);
+    });
+};
+
 window.openBotConfigModal = async function() {
     document.getElementById('bot-config-modal').classList.add('active');
-    
+
+    // ⚡ Test Sembol input'larini enjekte et (bir kez)
+    window.injectTestSymbolInputs();
+
     try {
         const res = await fetch('/api/engine/config');
         const cfg = await res.json();
@@ -936,7 +1133,7 @@ window.openBotConfigModal = async function() {
         document.getElementById('cfg-limit-timeout').value = cfg.limitTimeoutSec || 3;
         document.getElementById('cfg-fallback-market').checked = cfg.fallbackToMarket !== false;
         
-        ['RSI_SCALPER', 'HULL_SRP', 'DYNAMIC_GRID'].forEach(strat => {
+        ['RSI_SCALPER', 'HULL_SRP', 'DYNAMIC_GRID', 'DYNAMIC_GRID_REEL', 'DEEP_HUNTER'].forEach(strat => {
             const s = (cfg.strategies || {})[strat] || {};
             
             const en = document.querySelector(`.strat-enabled[data-strategy="${strat}"]`);
@@ -955,6 +1152,14 @@ window.openBotConfigModal = async function() {
                     input.value = s[p];
                 }
             });
+
+            // ⚡ TEST SYMBOL input (sadece sayi)
+            const tsInput = document.querySelector(`.strat-test-symbol[data-strategy="${strat}"]`);
+            if (tsInput) {
+                const raw = (s.test_symbol || '').toString().trim();
+                const num = parseInt(raw, 10);
+                tsInput.value = (Number.isFinite(num) && num > 0) ? num : '';
+            }
         });
         
         const statusRes = await fetch('/api/engine/status');
@@ -1023,7 +1228,7 @@ window.saveBotConfig = async function() {
             strategies: {}
         };
         
-        ['RSI_SCALPER', 'HULL_SRP', 'DYNAMIC_GRID'].forEach(strat => {
+        ['RSI_SCALPER', 'HULL_SRP', 'DYNAMIC_GRID', 'DYNAMIC_GRID_REEL', 'DEEP_HUNTER'].forEach(strat => {
             const s = {};
             
             const en = document.querySelector(`.strat-enabled[data-strategy="${strat}"]`);
@@ -1042,7 +1247,17 @@ window.saveBotConfig = async function() {
                     s[p] = input.value;
                 }
             });
-            
+
+            // ⚡ TEST SYMBOL SAYI input (bos veya pozitif sayi)
+            const tsInput = document.querySelector(`.strat-test-symbol[data-strategy="${strat}"]`);
+            if (tsInput) {
+                const raw = (tsInput.value || '').trim();
+                const num = parseInt(raw, 10);
+                s.test_symbol = (Number.isFinite(num) && num > 0) ? String(num) : '';
+            } else {
+                s.test_symbol = '';
+            }
+
             newCfg.strategies[strat] = s;
         });
         
@@ -1448,11 +1663,14 @@ window.renderSignals = async function() {
                 const dateStr = formatSignalDate(evt.created_at);
                 const priceStr = window.formatPrice(evt.price);
                 
+                const _isGridReel = (evt.strategy === 'DYNAMIC_GRID_REEL');
+                const _sigClass = _isGridReel ? 'signal-item grid-reel-item' : 'signal-item';
+                const _stratLabel = _isGridReel ? `[🔷 GRID REEL]` : `[${evt.strategy}]`;
                 html += `
-                    <li class="signal-item" onclick="window.changeSymbol('${evt.display_symbol}')">
+                    <li class="${_sigClass}" onclick="window.changeSymbol('${evt.display_symbol}')">
                         <div class="signal-line-1">
                             <span class="signal-symbol">${evt.symbol}</span>
-                            <span class="signal-strategy">[${evt.strategy}]</span>
+                            <span class="signal-strategy">${_stratLabel}</span>
                             <span class="signal-tag ${tagClass}">${tagText}</span>
                         </div>
                         <div class="signal-line-date">${dateStr}</div>
@@ -1472,9 +1690,12 @@ window.renderSignals = async function() {
                 
                 // Kapanış sebebi kısalt
                 let reasonText = evt.close_reason || 'KAPANIŞ';
-                if (reasonText.includes('TRAILING')) {
+                if (reasonText.includes('AI-TTP') || reasonText.includes('AI TTP')) {
                     const match = reasonText.match(/\(([^)]+)\)/);
-                    reasonText = `TRAILING ${match ? match[1] : ''}`.trim();
+                    reasonText = `AI-TTP ${match ? match[1] : ''}`.trim();
+                } else if (reasonText.includes('TRAILING')) {
+                    const match = reasonText.match(/\(([^)]+)\)/);
+                    reasonText = `AI-TTP ${match ? match[1] : ''}`.trim();
                 } else if (reasonText.includes('STOP LOSS')) {
                     reasonText = 'STOP LOSS';
                 } else if (reasonText.includes('TAKE PROFIT')) {
@@ -1599,7 +1820,9 @@ window.convertToHeikinAshi = function(rawDataArray) {
 
 window.changeChartType = function(type) {
     chartsData[activeChartId].chartType = type; localStorage.setItem('cryptoChartType', type);
-    document.querySelectorAll('.type-btn').forEach(b => { if (b.dataset.type === type) b.classList.add('active'); else b.classList.remove('active'); });
+    // ⚡ Combobox secimini guncelle
+    var _sel = document.getElementById('chart-type-select');
+    if (_sel) _sel.value = type;
     let dataObj = chartsData[activeChartId];
     if (dataObj.series && dataObj.rawCandles.length > 0) {
         let activeArray = type === 'heikin' ? dataObj.haCandles : dataObj.rawCandles;
@@ -1673,13 +1896,17 @@ window.setLayout = function(count) {
 window.setActiveChart = function(i) {
     activeChartId = i; document.querySelectorAll('.single-chart-wrap').forEach(w => w.classList.remove('active-chart')); const targetWrap = document.getElementById(`chart-wrapper-${i}`); if (targetWrap) targetWrap.classList.add('active-chart');
     const currentInt = chartsData[i].interval; document.querySelectorAll('.tf-btn').forEach(b => { if (b.dataset.tf === currentInt) b.classList.add('active'); else b.classList.remove('active'); });
-    const currentType = chartsData[i].chartType || 'candles'; document.querySelectorAll('.type-btn').forEach(b => { if (b.dataset.type === currentType) b.classList.add('active'); else b.classList.remove('active'); });
+    const currentType = chartsData[i].chartType || 'candles';
+    var _ctSel = document.getElementById('chart-type-select');
+    if (_ctSel) _ctSel.value = currentType;
     let sym = chartsData[i].symbol; document.querySelectorAll('.watchlist li').forEach(li => li.classList.remove('active-row')); let activeLi = document.getElementById(`item-${sym}`); if (activeLi) activeLi.classList.add('active-row');
     window.loadCoinDetails(sym); window.refreshBottomPanel();
 };
 
 window.changeSymbol = function(sym) {
     if (window.clearSymbolTrades) window.clearSymbolTrades(activeChartId);
+    // ⚡ DGR yoksa islem gecmisi YUKLEME
+    window._lastActiveSymbol = null;
     let cObj = chartsData[activeChartId]; cObj.symbol = sym; cObj.hasInitialData = false;
     if (cObj.ws) { cObj.ws.onclose = null; cObj.ws.close(); cObj.ws = null; }
     cObj.rawCandles = []; cObj.haCandles = []; cObj.candleMap.clear(); if (cObj.series) cObj.series.setData([]);
@@ -1871,6 +2098,38 @@ window.openIndConfig = function(type, isEdit = false, editKey = null) {
         html += `<div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;"><span class="cfg-label">ATR Carpan</span><input type="number" id="cfg-dg-atrm" class="search-input" style="width:80px;" value="${atrM}" step="0.5"></div>`;
         html += `<div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;"><span class="cfg-label">Mod</span><select id="cfg-dg-mode" class="search-input" style="width:100px;"><option value="neutral" ${mode==='neutral'?'selected':''}>Neutral</option><option value="long" ${mode==='long'?'selected':''}>Long</option><option value="short" ${mode==='short'?'selected':''}>Short</option></select></div>`;
         html += `<div style="display:flex; justify-content:space-between; align-items:center;"><span class="cfg-label">Dagilim</span><select id="cfg-dg-dist" class="search-input" style="width:100px;"><option value="arithmetic" ${dist==='arithmetic'?'selected':''}>Aritmetik</option><option value="geometric" ${dist==='geometric'?'selected':''}>Geometrik</option></select></div>`;
+    } else if (type === 'DYNAMIC_GRID_REEL') {
+        document.getElementById('config-title').innerText = `Dynamic Grid REEL Ayarlari`;
+        let gc = defaultParams.gridCount || 20;
+        let smaP = defaultParams.smaPeriod || 100;
+        let atrP = defaultParams.atrPeriod || 14;
+        let atrM = defaultParams.atrMultiplier || 8;
+        let mode = defaultParams.mode || 'neutral';
+        let dist = defaultParams.distributionType || 'arithmetic';
+        html += `<div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;"><span class="cfg-label">Izgara Sayisi</span><input type="number" id="cfg-dgr-gridcount" class="search-input" style="width:80px;" value="${gc}"></div>`;
+        html += `<div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;"><span class="cfg-label">SMA Period</span><input type="number" id="cfg-dgr-sma" class="search-input" style="width:80px;" value="${smaP}"></div>`;
+        html += `<div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;"><span class="cfg-label">ATR Period</span><input type="number" id="cfg-dgr-atrp" class="search-input" style="width:80px;" value="${atrP}"></div>`;
+        html += `<div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;"><span class="cfg-label">ATR Carpan</span><input type="number" id="cfg-dgr-atrm" class="search-input" style="width:80px;" value="${atrM}" step="0.5"></div>`;
+        html += `<div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;"><span class="cfg-label">Mod</span><select id="cfg-dgr-mode" class="search-input" style="width:100px;"><option value="neutral" ${mode==='neutral'?'selected':''}>Neutral</option><option value="long" ${mode==='long'?'selected':''}>Long</option><option value="short" ${mode==='short'?'selected':''}>Short</option></select></div>`;
+        html += `<div style="display:flex; justify-content:space-between; align-items:center;"><span class="cfg-label">Dagilim</span><select id="cfg-dgr-dist" class="search-input" style="width:100px;"><option value="arithmetic" ${dist==='arithmetic'?'selected':''}>Aritmetik</option><option value="geometric" ${dist==='geometric'?'selected':''}>Geometrik</option></select></div>`;
+    } else if (type === 'DEEP_HUNTER') {
+        document.getElementById('config-title').innerText = 'Deep Hunter Ayarlari';
+        let emaP = defaultParams.emaPeriod || 200;
+        let rsiP = defaultParams.rsiPeriod || 7;
+        let lTrig = defaultParams.longTriggerPct || 5.5;
+        let lRsiMax = defaultParams.longRsiMax || 30;
+        let sTrig = defaultParams.shortTriggerPct || 15;
+        let sRsiMin = defaultParams.shortRsiMin || 75;
+        let lEn = defaultParams.longTrade !== false;
+        let sEn = defaultParams.shortTrade !== false;
+        html += `<div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;"><span class="cfg-label">EMA Period</span><input type="number" id="cfg-dh-emap" class="search-input" style="width:80px;" value="${emaP}"></div>`;
+        html += `<div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;"><span class="cfg-label">RSI Period</span><input type="number" id="cfg-dh-rsip" class="search-input" style="width:80px;" value="${rsiP}"></div>`;
+        html += `<div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;"><span class="cfg-label" style="color:#0ECB81;">LONG Trend Altı (%)</span><input type="number" id="cfg-dh-ltrig" class="search-input" style="width:80px;" value="${lTrig}" step="0.5"></div>`;
+        html += `<div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;"><span class="cfg-label" style="color:#0ECB81;">LONG RSI Max</span><input type="number" id="cfg-dh-lrsi" class="search-input" style="width:80px;" value="${lRsiMax}"></div>`;
+        html += `<div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;"><span class="cfg-label" style="color:#F6465D;">SHORT Trend Üstü (%)</span><input type="number" id="cfg-dh-strig" class="search-input" style="width:80px;" value="${sTrig}" step="0.5"></div>`;
+        html += `<div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;"><span class="cfg-label" style="color:#F6465D;">SHORT RSI Min</span><input type="number" id="cfg-dh-srsi" class="search-input" style="width:80px;" value="${sRsiMin}"></div>`;
+        html += `<div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;"><span class="cfg-label">LONG Aktif</span><input type="checkbox" id="cfg-dh-len" ${lEn ? 'checked' : ''}></div>`;
+        html += `<div style="display:flex; justify-content:space-between; align-items:center;"><span class="cfg-label">SHORT Aktif</span><input type="checkbox" id="cfg-dh-sen" ${sEn ? 'checked' : ''}></div>`;
     } else if (type === 'RSI_SCALPER') {
         document.getElementById('config-title').innerText = `RSI Scalper Ayarları`; let rsiPeriod = defaultParams.period || 7; let longOp = defaultParams.longOp || '<', longVal = defaultParams.longVal || 20; let shortOp = defaultParams.shortOp || '>', shortVal = defaultParams.shortVal || 80;
         html += `<div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;"><span class="cfg-label">RSI Period</span><input type="number" id="cfg-rsi-period" class="search-input" style="width:80px;" value="${rsiPeriod}"></div><div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;"><span class="cfg-label" style="color:#0ECB81; font-weight:bold;">LONG Operation</span><select id="cfg-rsi-long-op" class="search-input" style="width:80px;"><option value="<" ${longOp === '<' ? 'selected' : ''}>&lt;</option><option value=">" ${longOp === '>' ? 'selected' : ''}>&gt;</option></select></div><div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;"><span class="cfg-label" style="color:#0ECB81;">LONG Value</span><input type="number" id="cfg-rsi-long-val" class="search-input" style="width:80px;" value="${longVal}"></div><div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;"><span class="cfg-label" style="color:#F6465D; font-weight:bold;">SHORT Operation</span><select id="cfg-rsi-short-op" class="search-input" style="width:80px;"><option value="<" ${shortOp === '<' ? 'selected' : ''}>&lt;</option><option value=">" ${shortOp === '>' ? 'selected' : ''}>&gt;</option></select></div><div style="display:flex; justify-content:space-between; align-items:center;"><span class="cfg-label" style="color:#F6465D;">SHORT Value</span><input type="number" id="cfg-rsi-short-val" class="search-input" style="width:80px;" value="${shortVal}"></div>`;
@@ -1901,6 +2160,26 @@ window.saveConfigParams = function() {
         params.distributionType = document.getElementById('cfg-dg-dist').value || 'arithmetic';
         isMarker = true;
         nameStr = `Dynamic Grid (${params.gridCount})`;
+    } else if (type === 'DYNAMIC_GRID_REEL') {
+        params.gridCount = parseInt(document.getElementById('cfg-dgr-gridcount').value) || 20;
+        params.smaPeriod = parseInt(document.getElementById('cfg-dgr-sma').value) || 100;
+        params.atrPeriod = parseInt(document.getElementById('cfg-dgr-atrp').value) || 14;
+        params.atrMultiplier = parseFloat(document.getElementById('cfg-dgr-atrm').value) || 8;
+        params.mode = document.getElementById('cfg-dgr-mode').value || 'neutral';
+        params.distributionType = document.getElementById('cfg-dgr-dist').value || 'arithmetic';
+        isMarker = true;
+        nameStr = `Dynamic Grid REEL (${params.gridCount})`;
+    } else if (type === 'DEEP_HUNTER') {
+        params.emaPeriod = parseInt(document.getElementById('cfg-dh-emap').value) || 200;
+        params.rsiPeriod = parseInt(document.getElementById('cfg-dh-rsip').value) || 7;
+        params.longTriggerPct = parseFloat(document.getElementById('cfg-dh-ltrig').value) || 5.5;
+        params.longRsiMax = parseFloat(document.getElementById('cfg-dh-lrsi').value) || 30;
+        params.shortTriggerPct = parseFloat(document.getElementById('cfg-dh-strig').value) || 15;
+        params.shortRsiMin = parseFloat(document.getElementById('cfg-dh-srsi').value) || 75;
+        params.longTrade = document.getElementById('cfg-dh-len').checked;
+        params.shortTrade = document.getElementById('cfg-dh-sen').checked;
+        isMarker = true;
+        nameStr = `Deep Hunter (EMA${params.emaPeriod} RSI${params.rsiPeriod})`;
     } else if (type === 'RSI_SCALPER') {
         params.period = parseInt(document.getElementById('cfg-rsi-period').value) || 7; params.longOp = document.getElementById('cfg-rsi-long-op').value; params.longVal = parseInt(document.getElementById('cfg-rsi-long-val').value) || 20; params.shortOp = document.getElementById('cfg-rsi-short-op').value; params.shortVal = parseInt(document.getElementById('cfg-rsi-short-val').value) || 80; isMarker = true; nameStr = `RSI Scalper (L:${params.longOp}${params.longVal} S:${params.shortOp}${params.shortVal})`;
     }
@@ -1914,13 +2193,76 @@ window.saveConfigParams = function() {
 };
 
 window.saveConfig = function() { if (typeof window.saveConfigParams === "function") { window.saveConfigParams(); } };
-window.toggleIndicatorVisibility = function(chartIdx, indKey) { const cObj = chartsData[chartIdx]; if (!cObj || !cObj.indicators.has(indKey)) return; const ind = cObj.indicators.get(indKey); ind.hidden = !ind.hidden; window.recalculateAllIndicators(chartIdx); window.saveChartsState(); };
+window.toggleIndicatorVisibility = function(chartIdx, indKey) {
+    const cObj = chartsData[chartIdx];
+    if (!cObj || !cObj.indicators.has(indKey)) return;
+    const ind = cObj.indicators.get(indKey);
+    ind.hidden = !ind.hidden;
+
+    // ⚡ DGR ise -> islem gecmisi de goster/gizle
+    if (ind.type === 'DYNAMIC_GRID_REEL') {
+        const cleanSym = cObj.symbol.replace('.P', '');
+        if (!ind.hidden) {
+            // Gorunur yapildi -> trades yukle
+            setTimeout(function() {
+                if (window.showSymbolTrades) window.showSymbolTrades(cleanSym, chartIdx);
+            }, 100);
+        } else {
+            // Gizlendi -> trades temizle
+            if (window.clearSymbolTrades) window.clearSymbolTrades(chartIdx);
+            if (cObj.gridLineSeries && cObj.gridLineSeries.length > 0) {
+                cObj.gridLineSeries.forEach(function(ls) {
+                    try { cObj.chart.removeSeries(ls); } catch(e) {}
+                });
+                cObj.gridLineSeries = [];
+            }
+        }
+    }
+
+    window.recalculateAllIndicators(chartIdx);
+    window.saveChartsState();
+};
 
 window.removeIndicator = function(chartIdx, indKey) {
-    const cObj = chartsData[chartIdx]; if (!cObj || !cObj.indicators.has(indKey)) return; const ind = cObj.indicators.get(indKey);
-    if (ind.isMarker) { cObj.series.setMarkers(cObj.tradeMarkers || []); cObj.strategyMarkers = []; cObj.lastTrade = null; window.clearTradeLabels(chartIdx); if (cObj.tradeLineSeriesArr) { cObj.tradeLineSeriesArr.forEach(ls => { try { cObj.chart.removeSeries(ls); } catch(e){} }); cObj.tradeLineSeriesArr = []; } } 
-    else { if (ind.series) cObj.chart.removeSeries(ind.series); }
-    cObj.indicators.delete(indKey); window.recalculateAllIndicators(chartIdx); window.refreshBottomPanel(); window.saveChartsState();
+    const cObj = chartsData[chartIdx];
+    if (!cObj || !cObj.indicators.has(indKey)) return;
+    const ind = cObj.indicators.get(indKey);
+    const _wasDGR = (ind.type === 'DYNAMIC_GRID_REEL');
+
+    if (ind.isMarker) {
+        cObj.series.setMarkers(cObj.tradeMarkers || []);
+        cObj.strategyMarkers = [];
+        cObj.lastTrade = null;
+        window.clearTradeLabels(chartIdx);
+        if (cObj.tradeLineSeriesArr) {
+            cObj.tradeLineSeriesArr.forEach(ls => {
+                try { cObj.chart.removeSeries(ls); } catch(e){}
+            });
+            cObj.tradeLineSeriesArr = [];
+        }
+    } else {
+        if (ind.series) cObj.chart.removeSeries(ind.series);
+    }
+
+    cObj.indicators.delete(indKey);
+
+    // ⚡ DGR silindiyse -> islem gecmisi + grid cizgilerini temizle
+    if (_wasDGR) {
+        if (window.clearSymbolTrades) window.clearSymbolTrades(chartIdx);
+        if (cObj.gridLineSeries && cObj.gridLineSeries.length > 0) {
+            cObj.gridLineSeries.forEach(function(ls) {
+                try { cObj.chart.removeSeries(ls); } catch(e) {}
+            });
+            cObj.gridLineSeries = [];
+        }
+        cObj._backendGridState = null;
+        cObj.reelGridMeta = null;
+        window._lastActiveSymbol = null;
+    }
+
+    window.recalculateAllIndicators(chartIdx);
+    window.refreshBottomPanel();
+    window.saveChartsState();
 };
 
 window.recalculateAllIndicators = function(idx) {
@@ -1938,6 +2280,8 @@ window.recalculateAllIndicators = function(idx) {
             else if (val.type === 'GRIDBOT') result = window.calcGridbotScalper(cObj.rawCandles, val.params, cObj);
             else if (val.type === 'RSI_SCALPER') result = window.calcRSIScalper(cObj.rawCandles, val.params, cObj);
             else if (val.type === 'DYNAMIC_GRID') result = window.calcDynamicGrid(cObj.rawCandles, val.params, cObj);
+            else if (val.type === 'DYNAMIC_GRID_REEL') result = window.calcDynamicGridReel(cObj.rawCandles, val.params, cObj);
+            else if (val.type === 'DEEP_HUNTER') result = window.calcDeepHunter(cObj.rawCandles, val.params, cObj);
 
             if (result) {
                 if (!val.hidden) { cObj.strategyMarkers = cObj.strategyMarkers.concat(result.markers || []); cObj.tradeLabels = cObj.tradeLabels.concat(result.tradeLabels || []); }
@@ -2276,6 +2620,16 @@ setInterval(() => {
 // SAYFA YÜKLENMESİ
 // =============================================================
 window.onload = async () => {
+    // ⚡ Izleme listesi default siralamasini ZORLA: Deg% buyukten kucuge
+    sortCol = 'change';
+    sortDir = 'desc';
+    // Sort ikonlarini guncelle
+    try {
+        document.querySelectorAll('.sort-icon').forEach(el => el.innerHTML = '');
+        var _changeIcon = document.getElementById('sort-change');
+        if (_changeIcon) _changeIcon.innerHTML = '\u2193';  // asagi ok
+    } catch(e) {}
+
     // ⚡ Backend'den UI tercihleri yukle (localStorage'a yaz)
     try {
         if (window.loadUiPrefsFromBackend) {
@@ -2296,7 +2650,7 @@ window.onload = async () => {
     window.setLayout(chartCount);
 
     var _sel = document.getElementById('tf-select'); if (_sel) _sel.value = savedInterval;
-    document.querySelectorAll('.type-btn').forEach(b => { if (b.dataset.type === savedChartType) b.classList.add('active'); else b.classList.remove('active'); });
+    var _ctSel2 = document.getElementById('chart-type-select'); if (_ctSel2) _ctSel2.value = savedChartType;
 
     window.switchTab(activeTab);
     if (radarModeActive) { const rBtn = document.getElementById('radar-toggle-btn'); if (rBtn) rBtn.classList.add('active'); }
@@ -2729,7 +3083,7 @@ window.updateMarginPreview = function(strategy) {
 
 // Modal açıldığında tüm marjin önizlemelerini güncelle
 window.updateAllMarginPreviews = function() {
-    ['RSI_SCALPER', 'HULL_SRP', 'DYNAMIC_GRID'].forEach(s => window.updateMarginPreview(s));
+    ['RSI_SCALPER', 'HULL_SRP', 'DYNAMIC_GRID', 'DYNAMIC_GRID_REEL', 'DEEP_HUNTER'].forEach(s => window.updateMarginPreview(s));
 };
 
 // =============================================================
@@ -2854,7 +3208,7 @@ window.showSymbolTrades = async function(symbol, idx = null) {
                 position: isLong ? 'belowBar' : 'aboveBar',
                 color: '#FCD535',
                 shape: 'circle',
-                size: 0.5
+                size: 0.3
             });
             
             const lineEndTime = lastTime > entryTime ? lastTime : entryTime + 60;
@@ -2884,7 +3238,7 @@ window.showSymbolTrades = async function(symbol, idx = null) {
                     time: entryTime,
                     price: initialPrice,
                     linePrice: avgPrice,
-                    text: `DCA${dcaCount}: ${window.formatPrice(avgPrice)}`,
+                    text: `ORT: ${window.formatPrice(avgPrice)}`,
                     type: isLong ? 'LONG' : 'SHORT',
                     isExit: false,
                     position: isLong ? 'belowBar' : 'aboveBar',
@@ -2914,7 +3268,8 @@ window.showSymbolTrades = async function(symbol, idx = null) {
 
                     if (!dcaPrice || dcaPrice <= 0) return;
 
-                    // DCA cizgi (mum uzerinde yatay)
+                    // DCA cizgi - kendi mumunun uzerinde, 1 mum genisliginde
+                    // NOT: addLine kendi icinde _alignTf yapiyor, ham dcaTime verilmeli
                     addLine(dcaTime, dcaPrice, dcaTime + _tfSec, dcaPrice, 'rgba(252,213,53,0.95)', 2, true);
 
                     // DCA icin minik yuvarlak marker (mum ustu/alti)
@@ -2923,19 +3278,20 @@ window.showSymbolTrades = async function(symbol, idx = null) {
                         position: isLong ? 'belowBar' : 'aboveBar',
                         color: '#FCD535',
                         shape: 'circle',
-                        size: 0.5
+                        size: 0.3
                     });
 
                     // DCA etiketi
+                    // DCA label - mum uzerinde, fiyat ile birlikte
                     tradeLabels.push({
                         time: dcaTime,
                         price: dcaPrice,
                         linePrice: dcaPrice,
-                        text: `DCA${dcaStep}`,
+                        text: `DCA${dcaStep}: ${window.formatPrice(dcaPrice)}`,
                         type: isLong ? 'LONG' : 'SHORT',
                         isExit: false,
-                        position: 'onLine',
-                        colorClass: 'avg-label'
+                        position: 'belowBar',
+                        colorClass: 'active-entry'
                     });
                 });
             }
@@ -3144,11 +3500,14 @@ window.renderSignals = async function() {
                 const dateStr = formatSignalDate(evt.created_at);
                 const priceStr = window.formatPrice(evt.price);
                 
+                const _isGridReel = (evt.strategy === 'DYNAMIC_GRID_REEL');
+                const _sigClass = _isGridReel ? 'signal-item grid-reel-item' : 'signal-item';
+                const _stratLabel = _isGridReel ? `[🔷 GRID REEL]` : `[${evt.strategy}]`;
                 html += `
-                    <li class="signal-item" onclick="window.changeSymbol('${evt.display_symbol}')">
+                    <li class="${_sigClass}" onclick="window.changeSymbol('${evt.display_symbol}')">
                         <div class="signal-line-1">
                             <span class="signal-symbol">${evt.symbol}</span>
-                            <span class="signal-strategy">[${evt.strategy}]</span>
+                            <span class="signal-strategy">${_stratLabel}</span>
                             <span class="signal-tag ${tagClass}">${tagText}</span>
                         </div>
                         <div class="signal-line-date">${dateStr}</div>
@@ -3381,28 +3740,33 @@ window._lastActiveSymbol = '';
 window.autoCheckActivePositions = async function() {
     const cObj = chartsData[activeChartId];
     if (!cObj || !cObj.symbol || !cObj.series) return;
-    
+
+    // ⚡ KRITIK: DGR gostergesi gorunur degilse islem gecmisi GOSTERME
+    if (!window._hasVisibleDGR || !window._hasVisibleDGR(activeChartId)) {
+        // DGR yok/gizli -> temizle
+        if (cObj.userTrades && (cObj.userTrades.markers || []).length > 0) {
+            window.clearSymbolTrades(activeChartId);
+        }
+        return;
+    }
+
     const now = Date.now();
-    if (now - window._lastAutoCheck < 5000) return;  // 5 sn cache
+    if (now - window._lastAutoCheck < 5000) return;
     window._lastAutoCheck = now;
-    
+
     const cleanSym = cObj.symbol.replace('.P', '');
-    
+
     try {
         const res = await fetch('/api/trade/active');
         const trades = await res.json();
         if (!Array.isArray(trades)) return;
-        
-        const symbolPositions = trades.filter(t => t.symbol === cleanSym);
-        const currentMarkerCount = (cObj.userTrades && cObj.userTrades.markers) ? cObj.userTrades.markers.length : 0;
-        
-        // ⚡ Sadece SEMBOL degistiginde yeniden yukle
-        // Marker sayisi degistiginde (pozisyon kapandi) yeniden yukleme yapma
-        // Boylece gecmis islemler kalici kalir
+
+        // ⚡ Sembol degisti veya hic yuklenmedi ise yeniden yukle
         const symbolChanged = (window._lastActiveSymbol !== cObj.symbol);
-        
-        if (symbolChanged) {
-            console.log(`[AUTO] Sembol degisti: ${window._lastActiveSymbol} -> ${cObj.symbol}`);
+        const neverLoaded = !cObj.userTrades || (cObj.userTrades.markers || []).length === 0;
+
+        if (symbolChanged || neverLoaded) {
+            console.log(`[AUTO] Sembol: ${window._lastActiveSymbol} -> ${cObj.symbol}`);
             window._lastActiveSymbol = cObj.symbol;
             await window.showSymbolTrades(cleanSym);
         }
@@ -3959,7 +4323,8 @@ window.openDailyReportModal = async function() {
             // Sebep kısalt
             let reasonShort = '—';
             const reason = (t.close_reason || '').toUpperCase();
-            if (reason.includes('TRAILING')) reasonShort = 'T';
+            if (reason.includes('AI-TTP') || reason.includes('AI TTP')) reasonShort = 'TTP';
+            else if (reason.includes('TRAILING')) reasonShort = 'TTP';
             else if (reason.includes('STOP')) reasonShort = 'SL';
             else if (reason.includes('TAKE')) reasonShort = 'TP';
             else if (reason.includes('DELIST')) reasonShort = 'DEL';
@@ -4607,6 +4972,7 @@ window.renderReasonStats = function(data) {
         const sign = d.total_pnl >= 0 ? '+' : '';
         const reasonEmoji = {
             'PARTIAL TP': '⚡',
+            'AI TTP': '🎯',
             'TRAILING': '🎯',
             'STOP LOSS': '🛑',
             'DELISTED': '🚫',
@@ -4637,6 +5003,76 @@ document.addEventListener('keydown', function(e) {
         if (m && m.classList.contains('active')) m.classList.remove('active');
     }
 });
+
+// =============================================================
+// GRID REEL - CSS Enjeksiyonu (chart.js otomatik)
+// =============================================================
+(function() {
+    if (document.getElementById('grid-reel-style')) return;
+    var st = document.createElement('style');
+    st.id = 'grid-reel-style';
+    st.textContent = `
+        /* Grid REEL sinyal karti (pembe cerceve) */
+        .signal-item.grid-reel-item {
+            border-left-color: #ec4899 !important;
+        }
+        .signal-item.grid-reel-item:hover {
+            border-left-color: #f472b6 !important;
+            background: #2a2e39;
+        }
+        /* Aktif pozisyon tablosunda grid satiri (hafif pembe vurgu) */
+        #bottom-trade-panel tr.grid-row td {
+            background: rgba(236,72,153,0.03);
+        }
+        /* Grid rozeti animasyonu */
+        @keyframes gridBadgePulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.75; }
+        }
+        .grid-badge-pulse { animation: gridBadgePulse 1.8s ease-in-out infinite; }
+
+        /* ============================================================
+           GRID REEL - Grafik seviye etiketleri (sag tarafta L1/S1)
+           ============================================================ */
+        .grid-labels-container {
+            position: absolute;
+            top: 0;
+            right: 0;
+            bottom: 0;
+            width: 200px;
+            pointer-events: none;
+            z-index: 22;
+            overflow: hidden;
+        }
+        .grid-reel-label {
+            position: absolute;
+            right: 72px;
+            padding: 1px 7px;
+            border-radius: 3px;
+            font-size: 10px;
+            font-weight: 700;
+            font-family: 'Courier New', monospace;
+            white-space: nowrap;
+            transform: translateY(-50%);
+            box-shadow: 0 1px 3px rgba(0,0,0,0.5);
+            letter-spacing: 0.5px;
+            line-height: 1.2;
+            min-width: 26px;
+            text-align: center;
+        }
+        .grid-reel-label.long {
+            background: rgba(236,72,153,0.9);
+            color: #fff;
+            border: 1px solid rgba(236,72,153,1);
+        }
+        .grid-reel-label.short {
+            background: rgba(252,213,53,0.9);
+            color: #0b0e14;
+            border: 1px solid rgba(252,213,53,1);
+        }
+    `;
+    document.head.appendChild(st);
+})();
 
 // =============================================================
 // CFG LABEL TOOLTIP v2 (Event Delegation + JS Sozluk)
@@ -4803,17 +5239,13 @@ window.devStopBackend = async function() {
 };
 
 window.devRestartBackend = async function() {
-    try {
-        const res = await fetch('/api/dev/restart', { method: 'POST' });
-        const data = await res.json();
-        if (data.status === 'success') {
-            window.showToast('🔄 Backend yeniden başlatılıyor... (3-5 sn)', 'info', 3500);
-        } else {
-            window.showToast('❌ Restart hatası: ' + (data.message || 'bilinmeyen'), 'error', 4000);
-        }
-    } catch(e) {
-        window.showToast('❌ Restart başarısız: ' + e.message, 'error', 4000);
-    }
+    // ⚡ KALDIRILDI: --reload modunda zaten dosya degisince otomatik reload
+    // Bu buton backend'i oldurup yeniden baslatamiyordu (Windows bug).
+    window.showToast(
+        '🔄 Backend reload otomatik: .py dosyalarini kaydet, gerisi kendiliginden gelir.\n' +
+        'Manuel restart icin terminalde: Ctrl+C → py -m uvicorn backend.main:app --reload',
+        'info', 6000
+    );
 };
 
 window.devHardReload = function() {
@@ -5265,6 +5697,60 @@ window.onBtStrategyChange = function() {
             <div class="bt-param-row"><label>ATR Period</label><input type="number" id="btp-atrPeriod" value="${params.atrPeriod || 14}"></div>
             <div class="bt-param-row"><label>ATR Çarpan</label><input type="number" id="btp-atrMultiplier" value="${params.atrMultiplier || 5}" step="0.5"></div>
         `;
+    } else if (strat === 'DYNAMIC_GRID') {
+        html = `
+            <div class="bt-param-row"><label>Izgara Sayısı</label><input type="number" id="btp-gridCount" value="${params.gridCount || 20}"></div>
+            <div class="bt-param-row"><label>SMA Period</label><input type="number" id="btp-smaPeriod" value="${params.smaPeriod || 100}"></div>
+            <div class="bt-param-row"><label>Pivot Lookback</label><input type="number" id="btp-pivotLookback" value="${params.pivotLookback || 100}"></div>
+            <div class="bt-param-row"><label>ATR Period</label><input type="number" id="btp-atrPeriod" value="${params.atrPeriod || 14}"></div>
+            <div class="bt-param-row"><label>ATR Çarpan</label><input type="number" id="btp-atrMultiplier" value="${params.atrMultiplier || 8}" step="0.5"></div>
+            <div class="bt-param-row"><label>Mod</label>
+                <select id="btp-mode">
+                    <option value="neutral" ${params.mode === 'neutral' ? 'selected' : ''}>Neutral</option>
+                    <option value="long" ${params.mode === 'long' ? 'selected' : ''}>Long only</option>
+                    <option value="short" ${params.mode === 'short' ? 'selected' : ''}>Short only</option>
+                </select>
+            </div>
+        `;
+    } else if (strat === 'DYNAMIC_GRID_REEL') {
+        html = `
+            <div class="bt-param-row"><label>Izgara Sayısı</label><input type="number" id="btp-gridCount" value="${params.gridCount || 20}"></div>
+            <div class="bt-param-row"><label>SMA Period</label><input type="number" id="btp-smaPeriod" value="${params.smaPeriod || 100}"></div>
+            <div class="bt-param-row"><label>Pivot Lookback</label><input type="number" id="btp-pivotLookback" value="${params.pivotLookback || 100}"></div>
+            <div class="bt-param-row"><label>ATR Period</label><input type="number" id="btp-atrPeriod" value="${params.atrPeriod || 14}"></div>
+            <div class="bt-param-row"><label>ATR Çarpan</label><input type="number" id="btp-atrMultiplier" value="${params.atrMultiplier || 8}" step="0.5"></div>
+            <div class="bt-param-row"><label>Mod</label>
+                <select id="btp-mode">
+                    <option value="neutral" ${params.mode === 'neutral' ? 'selected' : ''}>Neutral</option>
+                    <option value="long" ${params.mode === 'long' ? 'selected' : ''}>Long only</option>
+                    <option value="short" ${params.mode === 'short' ? 'selected' : ''}>Short only</option>
+                </select>
+            </div>
+            <div class="bt-param-row" style="grid-column: span 3; padding: 8px; background: rgba(236,72,153,0.08); border-radius: 4px; font-size: 11px; color: #d1d4dc;">
+                ⚡ <b>Gerçek Grid:</b> Her seviye ayrı pozisyon. TP = komşu seviye. DCA yok.
+            </div>
+        `;
+    } else if (strat === 'DEEP_HUNTER') {
+        html = `
+            <div class="bt-param-row"><label>EMA Period</label><input type="number" id="btp-emaPeriod" value="${params.emaPeriod || 200}"></div>
+            <div class="bt-param-row"><label>RSI Period</label><input type="number" id="btp-rsiPeriod" value="${params.rsiPeriod || 7}"></div>
+            <div class="bt-param-row"><label>LONG Trend Altı (%)</label><input type="number" id="btp-longTriggerPct" value="${params.longTriggerPct || 5.5}" step="0.5"></div>
+            <div class="bt-param-row"><label>LONG RSI Max</label><input type="number" id="btp-longRsiMax" value="${params.longRsiMax || 30}"></div>
+            <div class="bt-param-row"><label>SHORT Trend Üstü (%)</label><input type="number" id="btp-shortTriggerPct" value="${params.shortTriggerPct || 15}" step="0.5"></div>
+            <div class="bt-param-row"><label>SHORT RSI Min</label><input type="number" id="btp-shortRsiMin" value="${params.shortRsiMin || 75}"></div>
+            <div class="bt-param-row"><label>LONG Aktif</label>
+                <select id="btp-longTrade">
+                    <option value="true" ${params.longTrade !== false ? 'selected' : ''}>Evet</option>
+                    <option value="false" ${params.longTrade === false ? 'selected' : ''}>Hayır</option>
+                </select>
+            </div>
+            <div class="bt-param-row"><label>SHORT Aktif</label>
+                <select id="btp-shortTrade">
+                    <option value="true" ${params.shortTrade !== false ? 'selected' : ''}>Evet</option>
+                    <option value="false" ${params.shortTrade === false ? 'selected' : ''}>Hayır</option>
+                </select>
+            </div>
+        `;
     }
     
     // Ortak parametreler
@@ -5281,7 +5767,7 @@ window.onBtStrategyChange = function() {
         <div class="bt-param-row"><label>İlk İşlem (USDT)</label><input type="number" id="btp-baseOrder" value="${params.baseOrder || 10}"></div>
         <div class="bt-param-row"><label>Kaldıraç</label><input type="number" id="btp-leverage" value="${params.leverage || 1}"></div>
         <div class="bt-param-row"><label>Hedef Kâr (%)</label><input type="number" id="btp-takeProfit" value="${params.takeProfit || 1.5}" step="0.1"></div>
-        <div class="bt-param-row"><label>İzleyen Stop (%)</label><input type="number" id="btp-trailing" value="${params.trailing || 0.3}" step="0.1"></div>
+        <div class="bt-param-row"><label>🎯 AI TTP</label><input type="text" id="btp-trailingSteps" value="${params.trailingSteps || '1.5:0.3, 2.5:0.2, 4:0.12, 6:0.07, 10:0.03'}" style="font-family:monospace;font-size:11px;"></div>
         <div class="bt-param-row"><label>Stop Loss (%)</label><input type="number" id="btp-stopLoss" value="${params.stopLoss || 3}" step="0.1"></div>
         <div class="bt-param-row"><label>DCA Aktif</label>
             <select id="btp-useDCA">
@@ -5301,7 +5787,7 @@ window._collectBtParams = function() {
     const params = {};
     
     // Common
-    const common = ['baseOrder', 'leverage', 'takeProfit', 'trailing', 'stopLoss', 'volMultiplier', 'steps'];
+    const common = ['baseOrder', 'leverage', 'takeProfit', 'stopLoss', 'volMultiplier', 'steps'];
     common.forEach(k => {
         const el = document.getElementById('btp-' + k);
         if (el) {
@@ -5311,6 +5797,10 @@ window._collectBtParams = function() {
             else params[k] = parseFloat(v) || 0;
         }
     });
+
+    // AI TTP - trailingSteps (text input)
+    const ttsEl = document.getElementById('btp-trailingSteps');
+    if (ttsEl) params.trailingSteps = (ttsEl.value || '').trim();
     
     const dcaEl = document.getElementById('btp-useDCA');
     if (dcaEl) params.useDCA = dcaEl.value === 'true';
@@ -5357,6 +5847,41 @@ window._collectBtParams = function() {
         params.smaPeriod = parseInt(document.getElementById('btp-smaPeriod')?.value) || 100;
         params.atrPeriod = parseInt(document.getElementById('btp-atrPeriod')?.value) || 14;
         params.atrMultiplier = parseFloat(document.getElementById('btp-atrMultiplier')?.value) || 5;
+    } else if (strat === 'DYNAMIC_GRID') {
+        params.gridCount = parseInt(document.getElementById('btp-gridCount')?.value) || 20;
+        params.smaPeriod = parseInt(document.getElementById('btp-smaPeriod')?.value) || 100;
+        params.pivotLookback = parseInt(document.getElementById('btp-pivotLookback')?.value) || 100;
+        params.atrPeriod = parseInt(document.getElementById('btp-atrPeriod')?.value) || 14;
+        params.atrMultiplier = parseFloat(document.getElementById('btp-atrMultiplier')?.value) || 8;
+        params.mode = document.getElementById('btp-mode')?.value || 'neutral';
+        params.distributionType = 'arithmetic';
+        params.useDCA = true;
+    } else if (strat === 'DYNAMIC_GRID_REEL') {
+        params.gridCount = parseInt(document.getElementById('btp-gridCount')?.value) || 20;
+        params.smaPeriod = parseInt(document.getElementById('btp-smaPeriod')?.value) || 100;
+        params.pivotLookback = parseInt(document.getElementById('btp-pivotLookback')?.value) || 100;
+        params.atrPeriod = parseInt(document.getElementById('btp-atrPeriod')?.value) || 14;
+        params.atrMultiplier = parseFloat(document.getElementById('btp-atrMultiplier')?.value) || 8;
+        params.mode = document.getElementById('btp-mode')?.value || 'neutral';
+        params.distributionType = 'arithmetic';
+        params.useDCA = false;
+        params.recenterHours = 24;
+        params.recenterBuffer = 0.03;
+        params.minWidthRatio = 0.4;
+        params.maxWidthRatio = 0.8;
+        params.asymmetryRatio = 1.3;
+        params.takeProfit = 0;
+        params.trailing = 0;
+        params.stopLoss = 0;
+    } else if (strat === 'DEEP_HUNTER') {
+        params.emaPeriod = parseInt(document.getElementById('btp-emaPeriod')?.value) || 200;
+        params.rsiPeriod = parseInt(document.getElementById('btp-rsiPeriod')?.value) || 7;
+        params.longTriggerPct = parseFloat(document.getElementById('btp-longTriggerPct')?.value) || 5.5;
+        params.longRsiMax = parseFloat(document.getElementById('btp-longRsiMax')?.value) || 30;
+        params.shortTriggerPct = parseFloat(document.getElementById('btp-shortTriggerPct')?.value) || 15;
+        params.shortRsiMin = parseFloat(document.getElementById('btp-shortRsiMin')?.value) || 75;
+        params.longTrade = document.getElementById('btp-longTrade')?.value === 'true';
+        params.shortTrade = document.getElementById('btp-shortTrade')?.value === 'true';
     }
     
     return params;
@@ -5478,9 +6003,13 @@ window._loadBtResult = async function(taskId) {
         }
         
         window._btState.currentResult = data.result;
-        window._renderBtResult(data.result);
+        // ⚡ ONCE section'lari goster, SONRA chart ciz
         document.getElementById('bt-progress-section').style.display = 'none';
-        document.getElementById('bt-result-section').style.display = 'block';
+        document.getElementById('bt-result-section').style.display = 'flex';
+        // ⚡ Layout tamamlanmasini bekle
+        setTimeout(function() {
+            window._renderBtResult(data.result);
+        }, 100);
     } catch(e) {
         window.showToast('❌ Sonuç yükleme hatası: ' + e.message, 'error');
     }
@@ -5520,18 +6049,69 @@ window._drawBtEquity = function(curve) {
     const container = document.getElementById('bt-equity-chart');
     if (!container) return;
     container.innerHTML = '';
-    
-    if (!curve || curve.length === 0) return;
-    
+
+    if (!curve || curve.length === 0) {
+        container.innerHTML = '<div style="text-align:center; color:#848e9c; padding:40px;">Equity verisi yok</div>';
+        return;
+    }
+
+    // ⚡ Boyut kontrolu - layout tamamlanmadiysa bekle
+    var _w = container.clientWidth || container.offsetWidth;
+    var _h = container.clientHeight || container.offsetHeight;
+    if (_w < 50 || _h < 50) {
+        // 300ms sonra tekrar dene
+        setTimeout(function() { window._drawBtEquity(curve); }, 300);
+        return;
+    }
+
     const chart = LightweightCharts.createChart(container, {
-        width: container.clientWidth,
-        height: container.clientHeight,
+        width: _w,
+        height: _h,
         layout: { background: { type: 'solid', color: '#131722' }, textColor: '#d1d4dc' },
         grid: { vertLines: { color: '#1e222d' }, horzLines: { color: '#1e222d' } },
         rightPriceScale: { borderColor: '#2a2e39' },
-        timeScale: { borderColor: '#2a2e39', timeVisible: true },
+        timeScale: {
+            borderColor: '#2a2e39',
+            timeVisible: true,
+            tickMarkFormatter: (time, tickMarkType) => {
+                const date = new Date(time * 1000);
+                const localTime = new Date(date.getTime() + (3 * 60 * 60 * 1000));
+                const h = localTime.getUTCHours().toString().padStart(2, '0');
+                const m = localTime.getUTCMinutes().toString().padStart(2, '0');
+                const D = localTime.getUTCDate().toString().padStart(2, '0');
+                const M = (localTime.getUTCMonth() + 1).toString().padStart(2, '0');
+                if (tickMarkType === LightweightCharts.TickMarkType.Time) return h + ':' + m;
+                return D + '/' + M;
+            }
+        },
+        localization: {
+            locale: 'tr-TR',
+            timeFormatter: (time) => {
+                const date = new Date(time * 1000);
+                const localTime = new Date(date.getTime() + (3 * 60 * 60 * 1000));
+                const D = localTime.getUTCDate().toString().padStart(2, '0');
+                const M = (localTime.getUTCMonth() + 1).toString().padStart(2, '0');
+                const Y = localTime.getUTCFullYear();
+                const h = localTime.getUTCHours().toString().padStart(2, '0');
+                const m = localTime.getUTCMinutes().toString().padStart(2, '0');
+                return D + '/' + M + '/' + Y + ' ' + h + ':' + m;
+            }
+        },
         crosshair: { mode: LightweightCharts.CrosshairMode.Normal },
     });
+
+    // ⚡ Pencere resize olunca chart'i yeniden boyutlandir
+    if (!container._resizeHooked) {
+        container._resizeHooked = true;
+        var _ro = new ResizeObserver(function() {
+            var w2 = container.clientWidth, h2 = container.clientHeight;
+            if (w2 > 50 && h2 > 50 && container._btChart) {
+                container._btChart.applyOptions({ width: w2, height: h2 });
+            }
+        });
+        _ro.observe(container);
+    }
+    container._btChart = chart;
     
     const series = chart.addAreaSeries({
         lineColor: '#2962ff',
@@ -5551,37 +6131,93 @@ window._drawBtTrades = function(trades) {
         container.innerHTML = '<div style="text-align:center; color:#848e9c; padding:20px;">İşlem yok</div>';
         return;
     }
-    
+
+    // ⚡ KUMULATIF HESAP - KRONOLOJIK (eskiden yeniye)
+    var chrono = trades.slice().sort(function(a, b) {
+        return (a.exit_time || 0) - (b.exit_time || 0);
+    });
+    var cumMap = {};
+    var running = 0;
+    chrono.forEach(function(t, idx) {
+        running += (t.pnl_amount || 0);
+        // Benzersiz anahtar: exit_time + idx (ayni anda olanlar icin)
+        cumMap[t.exit_time + '_' + idx] = running;
+    });
+
+    // ⚡ Gosterim icin YENIDEN ESKIYE sirala
+    var sorted = trades.slice().sort(function(a, b) {
+        return (b.exit_time || 0) - (a.exit_time || 0);
+    });
+
+    // Tarih formatlayici
+    function _fmtDt(ts) {
+        if (!ts) return '—';
+        var d = new Date(ts * 1000);
+        var pad = function(n) { return String(n).padStart(2, '0'); };
+        return pad(d.getDate()) + '/' + pad(d.getMonth() + 1) + ' '
+             + pad(d.getHours()) + ':' + pad(d.getMinutes());
+    }
+
     let html = '<table class="bt-trades-tbl"><thead><tr>'
         + '<th class="left">#</th>'
+        + '<th class="left">Tarih</th>'
         + '<th class="left">Yön</th>'
         + '<th class="left">Giriş</th>'
         + '<th class="left">Çıkış</th>'
         + '<th>Büyüklük</th>'
         + '<th>K/Z %</th>'
-        + '<th>K/Z USDT</th>'
+        + '<th>Net USDT</th>'
         + '<th class="left">Sebep</th>'
         + '<th>DCA</th>'
         + '</tr></thead><tbody>';
-    
-    trades.forEach((t, i) => {
+
+    sorted.forEach((t, i) => {
         const isProfit = t.pnl_amount >= 0;
         const sign = isProfit ? '+' : '';
         const color = isProfit ? '#0ECB81' : '#F6465D';
-        
+
+        // ⚡ Kumulatif toplami bul
+        // Ayni exit_time olabilir - kronolojik sirada bul
+        var cumVal = 0;
+        for (var ci = 0; ci < chrono.length; ci++) {
+            var ct = chrono[ci];
+            if (ct.entry_time === t.entry_time
+                && ct.exit_time === t.exit_time
+                && Math.abs((ct.pnl_amount || 0) - (t.pnl_amount || 0)) < 0.000001) {
+                cumVal = cumMap[ct.exit_time + '_' + ci] || 0;
+                break;
+            }
+        }
+
+        var cumSign = cumVal >= 0 ? '+' : '';
+        var cumColor = cumVal >= 0 ? '#0ECB81' : '#F6465D';
+
+        // Tarih hucresi: giris ustte, cikis altta
+        var _dtHtml = '<div style="font-size:10px; font-family:monospace; line-height:1.35; white-space:nowrap;">'
+            + '<div><span style="color:#848e9c;">G:</span> ' + _fmtDt(t.entry_time) + '</div>'
+            + '<div><span style="color:#848e9c;">Ç:</span> ' + _fmtDt(t.exit_time) + '</div>'
+            + '</div>';
+
+        // ⚡ Net USDT hucresi - kumulatif toplamli
+        var _netHtml = '<span style="color:' + color + '; font-weight:bold;">'
+            + sign + t.pnl_amount.toFixed(4) + ' USDT</span>'
+            + ' <span style="color:' + cumColor + '; font-size:10px; opacity:0.85;">'
+            + '(Σ ' + cumSign + cumVal.toFixed(4) + ')</span>';
+
         html += '<tr>'
             + '<td class="left">' + (i + 1) + '</td>'
+            + '<td class="left" style="padding: 5px 10px;">' + _dtHtml + '</td>'
             + '<td class="left" style="color:' + (t.side === 'BUY' ? '#0ECB81' : '#F6465D') + ';">' + (t.side === 'BUY' ? '▲ LONG' : '▼ SHORT') + '</td>'
             + '<td class="left">' + t.entry_price + '</td>'
             + '<td class="left">' + t.exit_price + '</td>'
             + '<td>' + t.total_vol.toFixed(2) + '</td>'
             + '<td style="color:' + color + '; font-weight:bold;">' + sign + t.pnl_pct.toFixed(2) + '%</td>'
-            + '<td style="color:' + color + '; font-weight:bold;">' + sign + t.pnl_amount.toFixed(4) + '</td>'
+            + '<td style="white-space:nowrap;">' + _netHtml + '</td>'
             + '<td class="left" style="font-size:10px; color:#848e9c;">' + t.reason + '</td>'
             + '<td>' + (t.dca_count > 0 ? t.dca_count : '—') + '</td>'
             + '</tr>';
     });
-    
+
     html += '</tbody></table>';
     container.innerHTML = html;
 };
@@ -5618,7 +6254,7 @@ window.toggleDcaExpand = function(symbol, event) {
 // =============================================================
 // BACKTEST BAT İNDİR
 // =============================================================
-window.downloadBacktestBat = function() {
+window.downloadBacktestBat = async function() {
     const symbol = document.getElementById('bt-symbol').value.trim().toUpperCase();
     const strategy = document.getElementById('bt-strategy').value;
     const interval = document.getElementById('bt-interval').value;
@@ -5629,6 +6265,31 @@ window.downloadBacktestBat = function() {
         window.showToast('❌ Sembol gerekli', 'error');
         return;
     }
+
+    // ⚡ Onay penceresi
+    const _lim = window._btIntervalLimits[interval];
+    const _daysTxt = _lim ? (_lim.maxDays + ' günlük') : '';
+    const _confirmMsg =
+        'Sembol: ' + symbol + '\n' +
+        'Strateji: ' + strategy + '\n' +
+        'Interval: ' + interval + '\n\n' +
+        '⚠️ ' + _daysTxt + ' veri test edilecektir.\n' +
+        '(Yaklaşık ' + (_lim ? _lim.bars.toLocaleString('tr-TR') : '?') + ' bar)\n\n' +
+        'BAT dosyası indirilsin mi?';
+
+    var _proceed = true;
+    if (typeof window.showConfirm === 'function') {
+        _proceed = await window.showConfirm(
+            '📥 BAT İndir',
+            _confirmMsg,
+            'İNDİR',
+            'İPTAL',
+            'info'
+        );
+    } else {
+        _proceed = confirm(_confirmMsg);
+    }
+    if (!_proceed) return;
 
     // Parametreleri topla (mevcut fonksiyondan)
     const params = window._collectBtParams ? window._collectBtParams() : {};
@@ -5649,11 +6310,11 @@ window.downloadBacktestBat = function() {
         }
     }
 
-    // Params string
+    // Params string (ayirici: ';', cunku steps gibi degerler virgul icerir)
     const paramsStr = Object.entries(params).map(([k, v]) => {
         if (typeof v === 'boolean') return `${k}=${v}`;
         return `${k}=${v}`;
-    }).join(',');
+    }).join(';');
 
         // BAT icerigi - forward slash kullaniyor
     const batContent = '@echo off\n'
@@ -5699,6 +6360,239 @@ window.downloadBacktestBat = function() {
 // =============================================================
 // DYNAMIC GRID - Chart Visualizer (Python ile ayni mantik)
 // =============================================================
+// =============================================================
+// DEEP HUNTER - Chart Visualizer (EMA + RSI dip/tepe)
+// =============================================================
+(function() {
+    // --- EMA hesapla ---
+    function _dhEma(prices, period) {
+        if (prices.length < period) return null;
+        var k = 2 / (period + 1);
+        var sum = 0;
+        for (var i = 0; i < period; i++) sum += prices[i];
+        var ema = sum / period;
+        for (var i = period; i < prices.length; i++) {
+            ema = prices[i] * k + ema * (1 - k);
+        }
+        return ema;
+    }
+
+    // --- RSI (Wilder) son deger ---
+    function _dhRsi(closes, period) {
+        if (closes.length <= period) return 50;
+        var gains = 0, losses = 0;
+        for (var i = 1; i <= period; i++) {
+            var d = closes[i] - closes[i - 1];
+            if (d >= 0) gains += d; else losses -= d;
+        }
+        var ag = gains / period;
+        var al = losses / period;
+        for (var i = period + 1; i < closes.length; i++) {
+            var d = closes[i] - closes[i - 1];
+            var g = d >= 0 ? d : 0;
+            var l = d < 0 ? -d : 0;
+            ag = (ag * (period - 1) + g) / period;
+            al = (al * (period - 1) + l) / period;
+        }
+        if (al === 0) return 100;
+        var rs = ag / al;
+        return 100 - (100 / (1 + rs));
+    }
+
+    // --- Ana: kalici EMA cizgisi + dip/tepe marker'lari ---
+    window.calcDeepHunter = function(data, params, cObj, isBackground) {
+        if (!cObj.tradeLineSeriesArr) cObj.tradeLineSeriesArr = [];
+
+        // Eski EMA cizgilerini temizle
+        if (cObj.chart && cObj.tradeLineSeriesArr.length > 0) {
+            cObj.tradeLineSeriesArr.forEach(function(ls) {
+                try { cObj.chart.removeSeries(ls); } catch(e) {}
+            });
+            cObj.tradeLineSeriesArr = [];
+        }
+
+        var markers = [];
+        var tradeLabels = [];
+
+        var emaPeriod = parseInt(params.emaPeriod) || 200;
+        var rsiPeriod = parseInt(params.rsiPeriod) || 7;
+        var longTrig = (parseFloat(params.longTriggerPct) || 5.5) / 100;
+        var shortTrig = (parseFloat(params.shortTriggerPct) || 15) / 100;
+        var longRsiMax = parseFloat(params.longRsiMax) || 30;
+        var shortRsiMin = parseFloat(params.shortRsiMin) || 75;
+        var longEnabled = params.longTrade !== false;
+        var shortEnabled = params.shortTrade !== false;
+
+        if (!data || data.length < emaPeriod + 5) {
+            return { markers: [], lastTrade: null, tradeLabels: [] };
+        }
+
+        var closes = data.map(function(c) { return c.close; });
+
+        // EMA serisi hesapla (grafik cizgisi icin)
+        var emaSeries = [];
+        var k = 2 / (emaPeriod + 1);
+        var sum = 0;
+        for (var i = 0; i < emaPeriod; i++) sum += closes[i];
+        var ema = sum / emaPeriod;
+        emaSeries.push({ time: data[emaPeriod - 1].time, value: ema });
+        for (var i = emaPeriod; i < data.length; i++) {
+            ema = closes[i] * k + ema * (1 - k);
+            emaSeries.push({ time: data[i].time, value: ema });
+        }
+
+        // EMA cizgisi (mavi)
+        if (cObj.chart && emaSeries.length > 0) {
+            try {
+                var emaLs = cObj.chart.addLineSeries({
+                    color: 'rgba(41, 98, 255, 0.75)',
+                    lineWidth: 2,
+                    crosshairMarkerVisible: false,
+                    lastValueVisible: false,
+                    priceLineVisible: false
+                });
+                emaLs.setData(emaSeries);
+                cObj.tradeLineSeriesArr.push(emaLs);
+            } catch(e) {}
+        }
+
+        // Sinyalleri tara (aktif trade simule et)
+        var activeTrade = null;
+        var tradeCounter = 1;
+        var baseOrder = parseFloat(params.baseOrder) || 5;
+        var tpPct = (parseFloat(params.takeProfit) || 1.5) / 100;
+        var trailingPct = (parseFloat(params.trailing) || 0.5) / 100;
+
+        for (var i = emaPeriod; i < data.length; i++) {
+            var candle = data[i];
+            var currentEma = emaSeries[i - emaPeriod + 1] ? emaSeries[i - emaPeriod + 1].value : null;
+            if (!currentEma) continue;
+
+            // RSI (bu noktaya kadar)
+            var rsiSlice = closes.slice(0, i + 1);
+            var currentRsi = _dhRsi(rsiSlice, rsiPeriod);
+
+            // --- Aktif trade yonetimi ---
+            if (activeTrade) {
+                var isLong = activeTrade.type === 'LONG';
+                var profitPct = isLong
+                    ? (candle.high - activeTrade.avgPrice) / activeTrade.avgPrice
+                    : (activeTrade.avgPrice - candle.low) / activeTrade.avgPrice;
+
+                if (!activeTrade.ttpActive && profitPct >= tpPct) {
+                    activeTrade.ttpActive = true;
+                    activeTrade.hwm = isLong ? candle.high : candle.low;
+                }
+
+                if (activeTrade.ttpActive) {
+                    var trig;
+                    if (isLong) {
+                        if (candle.high > activeTrade.hwm) activeTrade.hwm = candle.high;
+                        trig = activeTrade.hwm * (1 - trailingPct);
+                    } else {
+                        if (candle.low < activeTrade.hwm) activeTrade.hwm = candle.low;
+                        trig = activeTrade.hwm * (1 + trailingPct);
+                    }
+                    var exit = (isLong && candle.low <= trig) || (!isLong && candle.high >= trig);
+                    if (exit) {
+                        var finalPct = isLong
+                            ? (trig - activeTrade.avgPrice) / activeTrade.avgPrice
+                            : (activeTrade.avgPrice - trig) / activeTrade.avgPrice;
+                        var sign = finalPct >= 0 ? '+' : '';
+                        markers.push({
+                            time: candle.time,
+                            position: isLong ? 'aboveBar' : 'belowBar',
+                            color: '#FCD535',
+                            shape: 'circle',
+                            size: 1
+                        });
+                        tradeLabels.push({
+                            time: candle.time,
+                            price: isLong ? candle.high : candle.low,
+                            linePrice: trig,
+                            text: 'Çıkış ' + window.formatPrice(trig) + '<br><span style="color:' + (finalPct >= 0 ? '#0ECB81' : '#F6465D') + '; font-weight:bold;">' + sign + (finalPct * 100).toFixed(2) + '%</span>',
+                            type: activeTrade.type,
+                            isExit: true,
+                            position: isLong ? 'aboveBar' : 'belowBar',
+                            colorClass: 'exit'
+                        });
+                        activeTrade = null;
+                        continue;
+                    }
+                }
+            }
+
+            // --- Yeni sinyal ---
+            if (!activeTrade) {
+                var deviation = (candle.close - currentEma) / currentEma;
+
+                if (longEnabled && deviation < -longTrig && currentRsi < longRsiMax) {
+                    markers.push({
+                        time: candle.time,
+                        position: 'belowBar',
+                        color: '#089981',
+                        shape: 'arrowUp',
+                        size: 1
+                    });
+                    tradeLabels.push({
+                        time: candle.time,
+                        price: candle.low,
+                        linePrice: candle.close,
+                        text: 'Giriş #' + tradeCounter + '<br>' + window.formatPrice(candle.close),
+                        type: 'LONG',
+                        isExit: false,
+                        position: 'belowBar',
+                        colorClass: 'long-entry'
+                    });
+                    activeTrade = {
+                        type: 'LONG',
+                        entryPrice: candle.close,
+                        avgPrice: candle.close,
+                        ttpActive: false
+                    };
+                    tradeCounter++;
+                } else if (shortEnabled && deviation > shortTrig && currentRsi > shortRsiMin) {
+                    markers.push({
+                        time: candle.time,
+                        position: 'aboveBar',
+                        color: '#F6465D',
+                        shape: 'arrowDown',
+                        size: 1
+                    });
+                    tradeLabels.push({
+                        time: candle.time,
+                        price: candle.high,
+                        linePrice: candle.close,
+                        text: 'Giriş #' + tradeCounter + '<br>' + window.formatPrice(candle.close),
+                        type: 'SHORT',
+                        isExit: false,
+                        position: 'aboveBar',
+                        colorClass: 'short-entry'
+                    });
+                    activeTrade = {
+                        type: 'SHORT',
+                        entryPrice: candle.close,
+                        avgPrice: candle.close,
+                        ttpActive: false
+                    };
+                    tradeCounter++;
+                }
+            }
+        }
+
+        cObj.dhMeta = {
+            emaPeriod: emaPeriod,
+            rsiPeriod: rsiPeriod,
+            lastEma: emaSeries.length > 0 ? emaSeries[emaSeries.length - 1].value : null,
+            lastRsi: _dhRsi(closes, rsiPeriod)
+        };
+
+        return { markers: markers, lastTrade: activeTrade, tradeLabels: tradeLabels };
+    };
+
+    console.log('[DEEP-HUNTER] Chart visualizer aktif');
+})();
+
 (function() {
     function _sma(closes, period) {
         if (closes.length < period) return null;
@@ -5937,7 +6831,226 @@ window.downloadBacktestBat = function() {
         return { markers: markers, lastTrade: null, tradeLabels: tradeLabels };
     };
 
+    // ==========================================================
+    // DYNAMIC GRID REEL - Chart Visualizer (Pembe/Sari)
+    // Her seviye bagimsiz pozisyon -> sadece seviyeleri ciz
+    // ==========================================================
+    // ==========================================================
+    // DYNAMIC GRID REEL - Backend state cizer (tek dogru kaynak)
+    // ==========================================================
+    // Kendi hesabini YAPMA - /api/grid/state/{symbol} verisini ciz
+    // fetchGridState() cObj._backendGridState'e yazar, bu cizer.
+    window.calcDynamicGridReel = function(data, params, cObj, isBackground) {
+        if (!cObj.gridLineSeries) cObj.gridLineSeries = [];
+
+        // Eski cizgileri temizle
+        if (cObj.chart && cObj.gridLineSeries.length > 0) {
+            cObj.gridLineSeries.forEach(function(ls) {
+                try { cObj.chart.removeSeries(ls); } catch(e) {}
+            });
+            cObj.gridLineSeries = [];
+        }
+
+        const markers = [];
+        const tradeLabels = [];
+
+        // Backend state'ten ciz
+        const state = cObj._backendGridState;
+        if (!state || !state.levels || state.levels.length === 0) {
+            cObj.reelGridMeta = null;
+            return { markers: markers, lastTrade: null, tradeLabels: tradeLabels };
+        }
+
+        const reference = state.reference;
+        const top = state.top;
+        const bottom = state.bottom;
+        const levels = state.levels;
+
+        if (!reference || !top || !bottom || !levels || levels.length === 0) {
+            cObj.reelGridMeta = null;
+            return { markers: markers, lastTrade: null, tradeLabels: tradeLabels };
+        }
+
+        // Cizim (PEMBE/SARI)
+        if (cObj.chart && data && data.length > 0) {
+            const startTime = data[Math.max(0, data.length - 100)].time;
+            const endTime = data[data.length - 1].time;
+
+            levels.forEach(function(lvl) {
+                let color, lw, dashed;
+                if (lvl.side === 'BUY') {
+                    color = 'rgba(236, 72, 153, 0.55)';  // PEMBE
+                    lw = 1;
+                    dashed = true;
+                } else {
+                    color = 'rgba(252, 213, 53, 0.55)';  // SARI
+                    lw = 1;
+                    dashed = true;
+                }
+                try {
+                    const ls = cObj.chart.addLineSeries({
+                        color: color,
+                        lineWidth: lw,
+                        lineStyle: dashed ? 2 : 0,
+                        crosshairMarkerVisible: false,
+                        lastValueVisible: false,
+                        priceLineVisible: false,
+                        autoscaleInfoProvider: function() { return null; }
+                    });
+                    ls.setData([
+                        { time: startTime, value: lvl.price },
+                        { time: endTime, value: lvl.price }
+                    ]);
+                    cObj.gridLineSeries.push(ls);
+                } catch(e) {}
+            });
+
+            // Reference (beyaz kalin)
+            try {
+                const refLs = cObj.chart.addLineSeries({
+                    color: 'rgba(255, 255, 255, 0.9)',
+                    lineWidth: 2,
+                    lineStyle: 0,
+                    crosshairMarkerVisible: false,
+                    lastValueVisible: false,
+                    priceLineVisible: false,
+                    autoscaleInfoProvider: function() { return null; }
+                });
+                refLs.setData([
+                    { time: startTime, value: reference },
+                    { time: endTime, value: reference }
+                ]);
+                cObj.gridLineSeries.push(refLs);
+            } catch(e) {}
+
+            // Top (sari ince)
+            try {
+                const topLs = cObj.chart.addLineSeries({
+                    color: 'rgba(252, 213, 53, 0.3)',
+                    lineWidth: 1,
+                    lineStyle: 3,
+                    crosshairMarkerVisible: false,
+                    lastValueVisible: false,
+                    priceLineVisible: false,
+                    autoscaleInfoProvider: function() { return null; }
+                });
+                topLs.setData([
+                    { time: startTime, value: top },
+                    { time: endTime, value: top }
+                ]);
+                cObj.gridLineSeries.push(topLs);
+            } catch(e) {}
+
+            // Bottom (pembe ince)
+            try {
+                const botLs = cObj.chart.addLineSeries({
+                    color: 'rgba(236, 72, 153, 0.3)',
+                    lineWidth: 1,
+                    lineStyle: 3,
+                    crosshairMarkerVisible: false,
+                    lastValueVisible: false,
+                    priceLineVisible: false,
+                    autoscaleInfoProvider: function() { return null; }
+                });
+                botLs.setData([
+                    { time: startTime, value: bottom },
+                    { time: endTime, value: bottom }
+                ]);
+                cObj.gridLineSeries.push(botLs);
+            } catch(e) {}
+        }
+
+        cObj.reelGridMeta = {
+            reference: reference,
+            top: top,
+            bottom: bottom,
+            levels: levels,
+            group_id: state.group_id,
+            from_backend: true
+        };
+
+        return { markers: markers, lastTrade: null, tradeLabels: tradeLabels };
+    };
+
+    // ==========================================================
+    // GRID STATE FETCH - Backend'den grid durumunu cek
+    // ==========================================================
+    window.fetchGridState = async function(idx) {
+        const cObj = chartsData[idx];
+        if (!cObj || !cObj.symbol) return;
+
+        let hasDgr = false;
+        cObj.indicators.forEach(function(v) {
+            if (v.type === 'DYNAMIC_GRID_REEL') hasDgr = true;
+        });
+        if (!hasDgr) return;
+
+        const cleanSym = cObj.symbol.replace('.P', '');
+
+        try {
+            const res = await fetch('/api/grid/state/' + cleanSym);
+            const data = await res.json();
+
+            if (data.status === 'ok') {
+                cObj._backendGridState = data;
+                window.recalculateAllIndicators(idx);
+            } else {
+                if (cObj._backendGridState) {
+                    cObj._backendGridState = null;
+                    window.recalculateAllIndicators(idx);
+                }
+            }
+        } catch(e) {
+            console.warn('[GRID-STATE-FETCH] hata:', e);
+        }
+    };
+
+    window.fetchAllGridStates = function() {
+        for (let i = 0; i < 4; i++) {
+            if (chartsData[i] && chartsData[i].symbol) {
+                window.fetchGridState(i);
+            }
+        }
+    };
+
+    // ==========================================================
+    // HOOKS
+    // ==========================================================
+    (function() {
+        if (window.setActiveChart && !window.setActiveChart._gsHooked) {
+            const _orig = window.setActiveChart;
+            window.setActiveChart = function(i) {
+                _orig.apply(this, arguments);
+                setTimeout(function() { window.fetchGridState(i); }, 500);
+            };
+            window.setActiveChart._gsHooked = true;
+        }
+
+        if (window.changeSymbol && !window.changeSymbol._gsHooked) {
+            const _orig = window.changeSymbol;
+            window.changeSymbol = function(sym) {
+                _orig.apply(this, arguments);
+                setTimeout(function() { window.fetchGridState(activeChartId); }, 800);
+            };
+            window.changeSymbol._gsHooked = true;
+        }
+
+        if (!window._gridStateInterval) {
+            window._gridStateInterval = setInterval(function() {
+                for (let i = 0; i < 4; i++) {
+                    if (chartsData[i] && chartsData[i].symbol) {
+                        window.fetchGridState(i);
+                    }
+                }
+            }, 5000);
+        }
+    })();
+
+    console.log('[DYNAMIC-GRID] Chart visualizer aktif (backend-driven)');
+    console.log('[GRID-STATE-FETCH] Otomatik refresh aktif (5sn)');
+
     console.log('[DYNAMIC-GRID] Chart visualizer aktif');
+    console.log('[DYNAMIC-GRID-REEL] Chart visualizer aktif (pembe/sari)');
 })();
 
 
@@ -6095,3 +7208,2110 @@ window.dismissCriticalOverlay = function() {
     console.log('[RISK] Critical overlay 5 dk susturuldu');
 };
 
+
+
+// =============================================================
+// [UI-STATE] Persistence - Layout/Chart/Panel hatirla
+// =============================================================
+(function() {
+    const KEY = 'cryptoUiState_v1';
+
+    function loadState() {
+        try {
+            return JSON.parse(localStorage.getItem(KEY) || '{}');
+        } catch(e) { return {}; }
+    }
+
+    function saveState(partial) {
+        try {
+            const cur = loadState();
+            const next = Object.assign({}, cur, partial);
+            localStorage.setItem(KEY, JSON.stringify(next));
+        } catch(e) {}
+    }
+
+    // ---- SAVE HOOKS ----
+    if (window.setLayout) {
+        const orig = window.setLayout;
+        window.setLayout = function(count) {
+            orig.apply(this, arguments);
+            saveState({ layoutCount: count });
+        };
+    }
+
+    if (window.setActiveChart) {
+        const orig = window.setActiveChart;
+        window.setActiveChart = function(i) {
+            orig.apply(this, arguments);
+            saveState({ activeChartId: i });
+        };
+    }
+
+    if (window.toggleBottomTradePanel) {
+        const orig = window.toggleBottomTradePanel;
+        window.toggleBottomTradePanel = function() {
+            orig.apply(this, arguments);
+            const panel = document.getElementById('bottom-trade-panel');
+            if (panel) saveState({ bottomCollapsed: panel.classList.contains('collapsed') });
+        };
+    }
+
+    if (window.toggleSidebar) {
+        const orig = window.toggleSidebar;
+        window.toggleSidebar = function() {
+            orig.apply(this, arguments);
+            const sb = document.getElementById('sidebar');
+            if (sb) saveState({ sidebarCollapsed: sb.classList.contains('collapsed') });
+        };
+    }
+
+    // ---- LOAD ON STARTUP ----
+    window.addEventListener('load', function() {
+        setTimeout(function() {
+            const s = loadState();
+
+            // Layout
+            if (s.layoutCount && [1, 2, 4].indexOf(s.layoutCount) !== -1) {
+                try { if (window.setLayout) window.setLayout(s.layoutCount); } catch(e) {}
+            }
+
+            // Aktif chart
+            if (typeof s.activeChartId === 'number' && s.activeChartId >= 0 && s.activeChartId < 4) {
+                setTimeout(function() {
+                    try { if (window.setActiveChart) window.setActiveChart(s.activeChartId); } catch(e) {}
+                }, 400);
+            }
+
+            // Bottom panel
+            if (s.bottomCollapsed) {
+                const panel = document.getElementById('bottom-trade-panel');
+                if (panel && !panel.classList.contains('collapsed')) {
+                    try { if (window.toggleBottomTradePanel) window.toggleBottomTradePanel(); } catch(e) {}
+                }
+            }
+
+            // Sidebar
+            if (s.sidebarCollapsed) {
+                const sb = document.getElementById('sidebar');
+                if (sb && !sb.classList.contains('collapsed')) {
+                    try { if (window.toggleSidebar) window.toggleSidebar(); } catch(e) {}
+                }
+            }
+
+            console.log('[UI-STATE] Yuklendi:', s);
+        }, 900);
+    });
+
+    // ---- MANUEL KAYDET ----
+    window._uiStateSave = saveState;
+    window._uiStateLoad = loadState;
+
+    console.log('[UI-STATE] Persistence aktif');
+})();
+
+
+/* BACKTEST-FIX-MISSING v1 */
+// =============================================================
+// Backtest eksik parcalari tamamla (self-contained)
+// =============================================================
+(function() {
+    'use strict';
+
+    // ---- 1) Limit tablosu (yoksa ekle) ----
+    // ⚡ TradingView Essential uyumlu limitler
+    window._btIntervalLimits = {
+        "1m":  { maxDays: 14,   bars: 20160 },
+        "3m":  { maxDays: 21,   bars: 10080 },
+        "5m":  { maxDays: 45,   bars: 12960 },
+        "15m": { maxDays: 90,   bars: 8640 },
+        "30m": { maxDays: 180,  bars: 8640 },
+        "1h":  { maxDays: 365,  bars: 8760 },
+        "4h":  { maxDays: 730,  bars: 4380 },
+        "1d":  { maxDays: 3650, bars: 3650 }
+    };
+
+    // ---- 2) Tarih maskesi (yoksa ekle) ----
+    if (typeof window._attachBtDateMask !== 'function') {
+        window._attachBtDateMask = function() {
+            var el = document.getElementById('bt-start-date');
+            if (!el || el._masked) return;
+            el._masked = true;
+            el.setAttribute('inputmode', 'numeric');
+            el.setAttribute('maxlength', '10');
+
+            el.addEventListener('input', function(e) {
+                var v = e.target.value;
+                var digits = v.replace(/\D/g, '').slice(0, 8);
+                var out = '';
+                if (digits.length >= 1) out = digits.slice(0, 2);
+                if (digits.length >= 3) out += '-' + digits.slice(2, 4);
+                if (digits.length >= 5) out += '-' + digits.slice(4, 8);
+                e.target.value = out;
+            });
+
+            el.addEventListener('keydown', function(e) {
+                if (e.key === 'Backspace' && el.value.endsWith('-')) {
+                    e.preventDefault();
+                    el.value = el.value.slice(0, -1);
+                    el.dispatchEvent(new Event('input'));
+                }
+            });
+        };
+    }
+
+    // ---- 3) Hint guncelleyici (yoksa ekle) ----
+    if (typeof window._updateBtRangeInfo !== 'function') {
+        window._updateBtRangeInfo = function() {
+            var iv = document.getElementById('bt-interval');
+            if (!iv) return;
+            var info = window._btIntervalLimits[iv.value];
+            var hintEl = document.getElementById('bt-range-hint');
+            if (!hintEl) {
+                var startInput = document.getElementById('bt-start-date');
+                if (startInput) {
+                    hintEl = document.createElement('div');
+                    hintEl.id = 'bt-range-hint';
+                    hintEl.style.cssText = 'margin-top:6px; font-size:11px; color:#848e9c; line-height:1.4;';
+                    startInput.parentNode.appendChild(hintEl);
+                }
+            }
+            if (!hintEl) return;
+            if (!info) { hintEl.innerHTML = ''; return; }
+
+            var today = new Date();
+            var maxStart = new Date(today.getTime() - info.maxDays * 24 * 3600 * 1000);
+            var pad = function(n) { return String(n).padStart(2, '0'); };
+            var maxStartStr = pad(maxStart.getDate()) + '-' + pad(maxStart.getMonth() + 1) + '-' + maxStart.getFullYear();
+
+            hintEl.innerHTML =
+                '\u26A1 <b>' + iv.value + '</b> icin maks aralik: ' +
+                '<span style="color:#79a0ff; font-weight:600;">' + info.maxDays + ' gun</span> ' +
+                '(~' + info.bars.toLocaleString('tr-TR') + ' bar). ' +
+                'En erken baslangic: <b>' + maxStartStr + '</b>.';
+
+            var sd = document.getElementById('bt-start-date');
+            if (sd) sd.placeholder = 'GG-AA-YYYY  (max ' + info.maxDays + ' gun geriye)';
+        };
+    }
+
+    // ---- 4) startBacktest'i sarmala (onay ekle) ----
+    if (typeof window.startBacktest === 'function' && !window.startBacktest._confWrapped) {
+        var _origStart = window.startBacktest;
+        window.startBacktest = async function() {
+            var symbol = (document.getElementById('bt-symbol') || {}).value || '';
+            symbol = symbol.trim().toUpperCase();
+            var strategy = (document.getElementById('bt-strategy') || {}).value || '';
+            var interval = (document.getElementById('bt-interval') || {}).value || '1m';
+
+            if (!symbol) {
+                if (window.showToast) window.showToast('\u274C Sembol gerekli', 'error');
+                return;
+            }
+
+            var _lim = window._btIntervalLimits[interval];
+            var _daysTxt = _lim ? (_lim.maxDays + ' günlük') : '';
+            var _stratMap = {
+                'RSI_SCALPER': 'RSI Scalper',
+                'HULL_SRP': 'HULL / SRP',
+                'DYNAMIC_GRID': 'Dynamic Grid (DCA)',
+                'DYNAMIC_GRID_REEL': 'Dynamic Grid REEL',
+                'DEEP_HUNTER': 'Deep Hunter'
+            };
+            var _stratLabel = _stratMap[strategy] || strategy;
+            var _confirmMsg =
+                'Sembol: ' + symbol + '\n' +
+                'Strateji: ' + _stratLabel + '\n' +
+                'Interval: ' + interval + '\n\n' +
+                '\u26A0\uFE0F ' + _daysTxt + ' veri test edilecektir.\n' +
+                '(Yaklaşık ' + (_lim ? _lim.bars.toLocaleString('tr-TR') : '?') + ' bar)\n\n' +
+                'Backtest başlatılsın mı?';
+
+            var _ok = true;
+            if (typeof window.showConfirm === 'function') {
+                _ok = await window.showConfirm('\uD83E\uDDEA Backtest Başlat', _confirmMsg, 'BAŞLAT', 'İPTAL', 'info');
+            } else {
+                _ok = confirm(_confirmMsg);
+            }
+            if (!_ok) return;
+
+            return _origStart.apply(this, arguments);
+        };
+        window.startBacktest._confWrapped = true;
+    }
+
+    // ---- 5) openBacktestModal'i sarmala (mask + hint) ----
+    if (typeof window.openBacktestModal === 'function' && !window.openBacktestModal._fixWrapped) {
+        var _origOpen = window.openBacktestModal;
+        window.openBacktestModal = function() {
+            _origOpen.apply(this, arguments);
+            setTimeout(function() {
+                if (window._attachBtDateMask) window._attachBtDateMask();
+                if (window._updateBtRangeInfo) window._updateBtRangeInfo();
+                var ivEl = document.getElementById('bt-interval');
+                if (ivEl && !ivEl._fixHooked) {
+                    ivEl._fixHooked = true;
+                    ivEl.addEventListener('change', function() {
+                        if (window._updateBtRangeInfo) window._updateBtRangeInfo();
+                    });
+                }
+            }, 250);
+        };
+        window.openBacktestModal._fixWrapped = true;
+    }
+
+    // ---- 6) Equity Curve basligina "Grafik" butonu ekle ----
+    function _addEquityChartBtn() {
+        var wrap = document.querySelector('.bt-equity-wrap');
+        if (!wrap) return;
+        var title = wrap.querySelector('.bt-section-title');
+        if (!title) return;
+        if (title.querySelector('.bt-eq-chart-btn')) return;
+
+        title.style.display = 'flex';
+        title.style.justifyContent = 'space-between';
+        title.style.alignItems = 'center';
+
+        var btn = document.createElement('button');
+        btn.className = 'bt-eq-chart-btn';
+        btn.type = 'button';
+        btn.textContent = '\uD83D\uDCCA Grafik';
+        btn.style.cssText = 'background: rgba(41,98,255,0.12); color:#79a0ff; border:1px solid rgba(41,98,255,0.35); padding:4px 12px; border-radius:4px; font-size:11px; font-weight:700; cursor:pointer; font-family:inherit; transition: all 0.15s;';
+        btn.onmouseover = function() { btn.style.background = 'rgba(41,98,255,0.25)'; btn.style.color = '#fff'; };
+        btn.onmouseout = function() { btn.style.background = 'rgba(41,98,255,0.12)'; btn.style.color = '#79a0ff'; };
+        btn.onclick = function(e) {
+            e.stopPropagation();
+            // Placeholder - sonra doldurulacak
+            console.log('[BT] Grafik butonuna tiklandi (placeholder)');
+            if (window.showToast) window.showToast('Grafik gorunumu yakinda eklenecek', 'info', 2500);
+        };
+        title.appendChild(btn);
+    }
+
+    // ⚡ DEVRE DISI: HTML'de zaten Grafik butonu var, JS inject etmesin
+    window._addEquityChartBtn = function() { /* disabled */ };
+
+    console.log('[BT-FIX] Backtest eksik parcalar tamamlandi (limits + mask + confirm)');
+})();
+
+
+/* BT-FRESH-CONFIG v1 */
+// =============================================================
+// Backtest - strateji parametrelerini backend'den TAZE yukle
+// =============================================================
+(function() {
+    'use strict';
+
+    // ---- 1) openBacktestModal'i sarmala: fresh config cek ----
+    if (typeof window.openBacktestModal === 'function' && !window.openBacktestModal._cfgFreshWrapped) {
+        var _origOpen = window.openBacktestModal;
+        window.openBacktestModal = async function() {
+            // Orijinal fonksiyonu cagir
+            _origOpen.apply(this, arguments);
+
+            // Taze config cek (async)
+            try {
+                var res = await fetch('/api/engine/config');
+                var cfg = await res.json();
+                window._btFreshConfig = cfg;
+                window.botConfig = cfg;  // global cache'i de guncelle
+                console.log('[BT-CONFIG] Taze config yuklendi:', Object.keys(cfg.strategies || {}).length, 'strateji');
+            } catch(e) {
+                console.warn('[BT-CONFIG] Config cekilemedi, fallback:', e);
+                window._btFreshConfig = window.botConfig || {};
+            }
+
+            // Secili strateji icin form'u yeniden render et
+            setTimeout(function() {
+                if (typeof window.onBtStrategyChange === 'function') {
+                    window.onBtStrategyChange();
+                }
+            }, 150);
+        };
+        window.openBacktestModal._cfgFreshWrapped = true;
+        console.log('[BT-CONFIG] openBacktestModal hook aktif');
+    }
+
+    // ---- 2) onBtStrategyChange: backend config'ten oku ----
+    if (typeof window.onBtStrategyChange === 'function' && !window.onBtStrategyChange._cfgFreshWrapped) {
+        window.onBtStrategyChange = function() {
+            var strat = document.getElementById('bt-strategy').value;
+            var content = document.getElementById('bt-params-content');
+            if (!content) return;
+
+            // Taze config > botConfig > bos
+            var cfg = window._btFreshConfig || window.botConfig || {};
+            var sc = (cfg.strategies || {})[strat] || {};
+
+            // longTrade/shortTrade -> tradeDirection
+            var _dir = 'both';
+            if (sc.longTrade === true && sc.shortTrade === false) _dir = 'long';
+            else if (sc.longTrade === false && sc.shortTrade === true) _dir = 'short';
+            if (sc.tradeDirection) _dir = sc.tradeDirection;
+
+            var html = '';
+
+            if (strat === 'RSI_SCALPER') {
+                html = ''
+                    + '<div class="bt-param-row"><label>RSI Period</label>'
+                    + '<input type="number" id="btp-period" value="' + (sc.period || 7) + '"></div>'
+                    + '<div class="bt-param-row"><label>LONG Eşik</label>'
+                    + '<input type="number" id="btp-longVal" value="' + (sc.longVal || 20) + '"></div>'
+                    + '<div class="bt-param-row"><label>SHORT Eşik</label>'
+                    + '<input type="number" id="btp-shortVal" value="' + (sc.shortVal || 80) + '"></div>';
+            } else if (strat === 'HULL_SRP') {
+                html = ''
+                    + '<div class="bt-param-row"><label>HMA Period</label>'
+                    + '<input type="number" id="btp-period" value="' + (sc.period || 20) + '"></div>'
+                    + '<div class="bt-param-row"><label>Kaynak</label>'
+                    + '<select id="btp-source">'
+                    + '<option value="hl2" ' + (sc.source === 'hl2' ? 'selected' : '') + '>HL2</option>'
+                    + '<option value="close" ' + (sc.source === 'close' ? 'selected' : '') + '>Close</option>'
+                    + '<option value="open" ' + (sc.source === 'open' ? 'selected' : '') + '>Open</option>'
+                    + '</select></div>'
+                    + '<div class="bt-param-row"><label>Min Volatilite (ATR %)</label>'
+                    + '<input type="number" id="btp-minVolatility" value="' + (sc.minVolatility != null ? sc.minVolatility : 2) + '" step="0.5"></div>';
+            } else if (strat === 'DYNAMIC_GRID' || strat === 'DYNAMIC_GRID_REEL') {
+                var isReel = (strat === 'DYNAMIC_GRID_REEL');
+                html = ''
+                    + '<div class="bt-param-row"><label>Izgara Sayısı</label>'
+                    + '<input type="number" id="btp-gridCount" value="' + (sc.gridCount || 20) + '"></div>'
+                    + '<div class="bt-param-row"><label>SMA Period</label>'
+                    + '<input type="number" id="btp-smaPeriod" value="' + (sc.smaPeriod || 100) + '"></div>'
+                    + '<div class="bt-param-row"><label>Pivot Lookback</label>'
+                    + '<input type="number" id="btp-pivotLookback" value="' + (sc.pivotLookback || 100) + '"></div>'
+                    + '<div class="bt-param-row"><label>ATR Period</label>'
+                    + '<input type="number" id="btp-atrPeriod" value="' + (sc.atrPeriod || 14) + '"></div>'
+                    + '<div class="bt-param-row"><label>ATR Çarpan</label>'
+                    + '<input type="number" id="btp-atrMultiplier" value="' + (sc.atrMultiplier || 8) + '" step="0.5"></div>'
+                    + '<div class="bt-param-row"><label>Mod</label>'
+                    + '<select id="btp-mode">'
+                    + '<option value="neutral" ' + (sc.mode === 'neutral' ? 'selected' : '') + '>Neutral</option>'
+                    + '<option value="long" ' + (sc.mode === 'long' ? 'selected' : '') + '>Long only</option>'
+                    + '<option value="short" ' + (sc.mode === 'short' ? 'selected' : '') + '>Short only</option>'
+                    + '</select></div>';
+
+                if (isReel) {
+                    html += '<div class="bt-param-row" style="grid-column: span 3; padding: 8px; background: rgba(236,72,153,0.08); border-radius: 4px; font-size: 11px; color: #d1d4dc;">'
+                        + '\u26A1 <b>Gerçek Grid:</b> Her seviye ayrı pozisyon. TP = komşu seviye. DCA yok.'
+                        + '</div>';
+                }
+            } else if (strat === 'DEEP_HUNTER') {
+                html = ''
+                    + '<div class="bt-param-row"><label>EMA Period</label>'
+                    + '<input type="number" id="btp-emaPeriod" value="' + (sc.emaPeriod || 200) + '"></div>'
+                    + '<div class="bt-param-row"><label>RSI Period</label>'
+                    + '<input type="number" id="btp-rsiPeriod" value="' + (sc.rsiPeriod || 7) + '"></div>'
+                    + '<div class="bt-param-row"><label>LONG Trend Altı (%)</label>'
+                    + '<input type="number" id="btp-longTriggerPct" value="' + (sc.longTriggerPct != null ? sc.longTriggerPct : 5.5) + '" step="0.5"></div>'
+                    + '<div class="bt-param-row"><label>LONG RSI Max</label>'
+                    + '<input type="number" id="btp-longRsiMax" value="' + (sc.longRsiMax != null ? sc.longRsiMax : 30) + '"></div>'
+                    + '<div class="bt-param-row"><label>SHORT Trend Üstü (%)</label>'
+                    + '<input type="number" id="btp-shortTriggerPct" value="' + (sc.shortTriggerPct != null ? sc.shortTriggerPct : 15) + '" step="0.5"></div>'
+                    + '<div class="bt-param-row"><label>SHORT RSI Min</label>'
+                    + '<input type="number" id="btp-shortRsiMin" value="' + (sc.shortRsiMin != null ? sc.shortRsiMin : 75) + '"></div>';
+            }
+
+            // ---- Ortak parametreler ----
+            html += ''
+                + '<div class="bt-param-row" style="grid-column: span 3; border-bottom: 1px dashed #2a2e39; padding-bottom: 8px; margin-bottom: 4px;">'
+                + '<label style="color:#fcd535;">İşlem Yönü</label>'
+                + '<select id="btp-tradeDirection" style="max-width: 200px;">'
+                + '<option value="long" ' + (_dir === 'long' ? 'selected' : '') + '>\u25B2 Long (Sadece Alış)</option>'
+                + '<option value="short" ' + (_dir === 'short' ? 'selected' : '') + '>\u25BC Short (Sadece Satış)</option>'
+                + '<option value="both" ' + (_dir === 'both' ? 'selected' : '') + '>\u25C6 Tümü (Long + Short)</option>'
+                + '</select></div>'
+                + '<div class="bt-param-row"><label>İlk İşlem (USDT)</label>'
+                + '<input type="number" id="btp-baseOrder" value="' + (sc.baseOrder || 10) + '"></div>'
+                + '<div class="bt-param-row"><label>Kaldıraç</label>'
+                + '<input type="number" id="btp-leverage" value="' + (sc.leverage || 1) + '"></div>'
+                + '<div class="bt-param-row"><label>Hedef Kâr (%)</label>'
+                + '<input type="number" id="btp-takeProfit" value="' + (sc.takeProfit != null ? sc.takeProfit : 1.5) + '" step="0.1"></div>'
+                + '<div class="bt-param-row" style="grid-column: span 3;"><label>🎯 AI TTP</label>'
+                + '<input type="text" id="btp-trailingSteps" value="' + (sc.trailingSteps || '1.5:0.3, 2.5:0.2, 4:0.12, 6:0.07, 10:0.03') + '" style="font-family:monospace;font-size:11px;" title="Kademeli izleyen stop: kar%:trail% (ornek: 1.5:0.3, 2.5:0.2)"></div>'
+                + '<div class="bt-param-row"><label>Stop Loss (%)</label>'
+                + '<input type="number" id="btp-stopLoss" value="' + (sc.stopLoss != null ? sc.stopLoss : 3) + '" step="0.1"></div>'
+                + '<div class="bt-param-row"><label>DCA Aktif</label>'
+                + '<select id="btp-useDCA">'
+                + '<option value="true" ' + (sc.useDCA ? 'selected' : '') + '>Evet</option>'
+                + '<option value="false" ' + (!sc.useDCA ? 'selected' : '') + '>Hayır</option>'
+                + '</select></div>'
+                + '<div class="bt-param-row"><label>Hacim Çarpanı</label>'
+                + '<input type="number" id="btp-volMultiplier" value="' + (sc.volMultiplier != null ? sc.volMultiplier : 1.2) + '" step="0.1"></div>'
+                + '<div class="bt-param-row"><label>Düşüş Adımları</label>'
+                + '<input type="text" id="btp-steps" value="' + (sc.steps || '1.5, 3, 5') + '"></div>';
+
+            content.innerHTML = html;
+
+            console.log('[BT-CONFIG] ' + strat + ' formu dolduruldu. Kaynak: ' + (window._btFreshConfig ? 'FRESH' : 'CACHE'));
+        };
+        window.onBtStrategyChange._cfgFreshWrapped = true;
+        console.log('[BT-CONFIG] onBtStrategyChange hook aktif');
+    }
+
+    console.log('[BT-CONFIG] Hazir');
+})();
+
+
+/* BT-HEADER-BTN v1 */
+// =============================================================
+// Header butonlarini akilli goster/gizle
+// =============================================================
+(function() {
+    'use strict';
+
+    function _toggleHeaderBtns() {
+        var btnWrap = document.getElementById('bt-header-actions');
+        if (!btnWrap) return;
+        var resultSection = document.getElementById('bt-result-section');
+        if (!resultSection) return;
+        var visible = (resultSection.style.display !== 'none' && resultSection.style.display !== '');
+        btnWrap.style.display = visible ? 'flex' : 'none';
+    }
+
+    // openBacktestModal -> form acilinca butonlari gizle
+    if (typeof window.openBacktestModal === 'function' && !window.openBacktestModal._hdrBtnWrapped) {
+        var _origOpen = window.openBacktestModal;
+        window.openBacktestModal = function() {
+            _origOpen.apply(this, arguments);
+            setTimeout(_toggleHeaderBtns, 100);
+        };
+        window.openBacktestModal._hdrBtnWrapped = true;
+    }
+
+    // closeBacktestModal -> kapatinca da gizle
+    if (typeof window.closeBacktestModal === 'function' && !window.closeBacktestModal._hdrBtnWrapped) {
+        var _origClose = window.closeBacktestModal;
+        window.closeBacktestModal = function() {
+            var btnWrap = document.getElementById('bt-header-actions');
+            if (btnWrap) btnWrap.style.display = 'none';
+            _origClose.apply(this, arguments);
+        };
+        window.closeBacktestModal._hdrBtnWrapped = true;
+    }
+
+    // startBacktest -> calisinca gizle
+    if (typeof window.startBacktest === 'function' && !window.startBacktest._hdrBtnWrapped) {
+        var _origStart = window.startBacktest;
+        window.startBacktest = async function() {
+            var r = await _origStart.apply(this, arguments);
+            setTimeout(_toggleHeaderBtns, 100);
+            return r;
+        };
+        window.startBacktest._hdrBtnWrapped = true;
+    }
+
+    // resetBacktestForm -> form acilinca gizle
+    if (typeof window.resetBacktestForm === 'function' && !window.resetBacktestForm._hdrBtnWrapped) {
+        var _origReset = window.resetBacktestForm;
+        window.resetBacktestForm = function() {
+            _origReset.apply(this, arguments);
+            setTimeout(_toggleHeaderBtns, 100);
+        };
+        window.resetBacktestForm._hdrBtnWrapped = true;
+    }
+
+    // _loadBtResult -> sonuc gelince goster
+    if (typeof window._loadBtResult === 'function' && !window._loadBtResult._hdrBtnWrapped) {
+        var _origLoad = window._loadBtResult;
+        window._loadBtResult = async function() {
+            var r = await _origLoad.apply(this, arguments);
+            setTimeout(_toggleHeaderBtns, 100);
+            return r;
+        };
+        window._loadBtResult._hdrBtnWrapped = true;
+    }
+
+    // DOM degisikliklerini izle (guvenli ag)
+    var _observer = new MutationObserver(function() {
+        _toggleHeaderBtns();
+    });
+
+    window.addEventListener('load', function() {
+        var resultSection = document.getElementById('bt-result-section');
+        if (resultSection) {
+            _observer.observe(resultSection, { attributes: true, attributeFilter: ['style'] });
+        }
+        setTimeout(_toggleHeaderBtns, 300);
+    });
+
+    window._toggleBtHeaderBtns = _toggleHeaderBtns;
+
+    console.log('[BT-HDR] Header buton goster/gizle aktif');
+})();
+
+
+/* BT-AUTO-SYMBOL v1 */
+// =============================================================
+// Backtest - Aktif chart sembolunu otomatik doldur
+// =============================================================
+(function() {
+    'use strict';
+
+    function _fillBtSymbolFromChart() {
+        try {
+            var el = document.getElementById('bt-symbol');
+            if (!el) return;
+
+            // Aktif chart'in sembolunu al
+            var cObj = (typeof chartsData !== 'undefined') ? chartsData[activeChartId] : null;
+            if (!cObj || !cObj.symbol) return;
+
+            // .P uzantisini temizle (Vadeli icin)
+            var cleanSym = String(cObj.symbol).replace(/\.P$/i, '').toUpperCase();
+            if (!cleanSym) return;
+
+            el.value = cleanSym;
+            console.log('[BT-SYM] Sembol dolduruldu:', cleanSym);
+        } catch(e) {
+            console.warn('[BT-SYM] Hata:', e);
+        }
+    }
+
+    // openBacktestModal'i sarmala
+    if (typeof window.openBacktestModal === 'function' && !window.openBacktestModal._autoSymWrapped) {
+        var _origOpen = window.openBacktestModal;
+        window.openBacktestModal = function() {
+            _origOpen.apply(this, arguments);
+            // Form yerlessin diye biraz bekle
+            setTimeout(_fillBtSymbolFromChart, 150);
+            setTimeout(_fillBtSymbolFromChart, 400);
+        };
+        window.openBacktestModal._autoSymWrapped = true;
+        console.log('[BT-SYM] openBacktestModal hook aktif');
+    }
+
+    // Manuel test icin
+    window._fillBtSymbolFromChart = _fillBtSymbolFromChart;
+
+    console.log('[BT-SYM] Hazir');
+})();
+
+
+/* WL-RESORT v1 */
+// =============================================================
+// Izleme listesi - Otomatik yeniden siralama
+// =============================================================
+(function() {
+    'use strict';
+
+    var _lastResort = 0;
+    var _RESORT_INTERVAL = 3000; // 3 saniye
+
+    // ⚡ renderActiveListPriceUpdateOnly'nin sonuna re-sort zamanla
+    if (typeof window.renderActiveListPriceUpdateOnly === 'function'
+        && !window.renderActiveListPriceUpdateOnly._resortHooked) {
+        var _orig = window.renderActiveListPriceUpdateOnly;
+        window.renderActiveListPriceUpdateOnly = function(type) {
+            _orig.apply(this, arguments);
+            // ⚡ 3 saniyede bir tam re-sort
+            var now = Date.now();
+            if (now - _lastResort > _RESORT_INTERVAL) {
+                _lastResort = now;
+                setTimeout(function() {
+                    try {
+                        if (typeof window.renderActiveList === 'function') {
+                            window.renderActiveList();
+                        }
+                    } catch(e) {}
+                }, 100);
+            }
+        };
+        window.renderActiveListPriceUpdateOnly._resortHooked = true;
+        console.log('[WL-RESORT] renderActiveListPriceUpdateOnly hook aktif');
+    }
+
+    // ⚡ Guvenli ag: her 5 saniyede bir kontrol et ve gerekirse re-sort
+    setInterval(function() {
+        try {
+            // Aktif liste DOM'da mi?
+            var ul = document.getElementById(activeTab === 'futures' ? 'watchlist-futures' : 'watchlist-spot');
+            if (!ul) return;
+            if (document.hidden) return;  // sekme arkada ise atla
+
+            // Son render 5 sn'den eski mi?
+            if (Date.now() - _lastResort > 5000) {
+                _lastResort = Date.now();
+                if (typeof window.renderActiveList === 'function') {
+                    window.renderActiveList();
+                }
+            }
+        } catch(e) {}
+    }, 5000);
+
+    console.log('[WL-RESORT] Otomatik re-sort aktif (3-5 sn)');
+})();
+
+
+/* BTC-HEADER-BADGE v1 */
+// =============================================================
+// Header'da sabit BTCUSDT fiyat badge'i
+// =============================================================
+(function() {
+    'use strict';
+
+    function _updateBtcBadge() {
+        var priceEl = document.getElementById('btc-header-price');
+        var pctEl = document.getElementById('btc-header-pct');
+        if (!priceEl || !pctEl) return;
+
+        // futuresData'dan BTCUSDT bul
+        var btc = null;
+        try {
+            if (typeof futuresData !== 'undefined' && Array.isArray(futuresData)) {
+                btc = futuresData.find(function(x) { return x.symbol === 'BTCUSDT'; });
+            }
+        } catch(e) {}
+
+        if (!btc) return;
+
+        var price = parseFloat(btc.lastPrice) || 0;
+        var pct = parseFloat(btc.priceChangePercent) || 0;
+
+        // Format fiyat
+        var fmt = (typeof window.formatPrice === 'function')
+            ? window.formatPrice(price)
+            : price.toFixed(2);
+
+        priceEl.textContent = fmt;
+
+        var sign = pct >= 0 ? '+' : '';
+        pctEl.textContent = sign + pct.toFixed(2) + '%';
+
+        pctEl.classList.remove('up', 'down', 'neutral');
+        if (pct > 0) pctEl.classList.add('up');
+        else if (pct < 0) pctEl.classList.add('down');
+        else pctEl.classList.add('neutral');
+    }
+
+    // processTicker sonrasi guncelle
+    if (typeof window.processTicker === 'function' && !window.processTicker._btcBadgeHooked) {
+        var _orig = window.processTicker;
+        window.processTicker = function(arr, type) {
+            var r = _orig.apply(this, arguments);
+            if (type === 'futures') {
+                setTimeout(_updateBtcBadge, 50);
+            }
+            return r;
+        };
+        window.processTicker._btcBadgeHooked = true;
+    }
+
+    // renderActiveList sonrasi da guncelle (yedek)
+    if (typeof window.renderActiveList === 'function' && !window.renderActiveList._btcBadgeHooked) {
+        var _orig2 = window.renderActiveList;
+        window.renderActiveList = function() {
+            var r = _orig2.apply(this, arguments);
+            _updateBtcBadge();
+            return r;
+        };
+        window.renderActiveList._btcBadgeHooked = true;
+    }
+
+    // Periyodik guncelleme (guvenli ag)
+    setInterval(_updateBtcBadge, 2000);
+
+    // Ilk yukleme
+    window.addEventListener('load', function() {
+        setTimeout(_updateBtcBadge, 1000);
+        setTimeout(_updateBtcBadge, 3000);
+    });
+
+    window._updateBtcBadge = _updateBtcBadge;
+
+    console.log('[BTC-BADGE] Header badge aktif');
+})();
+
+
+/* SIDEBAR-TABS v1 */
+// =============================================================
+// Sidebar tab switch - izleme listesi <-> canli bildirimler
+// =============================================================
+(function() {
+    'use strict';
+
+    var STORAGE_KEY = 'cryptoSidebarActiveTab_v1';
+
+    window.switchSidebarTab = function(tab) {
+        var upper = document.getElementById('sidebar-upper');
+        if (!upper) return;
+
+        if (tab !== 'watchlist' && tab !== 'signals' && tab !== 'manual') tab = 'watchlist';
+
+        upper.dataset.activeTab = tab;
+
+        // Manual sekme ise sembol otomatik doldur
+        if (tab === 'manual') {
+            try {
+                var cObj = (typeof chartsData !== 'undefined') ? chartsData[activeChartId] : null;
+                if (cObj && cObj.symbol) {
+                    var sym = String(cObj.symbol).replace(/\.P$/i, '').toUpperCase();
+                    var symEl = document.getElementById('mo-symbol');
+                    if (symEl && !symEl.value) symEl.value = sym;
+                }
+                if (window.updateManualPreview) window.updateManualPreview();
+            } catch(e) {}
+        }
+
+        // Butonlari guncelle
+        document.querySelectorAll('.sidebar-tab-btn').forEach(function(btn) {
+            if (btn.dataset.tab === tab) btn.classList.add('active');
+            else btn.classList.remove('active');
+        });
+
+        // localStorage'a kaydet
+        try {
+            localStorage.setItem(STORAGE_KEY, tab);
+        } catch(e) {}
+
+        // Grafikleri yeniden boyutlandir (sidebar genisligi degismedi ama
+        // signal paneldeki scroll view'i etkilenebilir)
+        try {
+            for (var i = 0; i < 4; i++) {
+                var cObj = (typeof chartsData !== 'undefined') ? chartsData[i] : null;
+                if (cObj && cObj.chart) {
+                    setTimeout(function() {
+                        var container = document.getElementById('tvchart-' + i);
+                        if (container) {
+                            var r = container.getBoundingClientRect();
+                            if (r.width > 0 && r.height > 0) {
+                                cObj.chart.applyOptions({ width: r.width, height: r.height });
+                            }
+                        }
+                    }, 60);
+                }
+            }
+        } catch(e) {}
+
+        console.log('[SIDEBAR-TAB] Aktif tab:', tab);
+    };
+
+    // Sayfa acilinca kayitli tab'i geri yukle
+    window.addEventListener('load', function() {
+        setTimeout(function() {
+            try {
+                var saved = localStorage.getItem(STORAGE_KEY) || 'watchlist';
+                if (saved !== 'watchlist' && saved !== 'signals') saved = 'watchlist';
+                window.switchSidebarTab(saved);
+            } catch(e) {}
+        }, 500);
+    });
+
+    console.log('[SIDEBAR-TAB] Hazir');
+})();
+
+
+/* RADAR-TOOLTIP v1 */
+// =============================================================
+// Radar butonu icin hover tooltip (info)
+// =============================================================
+(function() {
+    'use strict';
+
+    var TIP_ID = 'radar-tooltip';
+
+    function _ensureTip() {
+        var tip = document.getElementById(TIP_ID);
+        if (tip) return tip;
+
+        tip = document.createElement('div');
+        tip.id = TIP_ID;
+        tip.style.cssText = [
+            'position: fixed',
+            'z-index: 999999',
+            'max-width: 340px',
+            'min-width: 260px',
+            'padding: 12px 14px',
+            'background: #0b0e14',
+            'color: #d1d4dc',
+            'font-size: 11px',
+            'font-weight: 500',
+            'line-height: 1.55',
+            'border: 1px solid #f23645',
+            'border-radius: 8px',
+            'box-shadow: 0 8px 32px rgba(0,0,0,0.85), 0 0 20px rgba(242,54,69,0.25)',
+            'pointer-events: none',
+            'opacity: 0',
+            'transform: translateY(-6px)',
+            'transition: opacity 0.15s ease, transform 0.15s ease',
+            'font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Arial, sans-serif',
+            'letter-spacing: 0',
+            'text-transform: none',
+            'display: none'
+        ].join(';');
+        document.body.appendChild(tip);
+        return tip;
+    }
+
+    function _buildContent() {
+        var threshold = (typeof window._radarGetThreshold === 'function')
+            ? window._radarGetThreshold() : 15;
+        var active = (typeof radarModeActive !== 'undefined') && radarModeActive;
+        var btn = document.getElementById('radar-toggle-btn');
+        var activeCount = 0;
+        if (btn) {
+            var m = (btn.textContent || '').match(/\((\d+)\)/);
+            if (m) activeCount = parseInt(m[1]);
+        }
+
+        return ''
+            + '<div style="font-weight:800; font-size:13px; color:#f23645; margin-bottom:8px; letter-spacing:0.5px;">\uD83D\uDD25 RADAR MODU</div>'
+            + '<div style="margin-bottom:8px; color:#a8b0bf;">Y\u00FCksek volatilite g\u00F6steren coinleri filtreler. Bot tarama mant\u0131\u011F\u0131yla ayn\u0131 form\u00FCl\u00FC kullan\u0131r.</div>'
+            + '<div style="border-top:1px solid #2a2e39; padding-top:8px; margin-bottom:6px;"></div>'
+            + '<div style="font-weight:700; color:#fcd535; font-size:10.5px; letter-spacing:0.4px; margin-bottom:4px;">FORM\u00DCL (A + B)</div>'
+            + '<div style="font-family: monospace; font-size:11px; background:#131722; padding:6px 9px; border-radius:4px; margin-bottom:6px; line-height:1.65;">'
+            + '<div><span style="color:#79a0ff;">A</span> = |24s De\u011Fi\u015Fim %|</div>'
+            + '<div><span style="color:#79a0ff;">B</span> = (High - Low) / Fiyat \u00D7 100</div>'
+            + '<div style="color:#0ECB81; font-weight:700;">Skor = A + B</div>'
+            + '</div>'
+            + '<div style="margin-bottom:8px;">'
+            + '<span style="color:#848e9c;">E\u015Fik:</span> '
+            + '<b style="color:#fcd535;">\u2265 ' + threshold + '</b>'
+            + ' &nbsp;|&nbsp; '
+            + '<span style="color:#848e9c;">Min 24s:</span> '
+            + '<b style="color:#fcd535;">\u2265 3%</b>'
+            + '</div>'
+            + '<div style="border-top:1px solid #2a2e39; padding-top:8px; margin-bottom:6px;"></div>'
+            + '<div style="font-size:10.5px; color:#848e9c; line-height:1.6;">'
+            + '<div>\u2022 Skor <b style="color:#d1d4dc;">DESC</b> s\u0131ralan\u0131r</div>'
+            + '<div>\u2022 Bot ile ayn\u0131 filtre mant\u0131\u011F\u0131</div>'
+            + '<div>\u2022 Pump/dump yakalamaya uygun</div>'
+            + '</div>'
+            + (active
+                ? '<div style="margin-top:10px; padding:6px 10px; background:rgba(14,203,129,0.15); border:1px solid rgba(14,203,129,0.4); border-radius:4px; color:#0ECB81; font-weight:700; text-align:center; font-size:11px;">\u25CF AKT\u0130F &nbsp;\u2022&nbsp; ' + activeCount + ' coin g\u00F6steriliyor</div>'
+                : '<div style="margin-top:10px; padding:6px 10px; background:rgba(132,142,156,0.15); border:1px solid rgba(132,142,156,0.3); border-radius:4px; color:#848e9c; font-weight:600; text-align:center; font-size:11px;">\u25CB KAPALI &nbsp;\u2022&nbsp; T\u0131kla ve a\u00E7</div>'
+            )
+            + '<div style="margin-top:8px; padding-top:6px; border-top:1px solid #2a2e39; font-size:10px; color:#5d6471; font-style:italic;">'
+            + '\u0130pucu: Konsolda <code style="color:#79a0ff;">window._radarSetThreshold(n)</code> ile e\u015Fik de\u011Fi\u015Ftirilir'
+            + '</div>';
+    }
+
+    function _showTip(el) {
+        var tip = _ensureTip();
+        tip.innerHTML = _buildContent();
+        tip.style.display = 'block';
+        tip.style.opacity = '0';
+        tip.style.transform = 'translateY(-6px)';
+
+        // Konumlandir
+        var rect = el.getBoundingClientRect();
+        var tipRect = tip.getBoundingClientRect();
+
+        var top = rect.bottom + 10;
+        var left = rect.left - tipRect.width + rect.width; // saga hizali
+
+        // Ekran disi kontrolu
+        if (left < 10) left = 10;
+        if (left + tipRect.width > window.innerWidth - 10) {
+            left = window.innerWidth - tipRect.width - 10;
+        }
+        if (top + tipRect.height > window.innerHeight - 10) {
+            top = rect.top - tipRect.height - 10;
+        }
+
+        tip.style.left = left + 'px';
+        tip.style.top = top + 'px';
+
+        requestAnimationFrame(function() {
+            tip.style.opacity = '1';
+            tip.style.transform = 'translateY(0)';
+        });
+    }
+
+    function _hideTip() {
+        var tip = document.getElementById(TIP_ID);
+        if (!tip) return;
+        tip.style.opacity = '0';
+        tip.style.transform = 'translateY(-6px)';
+        setTimeout(function() {
+            if (tip.style.opacity === '0') {
+                tip.style.display = 'none';
+            }
+        }, 150);
+    }
+
+    function _attach() {
+        var btn = document.getElementById('radar-toggle-btn');
+        if (!btn || btn._tooltipAttached) return;
+        btn._tooltipAttached = true;
+
+        btn.addEventListener('mouseenter', function() { _showTip(btn); });
+        btn.addEventListener('mouseleave', _hideTip);
+        // Tiklayinca gizle (buton aktif/pasif olurken tooltip kaybolsun)
+        btn.addEventListener('click', function() {
+            setTimeout(function() {
+                var tip = document.getElementById(TIP_ID);
+                if (tip && tip.style.display !== 'none') {
+                    tip.innerHTML = _buildContent();
+                }
+            }, 100);
+        });
+
+        console.log('[RADAR-TIP] Tooltip butona baglandi');
+    }
+
+    // Buton geç olusabilir, birkac kez dene
+    window.addEventListener('load', function() {
+        _attach();
+        setTimeout(_attach, 800);
+        setTimeout(_attach, 2000);
+    });
+
+    window._attachRadarTooltip = _attach;
+
+    console.log('[RADAR-TIP] Hazir');
+})();
+
+
+/* RADAR-FUNCTIONAL v1 */
+// =============================================================
+// Radar - Volatilite skoru (A + B) bazli filtre + siralama
+// =============================================================
+(function() {
+    'use strict';
+
+    var RADAR_THRESHOLD = 10;
+    var RADAR_MIN_CHANGE = 2;
+
+    function _calcRadarScore(item) {
+        if (!item) return 0;
+        if (item._radarScore !== undefined && item._radarScoreTs === item._lastUpdate) {
+            return item._radarScore;
+        }
+        var price = parseFloat(item.lastPrice) || 0;
+        var pct = Math.abs(parseFloat(item.priceChangePercent) || 0);
+        var high = parseFloat(item.high) || 0;
+        var low = parseFloat(item.low) || 0;
+
+        if (price <= 0) return 0;
+        var rangePct = 0;
+        if (high > 0 && low > 0 && high >= low) {
+            rangePct = ((high - low) / price) * 100;
+        }
+
+        var score = pct + rangePct;
+        item._radarScore = score;
+        item._radarScoreTs = item._lastUpdate;
+        return score;
+    }
+
+    function _applyRadarFilterAndSort() {
+        var ulId = (activeTab === 'futures') ? 'watchlist-futures' : 'watchlist-spot';
+        var ul = document.getElementById(ulId);
+        if (!ul) return;
+
+        var dataArr = (activeTab === 'futures') ? futuresData : spotData;
+        var items = Array.from(ul.children);
+
+        var visible = [];
+        items.forEach(function(li) {
+            var sym = li.id.replace('item-', '');
+            var rawSym = sym.endsWith('.P') ? sym.slice(0, -2) : sym;
+
+            var item = dataArr.find(function(x) { return x.symbol === rawSym; });
+            if (!item) {
+                li.style.display = 'none';
+                return;
+            }
+
+            var score = _calcRadarScore(item);
+            var pct = Math.abs(parseFloat(item.priceChangePercent) || 0);
+
+            if (score >= RADAR_THRESHOLD && pct >= RADAR_MIN_CHANGE) {
+                li.style.display = '';
+                li.dataset.radarScore = score;
+                visible.push({ li: li, score: score });
+            } else {
+                li.style.display = 'none';
+            }
+        });
+
+        visible.sort(function(a, b) { return b.score - a.score; });
+        visible.forEach(function(v) { ul.appendChild(v.li); });
+
+        if (visible.length === 0) {
+            var empty = ul.querySelector('.radar-empty');
+            if (!empty) {
+                empty = document.createElement('li');
+                empty.className = 'loading radar-empty';
+                empty.style.textAlign = 'center';
+                empty.style.padding = '20px 10px';
+                empty.style.fontStyle = 'italic';
+                empty.textContent = 'Radar aktif - esik ustu coin yok (skor >= ' + RADAR_THRESHOLD + ')';
+                ul.appendChild(empty);
+            }
+            empty.style.display = '';
+        } else {
+            var empty2 = ul.querySelector('.radar-empty');
+            if (empty2) empty2.style.display = 'none';
+        }
+
+        _updateRadarButton(visible.length);
+    }
+
+    function _updateRadarButton(count) {
+        var btn = document.getElementById('radar-toggle-btn');
+        if (!btn) return;
+        var radarOn = (typeof radarModeActive !== 'undefined') && radarModeActive;
+        if (radarOn) {
+            btn.textContent = '\uD83D\uDD25 Radar (' + count + ')';
+        } else {
+            btn.textContent = '\uD83D\uDD25 Radar';
+        }
+    }
+
+    if (typeof window.renderActiveList === 'function' && !window.renderActiveList._radarWrapped) {
+        var _orig = window.renderActiveList;
+        window.renderActiveList = function() {
+            var radarOn = (typeof radarModeActive !== 'undefined') && radarModeActive;
+            if (radarOn) {
+                var dataArr = (activeTab === 'futures') ? futuresData : spotData;
+                dataArr.forEach(function(it) { _calcRadarScore(it); });
+            }
+            var r = _orig.apply(this, arguments);
+            if (radarOn) {
+                setTimeout(_applyRadarFilterAndSort, 30);
+            }
+            return r;
+        };
+        window.renderActiveList._radarWrapped = true;
+    }
+
+    if (typeof window.toggleRadarMode === 'function' && !window.toggleRadarMode._radarWrapped) {
+        var _origT = window.toggleRadarMode;
+        window.toggleRadarMode = function() {
+            _origT.apply(this, arguments);
+            setTimeout(function() {
+                if (radarModeActive) _applyRadarFilterAndSort();
+                else _updateRadarButton(0);
+            }, 100);
+        };
+        window.toggleRadarMode._radarWrapped = true;
+    }
+
+    if (typeof window.renderActiveListPriceUpdateOnly === 'function'
+        && !window.renderActiveListPriceUpdateOnly._radarWrapped) {
+        var _origPU = window.renderActiveListPriceUpdateOnly;
+        window.renderActiveListPriceUpdateOnly = function(type) {
+            _origPU.apply(this, arguments);
+            if (radarModeActive) setTimeout(_applyRadarFilterAndSort, 50);
+        };
+        window.renderActiveListPriceUpdateOnly._radarWrapped = true;
+    }
+
+    window._applyRadarFilter = _applyRadarFilterAndSort;
+    window._calcRadarScore = _calcRadarScore;
+    window._radarGetThreshold = function() { return RADAR_THRESHOLD; };
+    window._radarSetThreshold = function(v) {
+        RADAR_THRESHOLD = Math.max(1, parseFloat(v) || 10);
+        if (radarModeActive) _applyRadarFilterAndSort();
+    };
+
+    console.log('[RADAR] Aktif - esik:', RADAR_THRESHOLD, 'min chg:', RADAR_MIN_CHANGE);
+})();
+
+
+/* RADAR-TO-CHARTS v1 */
+// =============================================================
+// AI POWER: Radar -> 4 Grafik Otomatik Yerlestirme
+// =============================================================
+(function() {
+    'use strict';
+
+    // Aktif chart degistirmeden, verilen index'e sembol yukle
+    function _loadChartSymbol(idx, symbol) {
+        var cObj = (typeof chartsData !== 'undefined') ? chartsData[idx] : null;
+        if (!cObj) return false;
+
+        var currentSym = cObj.symbol || '';
+        if (currentSym === symbol) return true;  // zaten yuklu
+
+        // Eski WebSocket'i kapat
+        if (cObj.ws) {
+            try { cObj.ws.onclose = null; cObj.ws.close(); } catch(e) {}
+            cObj.ws = null;
+        }
+
+        // Veri temizle
+        cObj.symbol = symbol;
+        cObj.hasInitialData = false;
+        cObj.rawCandles = [];
+        cObj.haCandles = [];
+        cObj.candleMap.clear();
+        if (cObj.series) cObj.series.setData([]);
+
+        // Trade cizgilerini temizle
+        if (cObj.tradeLineSeriesArr && cObj.chart) {
+            cObj.tradeLineSeriesArr.forEach(function(ls) {
+                try { cObj.chart.removeSeries(ls); } catch(e) {}
+            });
+            cObj.tradeLineSeriesArr = [];
+        }
+        cObj.tradeLabels = [];
+        cObj.strategyMarkers = [];
+
+        // Overlay guncelle
+        var overlaySym = document.getElementById('overlay-sym-' + idx);
+        if (overlaySym) overlaySym.innerText = symbol;
+
+        // Veri yukle (async)
+        try { window.updateSingleChart(idx); } catch(e) {}
+
+        // Aktif chart ise ekstra islemler
+        if (idx === activeChartId) {
+            try {
+                if (window.loadCoinDetails) window.loadCoinDetails(symbol);
+                if (window.refreshBottomPanel) window.refreshBottomPanel();
+            } catch(e) {}
+        }
+
+        return true;
+    }
+
+    // Ana fonksiyon: Radar top N -> chartlar
+    window._radarFillCharts = function(force) {
+        var radarOn = (typeof radarModeActive !== 'undefined') && radarModeActive;
+        if (!radarOn && !force) {
+            console.log('[RADAR-FILL] Radar pasif, atlandi');
+            return 0;
+        }
+
+        var count = (typeof chartCount !== 'undefined') ? chartCount : 1;
+        if (count < 2) {
+            console.log('[RADAR-FILL] Layout 1, atlandi');
+            return 0;
+        }
+
+        // Radar verisini al
+        var dataArr = (activeTab === 'futures') ? futuresData : spotData;
+        if (!dataArr || dataArr.length === 0) return 0;
+
+        // Skor hesapla
+        var scored = dataArr.map(function(it) {
+            var score = (typeof window._calcRadarScore === 'function')
+                ? window._calcRadarScore(it)
+                : 0;
+            return { sym: it.symbol, score: score };
+        });
+
+        // Threshold
+        var thr = (typeof window._radarGetThreshold === 'function')
+            ? window._radarGetThreshold() : 10;
+
+        // Filtrele + sirala
+        var filtered = scored
+            .filter(function(x) { return x.score >= thr; })
+            .sort(function(a, b) { return b.score - a.score; });
+
+        if (filtered.length === 0) {
+            console.log('[RADAR-FILL] Esik ustu coin yok (thr=' + thr + ')');
+            return 0;
+        }
+
+        // Top N
+        var top = filtered.slice(0, count);
+        if (top.length < count) {
+            console.log('[RADAR-FILL] Sadece ' + top.length + ' coin bulundu, ' + count + ' istendi');
+        }
+
+        // Chartlara yerlestir
+        var loaded = [];
+        for (var i = 0; i < count && i < top.length; i++) {
+            var sym = top[i].sym;
+            var displaySym = sym;
+            if (activeTab === 'futures' && !sym.endsWith('.P')) {
+                displaySym = sym + '.P';
+            }
+            if (_loadChartSymbol(i, displaySym)) {
+                loaded.push({ sym: sym, score: top[i].score });
+            }
+        }
+
+        // Toast
+        if (loaded.length > 0 && window.showToast) {
+            var names = loaded.map(function(x) { return x.sym; }).join(', ');
+            window.showToast(
+                '\uD83D\uDD25 Radar\u2019dan ' + loaded.length + ' coin y\u00FCklendi:\n' + names,
+                'success',
+                4000,
+                'AI POWER'
+            );
+        }
+
+        console.log('[RADAR-FILL] Yuklenen:', loaded.length);
+        return loaded.length;
+    };
+
+    // ---- TETIKLEYICI 1: setLayout ----
+    if (typeof window.setLayout === 'function' && !window.setLayout._radarFillWrapped) {
+        var _origSetLayout = window.setLayout;
+        window.setLayout = function(count) {
+            _origSetLayout.apply(this, arguments);
+            // Layout 4 ise radar'dan doldur
+            if (count === 4) {
+                setTimeout(function() {
+                    window._radarFillCharts();
+                }, 800);  // chart init tamamlansin
+            }
+        };
+        window.setLayout._radarFillWrapped = true;
+        console.log('[RADAR-FILL] setLayout hook aktif');
+    }
+
+    // ---- TETIKLEYICI 2: toggleRadarMode ----
+    if (typeof window.toggleRadarMode === 'function' && !window.toggleRadarMode._radarFillWrapped) {
+        var _origToggle = window.toggleRadarMode;
+        window.toggleRadarMode = function() {
+            _origToggle.apply(this, arguments);
+            // Radar ACILDI ve layout 4 ise doldur
+            setTimeout(function() {
+                if (radarModeActive && chartCount === 4) {
+                    window._radarFillCharts();
+                }
+            }, 400);
+        };
+        window.toggleRadarMode._radarFillWrapped = true;
+        console.log('[RADAR-FILL] toggleRadarMode hook aktif');
+    }
+
+    console.log('[RADAR-FILL] Hazir');
+})();
+
+
+/* STAR-0300 v1 */
+// =============================================================
+// 03:00 Mum Yildizi - Her gun TR 03:00 mumunun ustune sari yildiz
+// =============================================================
+(function() {
+    'use strict';
+
+    var TARGET_HOUR = 3;      // TR saati
+    var TARGET_MIN = 0;
+
+    // Mum bu saate denk mi?
+    function _isStarTime(timeSec) {
+        var d = new Date(timeSec * 1000);
+        var trH = (d.getUTCHours() + 3) % 24;   // UTC+3 = TR
+        var trM = d.getUTCMinutes();
+        return trH === TARGET_HOUR && trM === TARGET_MIN;
+    }
+
+    // SVG yildiz
+    var STAR_SVG = '<svg viewBox="0 0 24 24" width="100%" height="100%" '
+        + 'style="display:block;">'
+        + '<path d="M12 1.5l3.09 6.26L22 8.77l-5 4.87 1.18 6.88L12 17.27'
+        + 'l-6.18 3.25L7 13.64l-5-4.87 6.91-1.01L12 1.5z" fill="#fcd535" '
+        + 'stroke="#8a6f00" stroke-width="0.6"/></svg>';
+
+    // Ana render
+    function _renderStars(idx) {
+        var cObj = (typeof chartsData !== 'undefined') ? chartsData[idx] : null;
+        if (!cObj || !cObj.chart || !cObj.series) return;
+
+        var wrapper = document.getElementById('chart-wrapper-' + idx);
+        if (!wrapper) return;
+
+        // Overlay katmani (bir kez olustur)
+        var layer = document.getElementById('star-layer-' + idx);
+        if (!layer) {
+            layer = document.createElement('div');
+            layer.id = 'star-layer-' + idx;
+            layer.className = 'star-layer';
+            wrapper.appendChild(layer);
+        }
+
+        // Mum verisi
+        var data = null;
+        try { data = cObj.series.data(); } catch(e) { return; }
+        if (!data || data.length === 0) {
+            if (layer.children.length > 0) layer.innerHTML = '';
+            return;
+        }
+
+        // Bar genisligi -> yildiz boyutu
+        var barSpacing = 6;
+        try {
+            var opt = cObj.chart.timeScale().options();
+            if (opt && opt.barSpacing) barSpacing = opt.barSpacing;
+        } catch(e) {}
+        var starSize = Math.max(5, Math.min(Math.round(barSpacing), 16));
+
+        // 03:00 mumlarini topla
+        var stars = [];
+        for (var i = 0; i < data.length; i++) {
+            if (_isStarTime(data[i].time)) {
+                stars.push(data[i]);
+            }
+        }
+
+        // Katman child sayisi uymuyorsa yeniden olustur
+        if (layer.children.length !== stars.length) {
+            layer.innerHTML = '';
+            stars.forEach(function(c) {
+                var el = document.createElement('div');
+                el.className = 'star-0300';
+                el.setAttribute('data-time', c.time);
+                el.innerHTML = STAR_SVG;
+                el.title = 'TR 03:00';
+                layer.appendChild(el);
+            });
+        }
+
+        // Pozisyon guncelle
+        var wH = wrapper.clientHeight || layer.clientHeight;
+        stars.forEach(function(c, i) {
+            var el = layer.children[i];
+            if (!el) return;
+
+            var x = null, y = null;
+            try {
+                x = cObj.chart.timeScale().timeToCoordinate(c.time);
+                y = cObj.series.priceToCoordinate(c.high);
+            } catch(e) {}
+
+            if (x === null || y === null || x < -30 || x > (wrapper.clientWidth + 30) || y < -20 || y > wH + 20) {
+                el.style.display = 'none';
+                return;
+            }
+
+            el.style.display = 'block';
+            el.style.width = starSize + 'px';
+            el.style.height = starSize + 'px';
+            el.style.left = (x - starSize / 2) + 'px';
+            el.style.top = (y - starSize - 3) + 'px';
+        });
+    }
+
+    // _renderStars'i disari ac
+    window._renderStarMarkers = _renderStars;
+    window._starSetHour = function(h, m) {
+        TARGET_HOUR = parseInt(h);
+        TARGET_MIN = parseInt(m) || 0;
+        for (var i = 0; i < 4; i++) _renderStars(i);
+        console.log('[STAR-0300] Hedef: TR ' + TARGET_HOUR + ':' + String(TARGET_MIN).padStart(2, '0'));
+    };
+
+    // recalculateAllIndicators sonrasi render
+    if (typeof window.recalculateAllIndicators === 'function' && !window.recalculateAllIndicators._starWrapped) {
+        var _origRecalc = window.recalculateAllIndicators;
+        window.recalculateAllIndicators = function(idx) {
+            var r = _origRecalc.apply(this, arguments);
+            try { _renderStars(idx); } catch(e) {}
+            return r;
+        };
+        window.recalculateAllIndicators._starWrapped = true;
+    }
+
+    // initSingleChart - zoom/scroll event
+    if (typeof window.initSingleChart === 'function' && !window.initSingleChart._starWrapped) {
+        var _origInit = window.initSingleChart;
+        window.initSingleChart = function(i) {
+            var r = _origInit.apply(this, arguments);
+            var cObj = (typeof chartsData !== 'undefined') ? chartsData[i] : null;
+            if (cObj && cObj.chart && !cObj._starHooked) {
+                cObj._starHooked = true;
+                try {
+                    cObj.chart.timeScale().subscribeVisibleLogicalRangeChange(function() {
+                        setTimeout(function() { _renderStars(i); }, 20);
+                    });
+                } catch(e) {}
+            }
+            setTimeout(function() { _renderStars(i); }, 600);
+            return r;
+        };
+        window.initSingleChart._starWrapped = true;
+    }
+
+    // updateSingleChart sonrasi (veri yenilendiginde)
+    if (typeof window.updateSingleChart === 'function' && !window.updateSingleChart._starWrapped) {
+        var _origUpd = window.updateSingleChart;
+        window.updateSingleChart = async function(i) {
+            var r = await _origUpd.apply(this, arguments);
+            try { _renderStars(i); } catch(e) {}
+            return r;
+        };
+        window.updateSingleChart._starWrapped = true;
+    }
+
+    // Periyodik guncelleme (zoom vs kacirsa)
+    setInterval(function() {
+        for (var i = 0; i < 4; i++) {
+            try { _renderStars(i); } catch(e) {}
+        }
+    }, 2500);
+
+    console.log('[STAR-0300] Aktif - TR', TARGET_HOUR + ':' + String(TARGET_MIN).padStart(2, '0'));
+})();
+
+
+/* MEASURE-TOOL v1 */
+// =============================================================
+// Shift+Drag olcum araci (TradingView tarzi)
+// =============================================================
+(function() {
+    'use strict';
+
+    var states = {};  // { idx: {active, locked, ...} }
+    var HOLD_MS = 6000;  // kilitli kalma suresi
+
+    // ---- Layer olustur ----
+    function _ensureLayer(idx) {
+        var wrapper = document.getElementById('chart-wrapper-' + idx);
+        if (!wrapper) return null;
+        var layer = document.getElementById('measure-layer-' + idx);
+        if (!layer) {
+            layer = document.createElement('div');
+            layer.id = 'measure-layer-' + idx;
+            layer.className = 'measure-layer';
+            wrapper.appendChild(layer);
+        }
+        return layer;
+    }
+
+    // ---- Varlik temizle ----
+    function _clearMeasure(idx) {
+        var layer = document.getElementById('measure-layer-' + idx);
+        if (layer) {
+            layer.innerHTML = '';
+            layer.style.display = 'none';
+        }
+        if (states[idx] && states[idx]._timeout) {
+            clearTimeout(states[idx]._timeout);
+        }
+        delete states[idx];
+    }
+
+    window._measureClear = _clearMeasure;
+
+    // ---- Hacim formatla ----
+    function _fmtVol(v) {
+        if (v >= 1e9) return (v / 1e9).toFixed(2) + 'B';
+        if (v >= 1e6) return (v / 1e6).toFixed(2) + 'M';
+        if (v >= 1e3) return (v / 1e3).toFixed(2) + 'K';
+        return v.toFixed(2);
+    }
+
+    // ---- Sure formatla ----
+    function _fmtDuration(sec) {
+        if (sec < 0) sec = 0;
+        var d = Math.floor(sec / 86400);
+        var h = Math.floor((sec % 86400) / 3600);
+        var m = Math.floor((sec % 3600) / 60);
+        var parts = [];
+        if (d > 0) parts.push(d + 'g');
+        if (h > 0) parts.push(h + 's');
+        if (m > 0) parts.push(m + 'a');
+        return parts.join(' ') || (Math.floor(sec) + 'sn');
+    }
+
+    // ---- Fiyat formatla ----
+    function _fmtPrice(p) {
+        if (typeof window.formatPrice === 'function') return window.formatPrice(p);
+        if (p >= 1000) return p.toFixed(2);
+        if (p >= 1) return p.toFixed(4);
+        if (p >= 0.01) return p.toFixed(6);
+        return p.toFixed(8);
+    }
+
+    // ---- Ana render ----
+    function _renderMeasure(idx, s) {
+        var layer = document.getElementById('measure-layer-' + idx);
+        if (!layer) return;
+        var cObj = chartsData[idx];
+        if (!cObj || !cObj.chart || !cObj.series) return;
+
+        var x1 = Math.min(s.startX, s.endX);
+        var x2 = Math.max(s.startX, s.endX);
+        var y1 = Math.min(s.startY, s.endY);
+        var y2 = Math.max(s.startY, s.endY);
+        var w = Math.max(2, x2 - x1);
+        var h = Math.max(2, y2 - y1);
+
+        // Yukari mi asagi mi?
+        var isUp = (s.endPrice != null && s.startPrice != null) ? (s.endPrice >= s.startPrice) : true;
+        var mainColor = isUp ? '#0ECB81' : '#F6465D';
+        var bgColor = isUp ? 'rgba(14,203,129,0.10)' : 'rgba(246,70,93,0.10)';
+        var borderColor = isUp ? 'rgba(14,203,129,0.55)' : 'rgba(246,70,93,0.55)';
+        var tipBg = isUp ? 'rgba(8,60,42,0.95)' : 'rgba(60,20,26,0.95)';
+
+        // Bar sayisi
+        var barCount = 1;
+        try {
+            var opt = cObj.chart.timeScale().options();
+            var bs = (opt && opt.barSpacing) || 6;
+            barCount = Math.max(1, Math.round(w / bs));
+        } catch(e) {}
+
+        // Sure
+        var durationStr = '—';
+        if (s.startTime && s.endTime) {
+            durationStr = _fmtDuration(Math.abs(s.endTime - s.startTime));
+        }
+
+        // Fiyat degisimi
+        var diffVal = 0, pctVal = 0;
+        if (s.startPrice != null && s.endPrice != null) {
+            diffVal = s.endPrice - s.startPrice;
+            pctVal = s.startPrice > 0 ? (diffVal / s.startPrice) * 100 : 0;
+        }
+
+        // Toplam hacim
+        var totalVol = 0;
+        try {
+            if (cObj.rawCandles && s.startTime != null && s.endTime != null) {
+                var tMin = Math.min(s.startTime, s.endTime);
+                var tMax = Math.max(s.startTime, s.endTime);
+                for (var j = 0; j < cObj.rawCandles.length; j++) {
+                    var c = cObj.rawCandles[j];
+                    if (c.time >= tMin && c.time <= tMax) {
+                        totalVol += (c.volume || 0);
+                    }
+                }
+            }
+        } catch(e) {}
+
+        // Sign
+        var sign = diffVal >= 0 ? '+' : '';
+
+        // Tooltip pozisyon
+        var tooltipTop = y1 - 92;
+        if (tooltipTop < 8) tooltipTop = y2 + 14;
+        var tooltipLeft = x1 + w / 2;
+
+        // HTML olustur
+        var html = '';
+
+        // 1) Kutu
+        html += '<div class="measure-box" style="'
+            + 'left:' + x1 + 'px;top:' + y1 + 'px;'
+            + 'width:' + w + 'px;height:' + h + 'px;'
+            + 'background:' + bgColor + ';'
+            + 'border:1px solid ' + borderColor + ';'
+            + 'border-radius:2px;"></div>';
+
+        // 2) Baslangic fiyat yatay cizgi
+        html += '<div class="measure-hline" style="'
+            + 'left:' + x1 + 'px;top:' + s.startY + 'px;'
+            + 'width:' + w + 'px;'
+            + 'background:' + borderColor + ';"></div>';
+
+        // 3) Dikey inis cizgisi (start noktasi)
+        html += '<div class="measure-vline" style="'
+            + 'left:' + s.startX + 'px;top:' + y1 + 'px;'
+            + 'height:' + h + 'px;'
+            + 'background:' + borderColor + ';opacity:0.7;"></div>';
+
+        // 4) Tooltip
+        var pctStr = (pctVal >= 0 ? '+' : '') + pctVal.toFixed(2) + '%';
+        var diffStr = sign + _fmtPrice(diffVal);
+        html += '<div class="measure-tip" style="'
+            + 'left:' + tooltipLeft + 'px;top:' + tooltipTop + 'px;'
+            + 'transform:translateX(-50%);'
+            + 'background:' + tipBg + ';'
+            + 'border:1px solid ' + borderColor + ';'
+            + 'color:' + mainColor + ';">'
+            + '<div style="font-size:13px;font-weight:700;line-height:1.3;">'
+            + diffStr + ' (' + pctStr + ')'
+            + '</div>'
+            + '<div style="font-size:11px;opacity:0.9;margin-top:4px;">'
+            + barCount + ' çubukta, ' + durationStr
+            + '</div>'
+            + '<div style="font-size:11px;opacity:0.9;">'
+            + 'Hacim ' + _fmtVol(totalVol)
+            + '</div>'
+            + '</div>';
+
+        layer.innerHTML = html;
+        layer.style.display = 'block';
+    }
+
+    // ---- Chart'a event bagla ----
+    function _attachChart(idx) {
+        var cObj = chartsData[idx];
+        if (!cObj || !cObj.chart || !cObj.series) return;
+
+        var chartEl = document.getElementById('tvchart-' + idx);
+        if (!chartEl || chartEl._measureAttached) return;
+        chartEl._measureAttached = true;
+
+        // mousedown
+        chartEl.addEventListener('mousedown', function(e) {
+            // Shift basili mi?
+            if (!e.shiftKey) return;
+            if (e.button !== 0) return;
+
+            e.preventDefault();
+            e.stopPropagation();
+
+            var rect = chartEl.getBoundingClientRect();
+            var x = e.clientX - rect.left;
+            var y = e.clientY - rect.top;
+
+            var startTime = null, startPrice = null;
+            try {
+                startTime = cObj.chart.timeScale().coordinateToTime(x);
+                startPrice = cObj.series.coordinateToPrice(y);
+            } catch(err) {}
+
+            // Varsa eski olcumu temizle
+            _clearMeasure(idx);
+
+            states[idx] = {
+                active: true,
+                locked: false,
+                startX: x,
+                startY: y,
+                endX: x,
+                endY: y,
+                startTime: startTime,
+                startPrice: startPrice,
+                endTime: startTime,
+                endPrice: startPrice
+            };
+
+            _ensureLayer(idx);
+            _renderMeasure(idx, states[idx]);
+
+            // Tüm chartlarda shift+drag text-selection'i engelle
+            document.body.style.userSelect = 'none';
+        }, true);
+
+        // mousemove (global - chart disina ciksa bile)
+        document.addEventListener('mousemove', function(e) {
+            var s = states[idx];
+            if (!s || !s.active || s.locked) return;
+
+            var rect = chartEl.getBoundingClientRect();
+            s.endX = e.clientX - rect.left;
+            s.endY = e.clientY - rect.top;
+
+            try {
+                s.endTime = cObj.chart.timeScale().coordinateToTime(s.endX);
+                s.endPrice = cObj.series.coordinateToPrice(s.endY);
+            } catch(err) {}
+
+            _renderMeasure(idx, s);
+        });
+
+        // mouseup (global)
+        document.addEventListener('mouseup', function(e) {
+            var s = states[idx];
+            if (!s || !s.active || s.locked) return;
+
+            s.locked = true;
+            s.active = false;
+
+            document.body.style.userSelect = '';
+
+            // X ekseninde cok az hareket ettiyse temizle
+            var w = Math.abs(s.endX - s.startX);
+            var h = Math.abs(s.endY - s.startY);
+            if (w < 5 && h < 5) {
+                _clearMeasure(idx);
+                return;
+            }
+
+            // Otomatik temizle
+            s._timeout = setTimeout(function() {
+                _clearMeasure(idx);
+            }, HOLD_MS);
+
+            // Layer'a pointer-events koy (tiklayinca temizle)
+            var layer = document.getElementById('measure-layer-' + idx);
+            if (layer) {
+                layer.style.pointerEvents = 'auto';
+                layer.onclick = function(ev) {
+                    ev.stopPropagation();
+                    _clearMeasure(idx);
+                };
+            }
+        });
+    }
+
+    // ---- Klavye ----
+    document.addEventListener('keydown', function(e) {
+        if (e.key === 'Escape') {
+            for (var k in states) _clearMeasure(parseInt(k));
+        }
+    });
+
+    // ---- Initialize ----
+    function _tick() {
+        for (var i = 0; i < 4; i++) {
+            _ensureLayer(i);
+            _attachChart(i);
+        }
+    }
+
+    window.addEventListener('load', function() {
+        setTimeout(_tick, 800);
+        setTimeout(_tick, 2500);
+        setTimeout(_tick, 5000);
+    });
+    setInterval(_tick, 3000);
+
+    // Manuel API
+    window._measureAll = function() { for (var k in states) _clearMeasure(parseInt(k)); };
+
+    console.log('[MEASURE] Shift+drag olcum aktif');
+})();
+
+
+/* BOT-CONFIG-TABS v1 */
+// =============================================================
+// Bot Ayarlari - Tab sistemi
+//   Sekme 1: Bot Ayarlari (global)
+//   Sekme 2: Strateji Ayarlari (5 strateji paneli)
+// =============================================================
+(function() {
+    'use strict';
+
+    var TAB_KEY = 'cryptoBotConfigTab_v1';
+
+    function _getBody() {
+        return document.querySelector('.bot-config-body');
+    }
+
+    window.switchBotTab = function(tab) {
+        var body = _getBody();
+        if (!body) return;
+
+        if (tab !== 'general' && tab !== 'strategies') tab = 'general';
+
+        // ⚡ CSS Grid icin data attribute
+        body.setAttribute('data-active-tab', tab);
+
+        // Tab bar butonlari
+        var tabs = body.querySelectorAll('.bot-tab');
+        tabs.forEach(function(b) {
+            if (b.dataset.tab === tab) b.classList.add('active');
+            else b.classList.remove('active');
+        });
+
+        // ---- Icerik gruplama (JS ile) ----
+        // general  : .bot-global-row + div[style*="margin-top"]
+        // strategies : .strategies-grid
+        var globalRows = body.querySelectorAll(':scope > .bot-global-row');
+        var mtDivs = body.querySelectorAll(':scope > div[style*="margin-top"]');
+        var stratGrid = body.querySelector(':scope > .strategies-grid');
+
+        if (tab === 'general') {
+            globalRows.forEach(function(el) { el.style.display = ''; });
+            mtDivs.forEach(function(el) { el.style.display = ''; });
+            if (stratGrid) stratGrid.style.display = 'none';
+        } else {
+            globalRows.forEach(function(el) { el.style.display = 'none'; });
+            mtDivs.forEach(function(el) { el.style.display = 'none'; });
+            if (stratGrid) stratGrid.style.display = '';
+        }
+
+        try { localStorage.setItem(TAB_KEY, tab); } catch(e) {}
+        console.log('[BOT-TABS] Aktif sekme:', tab);
+    };
+
+    window._setupBotTabs = function() {
+        var body = _getBody();
+        if (!body) return;
+
+        var existingBar = body.querySelector('.bot-tabs');
+        if (!existingBar) {
+            // Tab bar olustur
+            var bar = document.createElement('div');
+            bar.className = 'bot-tabs';
+            bar.innerHTML = ''
+                + '<button type="button" class="bot-tab active" data-tab="general">'
+                + '  <span class="bot-tab-ico">\u2699\uFE0F</span> Bot Ayarlar\u0131'
+                + '</button>'
+                + '<button type="button" class="bot-tab" data-tab="strategies">'
+                + '  <span class="bot-tab-ico">\uD83D\uDCCA</span> Strateji Ayarlar\u0131'
+                + '</button>';
+
+            body.insertBefore(bar, body.firstChild);
+
+            // Buton click
+            bar.querySelectorAll('.bot-tab').forEach(function(btn) {
+                btn.addEventListener('click', function() {
+                    window.switchBotTab(btn.dataset.tab);
+                });
+            });
+
+            console.log('[BOT-TABS] Tab bar olusturuldu');
+        }
+
+        // Kayitli tab'i yukle
+        var saved = 'general';
+        try { saved = localStorage.getItem(TAB_KEY) || 'general'; } catch(e) {}
+
+        // ⚡ Attribute'u simdiden set et (CSS hemen devreye girsin)
+        body.setAttribute('data-active-tab', saved);
+
+        window.switchBotTab(saved);
+    };
+
+    // ---- HOOK: openBotConfigModal ----
+    if (typeof window.openBotConfigModal === 'function' && !window.openBotConfigModal._tabsHooked) {
+        var _origOpen = window.openBotConfigModal;
+        window.openBotConfigModal = function() {
+            var r = _origOpen.apply(this, arguments);
+            setTimeout(window._setupBotTabs, 100);
+            setTimeout(window._setupBotTabs, 500);
+            return r;
+        };
+        window.openBotConfigModal._tabsHooked = true;
+        console.log('[BOT-TABS] openBotConfigModal hook aktif');
+    }
+
+    // Sayfa ilk acilista (modal zaten acik olsa bile)
+    window.addEventListener('load', function() {
+        setTimeout(window._setupBotTabs, 1500);
+    });
+
+    console.log('[BOT-TABS] Hazir');
+})();
+
+
+/* BOT-CARD-CLASSES v1 */
+// =============================================================
+// Bot config - 3 karta guvenli class atama
+// =============================================================
+(function() {
+    'use strict';
+
+    function _tagBotCards() {
+        var body = document.querySelector('.bot-config-body');
+        if (!body) return;
+
+        // Once eski class'lari temizle
+        body.querySelectorAll('.bot-card-1, .bot-card-2, .bot-card-3').forEach(function(el) {
+            el.classList.remove('bot-card-1', 'bot-card-2', 'bot-card-3');
+        });
+
+        // Direkt cocuk div'leri al
+        var children = Array.from(body.children).filter(function(el) {
+            return el.tagName === 'DIV'
+                && !el.classList.contains('bot-tabs')
+                && !el.classList.contains('strategies-grid');
+        });
+
+        // Kart 1: .bot-global-row (Tarama)
+        var card1 = body.querySelector(':scope > .bot-global-row');
+
+        // Kart 2 ve 3: div[style*="margin-top"]
+        var mtDivs = Array.from(body.querySelectorAll(':scope > div[style*="margin-top"]'));
+
+        if (card1) card1.classList.add('bot-card-1');
+        if (mtDivs[0]) mtDivs[0].classList.add('bot-card-2');
+        if (mtDivs[1]) mtDivs[1].classList.add('bot-card-3');
+
+        console.log('[BOT-CARDS] Tagli:', {
+            card1: !!card1,
+            card2: !!mtDivs[0],
+            card3: !!mtDivs[1]
+        });
+    }
+
+    window._tagBotCards = _tagBotCards;
+
+    // openBotConfigModal hook
+    if (typeof window.openBotConfigModal === 'function' && !window.openBotConfigModal._cardTagHooked) {
+        var _origOpen = window.openBotConfigModal;
+        window.openBotConfigModal = function() {
+            var r = _origOpen.apply(this, arguments);
+            setTimeout(_tagBotCards, 150);
+            setTimeout(_tagBotCards, 600);
+            return r;
+        };
+        window.openBotConfigModal._cardTagHooked = true;
+    }
+
+    // switchBotTab sonrasi da (grid yapisi degisirse)
+    if (typeof window.switchBotTab === 'function' && !window.switchBotTab._cardTagHooked) {
+        var _origSwitch = window.switchBotTab;
+        window.switchBotTab = function(tab) {
+            var r = _origSwitch.apply(this, arguments);
+            if (tab === 'general') setTimeout(_tagBotCards, 50);
+            return r;
+        };
+        window.switchBotTab._cardTagHooked = true;
+    }
+
+    // Sayfa ilk acilista
+    window.addEventListener('load', function() {
+        setTimeout(_tagBotCards, 1500);
+    });
+
+    console.log('[BOT-CARDS] Hazir');
+})();
+
+
+;
+
+
+/* MANUAL-ORDER-PANEL v1 */
+// =============================================================
+// Manuel Emir - Sidebar Panel
+// =============================================================
+(function() {
+    'use strict';
+
+    var _moState = {
+        side: 'BUY',
+        order_mode: 'market'
+    };
+
+    // ---- Yon sec ----
+    window.setManualSide = function(side) {
+        _moState.side = side;
+        document.querySelectorAll('.manual-order-panel .mo-toggle-btn[data-side]').forEach(function(b) {
+            if (b.dataset.side === side) b.classList.add('active');
+            else b.classList.remove('active');
+        });
+    };
+
+    // ---- Emir tipi ----
+    window.setManualOrderMode = function(mode) {
+        _moState.order_mode = mode;
+        document.querySelectorAll('.manual-order-panel .mo-toggle-btn[data-mode]').forEach(function(b) {
+            if (b.dataset.mode === mode) b.classList.add('active');
+            else b.classList.remove('active');
+        });
+
+        var lpEl = document.getElementById('mo-limit-price');
+        if (lpEl) {
+            if (mode === 'limit') {
+                lpEl.disabled = false;
+                lpEl.placeholder = 'Fiyat girin';
+            } else {
+                lpEl.disabled = true;
+                lpEl.value = '';
+                lpEl.placeholder = '—';
+            }
+        }
+    };
+
+    // ---- Preview ----
+    window.updateManualPreview = function() {
+        var baseOrder = parseFloat((document.getElementById('mo-base-order') || {}).value) || 0;
+        var leverage = parseInt((document.getElementById('mo-leverage') || {}).value) || 1;
+
+        var margin = leverage > 0 ? baseOrder / leverage : baseOrder;
+        var commission = baseOrder * 0.0004;
+        var total = margin + commission;
+
+        var fmt = function(v) { return v.toFixed(2) + ' USDT'; };
+
+        var elM = document.getElementById('mo-preview-margin');
+        var elC = document.getElementById('mo-preview-commission');
+        var elT = document.getElementById('mo-preview-total');
+        var elS = document.getElementById('mo-preview-size');
+
+        if (elM) elM.textContent = fmt(margin);
+        if (elC) elC.textContent = fmt(commission);
+        if (elT) elT.textContent = fmt(total);
+        if (elS) elS.textContent = fmt(baseOrder);
+    };
+
+    // ---- Submit ----
+    window.submitManualOrder = async function() {
+        var btn = document.getElementById('mo-submit-btn');
+        if (btn) { btn.disabled = true; btn.textContent = '⏳ GÖNDERİLİYOR...'; }
+
+        try {
+            var symbol = (document.getElementById('mo-symbol') || {}).value || '';
+            symbol = symbol.trim().toUpperCase().replace('.P', '');
+
+            if (!symbol) {
+                window.showToast('❌ Sembol gerekli', 'error');
+                return;
+            }
+
+            var payload = {
+                symbol: symbol,
+                side: _moState.side,
+                order_mode: _moState.order_mode,
+                base_order: parseFloat((document.getElementById('mo-base-order') || {}).value) || 0,
+                leverage: parseInt((document.getElementById('mo-leverage') || {}).value) || 1,
+                limit_price: parseFloat((document.getElementById('mo-limit-price') || {}).value) || 0,
+                take_profit: parseFloat((document.getElementById('mo-tp') || {}).value) || 0,
+                trailingSteps: (document.getElementById('mo-ttp') || {}).value || '',
+                stop_loss: parseFloat((document.getElementById('mo-sl') || {}).value) || 0,
+                partial_tp_enabled: (document.getElementById('mo-pt-enabled') || {}).checked || false,
+                partial_tp_percent: parseFloat((document.getElementById('mo-pt-percent') || {}).value) || 50,
+            };
+
+            if (payload.base_order <= 0) {
+                window.showToast('❌ Miktar > 0 olmali', 'error');
+                return;
+            }
+
+            var _sideLabel = payload.side === 'BUY' ? '▲ LONG' : '▼ SHORT';
+            var _msg = 'Sembol: ' + payload.symbol + '\n' +
+                       'Yön: ' + _sideLabel + '\n' +
+                       'Emir Tipi: ' + payload.order_mode.toUpperCase() + '\n' +
+                       'Miktar: ' + payload.base_order + ' USDT\n' +
+                       'Kaldıraç: ' + payload.leverage + 'x\n\n' +
+                       'Onaylıyor musun?';
+
+            var _ok = true;
+            if (typeof window.showConfirm === 'function') {
+                _ok = await window.showConfirm('⚡ Manuel Emir', _msg, 'GÖNDER', 'İPTAL', 'warning');
+            } else {
+                _ok = confirm(_msg);
+            }
+            if (!_ok) return;
+
+            var res = await fetch('/api/trade/manual', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify(payload)
+            });
+            var data = await res.json();
+
+            // Duplicate uyarisi
+            if (data.status === 'duplicate_warning') {
+                var _dupMsg = data.message + '\n\n' +
+                    'Aynı sembolde AYRI pozisyon olarak açılsın mı?';
+                var _okDup = false;
+                if (typeof window.showConfirm === 'function') {
+                    _okDup = await window.showConfirm('⚠️ Zaten Açık Pozisyon', _dupMsg, 'AYRI AÇ', 'İPTAL', 'warning');
+                } else {
+                    _okDup = confirm(_dupMsg);
+                }
+                if (!_okDup) return;
+
+                payload.confirm_overwrite = true;
+                var res2 = await fetch('/api/trade/manual', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify(payload)
+                });
+                data = await res2.json();
+            }
+
+            if (data.status === 'success') {
+                window.showToast(
+                    '✅ Emir açıldı: ' + data.symbol + ' ' + data.side + ' @ ' + (data.entry_price || '-'),
+                    'success',
+                    5000
+                );
+                if (window.refreshBottomPanel) setTimeout(window.refreshBottomPanel, 500);
+                if (window.fetchTrades) setTimeout(window.fetchTrades, 500);
+            } else {
+                window.showToast('❌ Hata: ' + (data.message || 'bilinmeyen'), 'error', 5000);
+            }
+
+        } catch(e) {
+            console.error('[MANUAL] Hata:', e);
+            window.showToast('❌ Bağlantı hatası: ' + e.message, 'error', 5000);
+        } finally {
+            if (btn) { btn.disabled = false; btn.textContent = '⚡ EMİR GÖNDER'; }
+        }
+    };
+
+    // Modal fonksiyonlari - eski cagrilar icin no-op
+    window.openManualOrderModal = function() {
+        window.switchSidebarTab('manual');
+    };
+    window.closeManualOrderModal = function() {};
+
+    console.log('[MANUAL-PANEL] Hazir');
+})();

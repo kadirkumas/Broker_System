@@ -1,10 +1,11 @@
 import asyncio
 import json
 import os
+import shutil
 import time
 import sqlite3
 from binance.client import Client
-from backend.strategies import RSIScalperStrategy, HullSRPStrategy, DynamicGridStrategy, DeepHunterStrategy
+from backend.strategies import RSIScalperStrategy, HullSRPStrategy, DynamicGridStrategy, DynamicGridReelStrategy, DeepHunterStrategy
 from backend.database import get_db_connection
 from backend import telegram_notifier
 
@@ -27,7 +28,7 @@ DEFAULT_CONFIG = {
             "shortOp": ">", "shortVal": 80,
             "useDCA": True, "baseOrder": 10, "volMultiplier": 1.2,
             "steps": "1.5, 3, 5",
-            "takeProfit": 1.5, "trailing": 0.3, "stopLoss": 3.0,
+            "takeProfit": 1.5, "trailing": 0.3, "trailingSteps": "1.5:0.3, 2.5:0.2, 4:0.12, 6:0.07, 10:0.03", "stopLoss": 3.0,
             "partialTPEnabled": False, "partialTPPercent": 50,
             "partialTPKeepDCA": True
         },
@@ -39,9 +40,36 @@ DEFAULT_CONFIG = {
             "longTrade": True,
             "shortTrade": False,
             "baseOrder": 10,
-            "takeProfit": 2.0, "trailing": 0.5, "stopLoss": 3.0,
+            "takeProfit": 2.0, "trailing": 0.5, "trailingSteps": "1.5:0.3, 2.5:0.2, 4:0.12, 6:0.07, 10:0.03", "stopLoss": 3.0,
             "partialTPEnabled": False, "partialTPPercent": 50,
             "partialTPKeepDCA": True
+        },
+        "DYNAMIC_GRID_REEL": {
+            "enabled": False,
+            "interval": "1m",
+            "mode": "neutral",
+            "distributionType": "arithmetic",
+            "gridCount": 20,
+            "smaPeriod": 100,
+            "pivotLookback": 100,
+            "atrPeriod": 14,
+            "atrMultiplier": 8,
+            "minWidthRatio": 0.4,
+            "maxWidthRatio": 0.8,
+            "asymmetryRatio": 1.3,
+            "recenterHours": 24,
+            "recenterBuffer": 0.03,
+            "baseOrder": 5,
+            "leverage": 5,
+            "takeProfit": 0,
+            "trailing": 0,
+            "stopLoss": 0,
+            "useDCA": False,
+            "volMultiplier": 1,
+            "steps": "",
+            "partialTPEnabled": False,
+            "partialTPPercent": 50,
+            "partialTPKeepDCA": False,
         },
         "DEEP_HUNTER": {
             "enabled": False,
@@ -72,8 +100,19 @@ DEFAULT_CONFIG = {
 
 
 def load_config() -> dict:
-    """Config'i okur. Eksik alanları varsayılandan ekler."""
+    """Config'i okur. Yoksa once preset'ten kopyala, sonra DEFAULT_CONFIG."""
     if not os.path.exists(CONFIG_PATH):
+        # ⚡ Once preset varsa ondan kopyala
+        preset_path = os.path.join(os.path.dirname(__file__), "bot_config.default.json")
+        if os.path.exists(preset_path):
+            try:
+                shutil.copy2(preset_path, CONFIG_PATH)
+                print(f"[CFG] Preset'ten yuklendi: bot_config.default.json")
+                with open(CONFIG_PATH, "r", encoding="utf-8") as f:
+                    return json.load(f)
+            except Exception as e:
+                print(f"[CFG] Preset kopyalama hatasi: {e}")
+        # Preset yoksa DEFAULT
         save_config(DEFAULT_CONFIG)
         return DEFAULT_CONFIG
     try:
@@ -125,6 +164,9 @@ class StrategyEngine:
         self._delisted_cache_time = 0
         # ⚡ Duplicate prevention: sembol bazlı kilit
         self._symbol_locks = {}
+        # ⚡ Multi-position state: strategy instance cache (symbol bazli)
+        # DYNAMIC_GRID_REEL gibi stateful stratejiler icin ZORUNLU
+        self._strategy_cache = {}
 
     # ------------------------------------------------------------------
     # Sembol listesi
@@ -245,9 +287,26 @@ class StrategyEngine:
             return HullSRPStrategy(strat_cfg)
         elif strategy_name == "DYNAMIC_GRID":
             return DynamicGridStrategy(strat_cfg)
+        elif strategy_name == "DYNAMIC_GRID_REEL":
+            return DynamicGridReelStrategy(strat_cfg)
         elif strategy_name == "DEEP_HUNTER":
             return DeepHunterStrategy(strat_cfg)
         return None
+
+    def _create_strategy_for_symbol(self, strategy_name: str, strat_cfg: dict, symbol: str):
+        """
+        Symbol-bazli strategy instance cache.
+        Stateful stratejiler (DYNAMIC_GRID, DYNAMIC_GRID_REEL) icin ZORUNLU.
+        Diger stratejiler icin normal create (cache kullanma).
+        """
+        STATEFUL = {"DYNAMIC_GRID_REEL", "DYNAMIC_GRID"}
+        if strategy_name not in STATEFUL:
+            return self._create_strategy(strategy_name, strat_cfg)
+
+        cache_key = f"{strategy_name}::{symbol}"
+        if cache_key not in self._strategy_cache:
+            self._strategy_cache[cache_key] = self._create_strategy(strategy_name, strat_cfg)
+        return self._strategy_cache[cache_key]
 
     # ------------------------------------------------------------------
     # Sinyal DB'ye kaydet
@@ -293,6 +352,67 @@ class StrategyEngine:
     # ------------------------------------------------------------------
     # Tek stratejiyi tüm sembollerde çalıştır (PARALEL BATCH)
     # ------------------------------------------------------------------
+    # ------------------------------------------------------------------
+    # VOLATILITE SIRALAMASI - test_symbol sayi girildiginde kullanilir
+    # Skor = |priceChangePercent| + (high - low) / close * 100
+    # 60 sn cache (API spam yok)
+    # ------------------------------------------------------------------
+    _vol_cache = {"ts": 0, "n": 0, "symbols": []}
+
+    def _get_top_volatile(self, n: int):
+        """En volatil N USDT-M futures coinini dondur."""
+        import time as _t
+
+        # Cache kontrolu
+        now = _t.time()
+        cache = StrategyEngine._vol_cache
+        if (now - cache.get("ts", 0) < 60) and cache.get("n") == n and cache.get("symbols"):
+            return cache["symbols"]
+
+        try:
+            tickers = self.client.futures_ticker()
+        except Exception as e:
+            print(f"[VOL] ticker cekilemedi: {e}")
+            return []
+
+        scored = []
+        for t in tickers:
+            sym = t.get("symbol", "")
+            if not sym.endswith("USDT"):
+                continue
+            try:
+                last = float(t.get("lastPrice", 0) or 0)
+                high = float(t.get("highPrice", 0) or 0)
+                low = float(t.get("lowPrice", 0) or 0)
+                chg = abs(float(t.get("priceChangePercent", 0) or 0))
+            except Exception:
+                continue
+            if last <= 0 or high <= 0 or low <= 0:
+                continue
+
+            vol_a = chg                          # A: 24h degisim %
+            vol_b = (high - low) / last * 100    # B: intraday range %
+            score = vol_a + vol_b                # A + B
+
+            scored.append((sym, score, vol_a, vol_b))
+
+        scored.sort(key=lambda x: x[1], reverse=True)
+        top = scored[:n]
+
+        result = [s[0] for s in top]
+
+        # Cache guncelle
+        StrategyEngine._vol_cache["ts"] = now
+        StrategyEngine._vol_cache["n"] = n
+        StrategyEngine._vol_cache["symbols"] = result
+
+        # Log
+        print(f"[VOL] En volatil {n} coin (A+B skoru):")
+        for sym, score, a, b in top:
+            print(f"      {sym:<16} skor={score:>7.2f}  (A={a:>6.2f}% + B={b:>6.2f}%)")
+
+        return result
+
     async def run_strategy(self, strategy_name: str, strat_cfg: dict, candle_cache: dict):
         strategy = self._create_strategy(strategy_name, strat_cfg)
         if not strategy:
@@ -301,16 +421,43 @@ class StrategyEngine:
 
         interval = strat_cfg.get("interval", "5m")
 
+        # ⚡ TEST SEMBOL SAYI filtresi
+        #  - Bos    -> normal tarama (self.symbols)
+        #  - Sayi   -> en volatil N coin
+        #  - Gecersiz deger -> normal tarama (log ile uyari)
+        test_val = str(strat_cfg.get("test_symbol") or "").strip()
+        scan_symbols = None
+
+        if test_val:
+            try:
+                n = int(test_val)
+                if n > 0:
+                    vol_symbols = self._get_top_volatile(n)
+                    if vol_symbols:
+                        scan_symbols = vol_symbols
+                        print(f"[TEST-N] {strategy_name} SADECE en volatil {n} coin:")
+                        for s in vol_symbols:
+                            print(f"         - {s}")
+                    else:
+                        print(f"[TEST-N] {strategy_name} volatilite listesi bos, normal tarama")
+                else:
+                    print(f"[TEST-N] {strategy_name} test_symbol={n} gecersiz (0 veya negatif), normal tarama")
+            except ValueError:
+                print(f"[TEST-N] {strategy_name} test_symbol='{test_val}' gecersiz (sadece sayi), normal tarama")
+
+        if scan_symbols is None:
+            scan_symbols = self.symbols
+
         BATCH_SIZE = 3
-        for batch_start in range(0, len(self.symbols), BATCH_SIZE):
+        for batch_start in range(0, len(scan_symbols), BATCH_SIZE):
             if not self.is_running:
                 return
 
             # ⚡ RACE-CONDITION GUARD: Bot pasifse tarama derhal durdur
             if not self.config.get("active", False):
-                print(f"[SCAN] Bot pasif -> tarama durduruldu (batch {batch_start}/{len(self.symbols)})")
+                print(f"[SCAN] Bot pasif -> tarama durduruldu (batch {batch_start}/{len(scan_symbols)})")
                 return
-            batch = self.symbols[batch_start:batch_start + BATCH_SIZE]
+            batch = scan_symbols[batch_start:batch_start + BATCH_SIZE]
             await asyncio.gather(*[
                 self._process_symbol(sym, strategy_name, strategy, strat_cfg, interval, candle_cache)
                 for sym in batch
@@ -320,6 +467,51 @@ class StrategyEngine:
     # ------------------------------------------------------------------
     # Tek sembol işleme
     # ------------------------------------------------------------------
+    # ------------------------------------------------------------------
+    # GRID STATE - Backend tek dogru kaynak
+    # ------------------------------------------------------------------
+    def _save_grid_state_to_db(self, symbol, strategy_name, snapshot):
+        """Grid state'i DB'ye UPSERT et (her recenter'da)."""
+        if not snapshot:
+            return
+        import time as _t
+        try:
+            import json as _json
+            conn = get_db_connection()
+            conn.execute("""
+                INSERT INTO grid_state
+                    (symbol, strategy_name, group_id, reference, top, bottom,
+                     levels_json, interval, mode, recenter_ts, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(symbol) DO UPDATE SET
+                    strategy_name = excluded.strategy_name,
+                    group_id      = excluded.group_id,
+                    reference     = excluded.reference,
+                    top           = excluded.top,
+                    bottom        = excluded.bottom,
+                    levels_json   = excluded.levels_json,
+                    interval      = excluded.interval,
+                    mode          = excluded.mode,
+                    recenter_ts   = excluded.recenter_ts,
+                    updated_at    = excluded.updated_at
+            """, (
+                symbol,
+                strategy_name,
+                snapshot.get("group_id"),
+                float(snapshot.get("reference") or 0),
+                float(snapshot.get("top") or 0),
+                float(snapshot.get("bottom") or 0),
+                _json.dumps(snapshot.get("levels") or []),
+                snapshot.get("interval", "1m"),
+                snapshot.get("mode", "neutral"),
+                int(snapshot.get("recenter_ts") or 0),
+                int(_t.time()),
+            ))
+            conn.commit()
+            conn.close()
+        except Exception as e:
+            print(f"[GRID-STATE] DB kayit hatasi {symbol}: {e}")
+
     async def _process_symbol(self, symbol, strategy_name, strategy, strat_cfg, interval, candle_cache):
         # ⚡ SEMBOL BAZLI KİLİT (race condition engeli)
         lock = self._get_symbol_lock(symbol)
@@ -339,8 +531,35 @@ class StrategyEngine:
             if not candles:
                 return
 
-            open_pos = self.get_open_position(symbol)
-            result = strategy.evaluate(candles, open_pos)
+            # ⚡ Stateful stratejiler icin symbol-bazli instance
+            symbol_strategy = self._create_strategy_for_symbol(strategy_name, strat_cfg, symbol)
+
+            # ⚡ GRID REEL: acik pozisyon kontrolu YAPMA
+            # Her seviye bagimsiz -- strateji kendi tetiklenmis seviyeleri tutuyor.
+            # Ayni sembolde ayni anda 10+ grid seviyesi olabilir.
+            if strategy_name == "DYNAMIC_GRID_REEL":
+                open_pos = None
+                result = symbol_strategy.evaluate(candles, open_pos, symbol=symbol)
+                # ⚡ Grid state'i DB'ye kaydet (tek dogru kaynak)
+                try:
+                    _snap = symbol_strategy.get_state_snapshot(symbol)
+                    if _snap:
+                        self._save_grid_state_to_db(symbol, strategy_name, _snap)
+                except Exception as _ge:
+                    print(f"[GRID-STATE] snapshot hatasi {symbol}: {_ge}")
+
+                # ⚡ RECENTER: eski grubun tum pozisyonlarini kapat
+                _meta = result.get("meta", {}) or {}
+                if _meta.get("recenter_happened") and _meta.get("prev_group_id"):
+                    _old_gid = _meta.get("prev_group_id")
+                    if self.position_manager and hasattr(self.position_manager, "_close_grid_group"):
+                        asyncio.create_task(self.position_manager._close_grid_group(
+                            symbol, _old_gid, "GRID RECENTER"
+                        ))
+                        print(f"[RECENTER-CLEANUP] {symbol} eski grup {_old_gid} kapatiliyor (async)")
+            else:
+                open_pos = self.get_open_position(symbol)
+                result = symbol_strategy.evaluate(candles, open_pos)
 
             current_price = candles[-1]["close"]
             meta = result.get("meta", {})
@@ -415,44 +634,80 @@ class StrategyEngine:
                     print(f"\n[>> SİNYAL] {symbol} [{strategy_name}] {result['signal']} | {result['reason']}")
 
                     leverage = int(strat_cfg.get("leverage", 1))
-                    
                     self.order_manager.symbol = symbol
-                    
-                    # ⚡ Kismi TP snapshot (acilis anindaki config)
-                    pt_enabled = 1 if strat_cfg.get("partialTPEnabled") else 0
-                    pt_percent = float(strat_cfg.get("partialTPPercent", 50))
-                    pt_keep_dca = 1 if strat_cfg.get("partialTPKeepDCA", True) else 0
-                    
-                    if pt_enabled:
-                        print(f"[PARTIAL-TP] {symbol} PT aktif: %{pt_percent:.0f} | KeepDCA={pt_keep_dca}")
-                    
-                    try:
-                        await asyncio.to_thread(
-                            self.order_manager.open_dca_position,
-                            side=side,
-                            base_amount_usdt=base_order,
-                            strategy_name=strategy_name,
-                            leverage=leverage,
-                            pt_enabled=pt_enabled,
-                            pt_percent=pt_percent,
-                            pt_keep_dca=pt_keep_dca,
-                            use_limit_order=bool(self.config.get("useLimitOrder", True)),
-                            limit_timeout_sec=int(self.config.get("limitTimeoutSec", 3)),
-                            fallback_market=bool(self.config.get("fallbackToMarket", True)),
-                        )
-                        self._save_signal_to_db(
-                            signal_id, symbol, strategy_name, result["signal"],
-                            current_price, qty, base_order, candle_time, created_ms,
-                            opened=1, skip_reason=None
-                        )
-                        self.stats["signals_found"] += 1
-                    except Exception as oe:
-                        print(f"[!] Emir açma hatası {symbol}: {oe}")
-                        self._save_signal_to_db(
-                            signal_id, symbol, strategy_name, result["signal"],
-                            current_price, qty, base_order, candle_time, created_ms,
-                            opened=0, skip_reason=f"Emir hatası: {oe}"
-                        )
+
+                    # ⚡ GRID REEL mi? -> open_grid_position
+                    _meta = result.get("meta", {}) or {}
+                    if _meta.get("is_grid_reel"):
+                        try:
+                            grid_result = await asyncio.to_thread(
+                                self.order_manager.open_grid_position,
+                                side=side,
+                                base_amount_usdt=base_order,
+                                strategy_name=strategy_name,
+                                leverage=leverage,
+                                grid_group_id=_meta.get("grid_group_id"),
+                                grid_level=int(_meta.get("grid_level") or 0),
+                                grid_side=_meta.get("grid_side") or ("BUY" if side == "BUY" else "SELL"),
+                                grid_entry_price=float(_meta.get("grid_entry_price") or 0),
+                                grid_tp_price=float(_meta.get("grid_tp_price") or 0),
+                                use_limit_order=bool(self.config.get("useLimitOrder", True)),
+                                limit_timeout_sec=int(self.config.get("limitTimeoutSec", 3)),
+                                fallback_market=bool(self.config.get("fallbackToMarket", True)),
+                            )
+                            _opened = 1 if grid_result.get("status") == "success" else 0
+                            _skip = None if _opened else (grid_result.get("message") or "grid hata")
+                            self._save_signal_to_db(
+                                signal_id, symbol, strategy_name, result["signal"],
+                                current_price, qty, base_order, candle_time, created_ms,
+                                opened=_opened, skip_reason=_skip
+                            )
+                            if _opened:
+                                self.stats["signals_found"] += 1
+                        except Exception as ge:
+                            print(f"[!] Grid emir hatasi {symbol}: {ge}")
+                            self._save_signal_to_db(
+                                signal_id, symbol, strategy_name, result["signal"],
+                                current_price, qty, base_order, candle_time, created_ms,
+                                opened=0, skip_reason=f"Grid emir hatasi: {ge}"
+                            )
+                    else:
+                        # ==================== KLASIK DCA (eski akis) ====================
+                        # ⚡ Kismi TP snapshot (acilis anindaki config)
+                        pt_enabled = 1 if strat_cfg.get("partialTPEnabled") else 0
+                        pt_percent = float(strat_cfg.get("partialTPPercent", 50))
+                        pt_keep_dca = 1 if strat_cfg.get("partialTPKeepDCA", True) else 0
+
+                        if pt_enabled:
+                            print(f"[PARTIAL-TP] {symbol} PT aktif: %{pt_percent:.0f} | KeepDCA={pt_keep_dca}")
+
+                        try:
+                            await asyncio.to_thread(
+                                self.order_manager.open_dca_position,
+                                side=side,
+                                base_amount_usdt=base_order,
+                                strategy_name=strategy_name,
+                                leverage=leverage,
+                                pt_enabled=pt_enabled,
+                                pt_percent=pt_percent,
+                                pt_keep_dca=pt_keep_dca,
+                                use_limit_order=bool(self.config.get("useLimitOrder", True)),
+                                limit_timeout_sec=int(self.config.get("limitTimeoutSec", 3)),
+                                fallback_market=bool(self.config.get("fallbackToMarket", True)),
+                            )
+                            self._save_signal_to_db(
+                                signal_id, symbol, strategy_name, result["signal"],
+                                current_price, qty, base_order, candle_time, created_ms,
+                                opened=1, skip_reason=None
+                            )
+                            self.stats["signals_found"] += 1
+                        except Exception as oe:
+                            print(f"[!] Emir açma hatası {symbol}: {oe}")
+                            self._save_signal_to_db(
+                                signal_id, symbol, strategy_name, result["signal"],
+                                current_price, qty, base_order, candle_time, created_ms,
+                                opened=0, skip_reason=f"Emir hatası: {oe}"
+                            )
 
                 self.last_signal_candle[signal_key] = candle_time
 
@@ -469,6 +724,12 @@ class StrategyEngine:
                     "candle_time": candle_time,
                     "created_at": created_ms,
                 }
+                # ⚡ Grid REEL meta bilgisini de sakla
+                if isinstance(meta, dict) and meta.get("is_grid_reel"):
+                    signal_entry["grid_level"] = meta.get("grid_level")
+                    signal_entry["grid_group_id"] = meta.get("grid_group_id")
+                    signal_entry["grid_tp_price"] = meta.get("grid_tp_price")
+
                 self.recent_signals.insert(0, signal_entry)
                 if len(self.recent_signals) > 100:
                     self.recent_signals = self.recent_signals[:100]
@@ -624,6 +885,13 @@ class StrategyEngine:
     # Başlat / durdur
     # ------------------------------------------------------------------
     async def start(self):
+        # ⚡ REPLICA KORUMASI: Cloud'da hicbir zaman tarama baslatma
+        import os as _os
+        _mode = _os.getenv("SYNC_MODE", "standalone").strip().lower()
+        if _mode == "replica":
+            print("[REPLICA-GUARD] Strategy Engine REPLICA modunda - tarama BASLATILMADI")
+            return
+
         self.is_running = True
         print("[*] Strategy Engine başlatıldı.")
 

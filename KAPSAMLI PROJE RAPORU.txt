@@ -1,0 +1,301 @@
+================================================================================
+  BROKER SYSTEM — ÇALIŞMA MODELİ
+================================================================================
+
+Tarih      : 25 Eylül 2026
+Versiyon   : v1.0
+Durum      : Testnet, production-ready
+
+================================================================================
+  ŞU ANKİ ÇALIŞMA MODELİ
+================================================================================
+
+┌──────────────────────────────────────────────────────────┐
+│  LOCAL (Windows)          →  MASTER (Trading)            │
+│  ├─ Bot AKTİF                                            │
+│  ├─ Emir açar/kapatır                                    │
+│  ├─ DB yazar                                             │
+│  ├─ Backend: py -m uvicorn --reload                     │
+│  ├─ Arayüz: http://127.0.0.1:8000                       │
+│  └─ Mobil:  http://127.0.0.1:8000/m                     │
+└─────────────────┬────────────────────────────────────────┘
+                  │
+                  │ DB push (30 sn)
+                  ↓
+┌──────────────────────────────────────────────────────────┐
+│  CLOUD (Oracle)           →  REPLICA (Viewer)            │
+│  ├─ Bot PASİF (active: false)                            │
+│  ├─ Emir açmaz                                           │
+│  ├─ DB kopya (local'den)                                 │
+│  ├─ Backend: systemd (7/24)                              │
+│  ├─ Arayüz: http://92.5.133.137:8000                    │
+│  ├─ Mobil:  http://92.5.133.137:8000/m                  │
+│  └─ POST/PUT/DELETE → 403 (read-only)                    │
+└──────────────────────────────────────────────────────────┘
+
+
+================================================================================
+  KATMAN BAZINDA YETKİLER
+================================================================================
+
+Katman              | Local          | Cloud          | Mobil
+--------------------|----------------|----------------|----------------
+Arayüz              | EVET           | EVET           | EVET
+İşlem açma          | EVET (otomatik)| HAYIR (403)    | HAYIR (403)
+Pozisyon kapatma    | EVET           | HAYIR          | HAYIR (cloud'da)
+Bot toggle          | EVET           | HAYIR          | HAYIR (cloud'da)
+Config değiştirme   | EVET           | HAYIR          | HAYIR
+Veri okuma          | EVET           | EVET           | EVET
+DB                  | Kendi          | Sync edilir    | Okuma
+
+
+================================================================================
+  PRATİK KULLANIM
+================================================================================
+
+GÜNLÜK AKIŞIN:
+
+1) Evde/ofiste bilgisayarda:
+   - Masaüstü arayüz  -> http://127.0.0.1:8000
+   - Mobil görünüm    -> http://127.0.0.1:8000/m
+   - İkisi de LOCAL'e bağlanır -> TAM KONTROL
+
+2) Dışarıda (telefon):
+   - Mobil cloud      -> http://92.5.133.137:8000/m
+   - SADECE GÖRÜNTÜLEME -> işlem yapamaz
+   - Risk + pozisyonlar + K/Z CANLI görünür
+
+3) Bilgisayar kapalıyken:
+   - Mobil cloud      -> çalışır (7/24)
+   - Veri SON SYNC'TEN gösterilir
+   - Yeni sinyal yok (local kapalı)
+
+
+================================================================================
+  ŞU ANKİ MOBİL SEÇENEKLER
+================================================================================
+
+2 FARKLI URL VAR:
+
+A) LOCAL MOBİL (Bilgisayar açıkken)
+   URL        : http://127.0.0.1:8000/m
+   Hız        : Hızlı (LAN üzerinden)
+   PIN        : İstemez (localhost)
+   Erişim     : Tam okuma
+   İşlem      : Yapamaz (mobil read-only değil ama sadece kapatma var)
+
+B) CLOUD MOBİL (7/24)
+   URL        : http://92.5.133.137:8000/m
+   Erişim     : İnternetten erişim
+   Basic Auth : admin / 9060Fk.1
+   PIN        : 4 hane (cihaza özel)
+   Yetki      : Tam okuma
+   Read-only  : EVET (POST -> 403)
+
+
+================================================================================
+  ÖNEMLİ NOTLAR
+================================================================================
+
+1) AYNI ANDA İKİ YERDEN ERİŞEBİLİR MİSİN?
+   - EVET. Local + Cloud aynı anda açık olabilir.
+   - Sadece BOT çift çalışmaz (cloud pasif).
+
+2) MOBİL'DE NE YAPABİLİRSİN?
+
+   CLOUD MOBİL (/m):
+   [+] Cüzdan, K/Z, risk görüntüle
+   [+] Açık pozisyonları listele
+   [+] Sinyalleri gör
+   [+] Pozisyon kapatabilir (acil durum) - ama 403 dönebilir
+   [!] Bot toggle (cloud'da etkisiz, 403)
+
+   LOCAL MOBİL (/m):
+   [+] Aynı özellikler
+   [+] GERÇEKTEN pozisyon kapatabilir
+   [+] GERÇEKTEN bot başlat/durdur
+
+
+================================================================================
+  GELECEK PLANI (CLOUD'A TAM GEÇİŞ)
+================================================================================
+
+Geliştirme bitince:
+
+┌──────────────────────────────────────────────────────────┐
+│  CLOUD (Oracle)          →  MASTER (Trading)             │
+│  ├─ Bot AKTİF                                            │
+│  ├─ Emir açar/kapatır                                    │
+│  ├─ 7/24 çalışır                                         │
+│  └─ Mobil + Masaüstü buraya bağlanır                     │
+└──────────────────────────────────────────────────────────┘
+                         ↓
+┌──────────────────────────────────────────────────────────┐
+│  LOCAL (Windows)         →  DEVELOPMENT (Pasif)          │
+│  ├─ Sadece kod geliştirme                                │
+│  ├─ Test ortamı                                          │
+│  └─ Bot KAPALI                                           │
+└──────────────────────────────────────────────────────────┘
+
+Yani: Cloud TEK MERKEZ olur, local sadece geliştirme.
+
+GEÇİŞ ADIMLARI (planlanan):
+  1. Local bot'u durdur
+  2. Cloud bot'u aktif et (active: true)
+  3. Sync yönünü tersine çevir (cloud -> local)
+     VEYA sync'i tamamen kaldır
+  4. Mobil + Masaüstü cloud URL'ine yönlendir
+  5. Local sadece geliştirme için kullanılır
+
+
+================================================================================
+  ÖZET TABLO
+================================================================================
+
+Soru                                     | Cevap
+-----------------------------------------|--------------------------
+Local'de bot çalışıyor mu?               | EVET, AKTİF
+Cloud'da bot çalışıyor mu?               | HAYIR, PASİF
+Cloud veriyi nereden alıyor?             | Local'den sync (30 sn)
+Cloud'da işlem yapılır mı?               | HAYIR (403)
+Mobil cloud'da ne görünür?               | Local'in kopyası
+Mobil local'de ne görünür?               | Canlı local verisi
+İkisinden de erişilebilir mi?            | EVET
+
+
+================================================================================
+  TEKNİK DETAYLAR
+================================================================================
+
+SYNC MEKANİZMASI:
+  - Local DB -> Cloud DB (tek yönlü push)
+  - Frekans  : 30 saniye
+  - Yöntem   : HTTP POST /api/sync/db-receive
+  - Auth     : X-Sync-Token header
+  - Token    : brk_tL63V_W9HXNZJu_pv8Qq7VifHR8eu10
+  - Kontrol  : DB mtime (değişmediyse push yok)
+  - Atomic   : temp dosya + rename
+
+READ-ONLY KİLİDİ (CLOUD):
+  - Middleware : readonly_middleware
+  - Kontrol    : IS_REPLICA + method POST/PUT/DELETE/PATCH
+  - Muaf       : /api/sync/* (kendi token auth'u var)
+  - Yanıt      : 403 {"status":"error","message":"Replica mode: read-only"}
+
+AUTH (BASIC):
+  - Local : Kapalı (test kolaylığı)
+  - Cloud : Açık (admin / 9060Fk.1)
+  - Bypass: /favicon.ico, /robots.txt, /api/sync/*
+
+PIN KİLİDİ (MOBİL):
+  - Client-side (localStorage)
+  - 4 haneli
+  - Hash   : SHA-256 (HTTPS/localhost) veya basit hash (HTTP+IP)
+  - Süre   : 7 gün "hatırla"
+  - Kilit  : 5 yanlış -> 1 dk
+
+
+================================================================================
+  ORTAM BİLGİLERİ
+================================================================================
+
+LOCAL:
+  OS         : Windows 11
+  Python     : 3.13
+  Proje Yolu : C:\Users\kadir.kumas\Desktop\Broker_System
+  Backend    : py -m uvicorn backend.main:app --reload
+  SYNC_MODE  : master
+
+CLOUD:
+  Sağlayıcı : Oracle Cloud (Frankfurt)
+  Instance  : broker-bot
+  IP        : 92.5.133.137
+  OS        : Ubuntu 22.04 ARM
+  Shape     : VM.Standard.A1.Flex (2 OCPU / 12 GB)
+  User      : ubuntu
+  Proje     : /home/ubuntu/Broker_System
+  Servis    : systemd broker-bot.service
+  SYNC_MODE : replica
+
+
+================================================================================
+  HIZLI KOMUTLAR
+================================================================================
+
+LOCAL (PowerShell):
+  Backend başlat  : cd C:\Users\kadir.kumas\Desktop\Broker_System
+                    py -m uvicorn backend.main:app --reload
+  Backend durdur  : Ctrl+C (veya taskkill /F /IM python.exe)
+  Arayüz          : http://127.0.0.1:8000
+  Mobil           : http://127.0.0.1:8000/m
+  Yedek al        : Masaüstü -> broker-yedek.bat
+
+CLOUD (SSH):
+  Bağlan          : ssh -i C:\Users\kadir.kumas\.ssh\broker-bot.key ubuntu@92.5.133.137
+  Durum           : sudo systemctl status broker-bot
+  Restart         : sudo systemctl restart broker-bot
+  Canlı log       : sudo journalctl -u broker-bot -f
+  Son 50 log      : sudo journalctl -u broker-bot -n 50 --no-pager
+  Web arayüz      : http://92.5.133.137:8000
+  Mobil arayüz    : http://92.5.133.137:8000/m
+  Yedek al        : Masaüstü -> broker-cloud-yedek.bat
+
+YÖNETİM PANELİ (broker-yonetim.bat):
+  [1]  LOCAL Moduna Geç
+  [2]  CLOUD Moduna Geç
+  [3]  TÜM SUNUCULARI DURDUR
+  [11] Cloud Bot Durum
+  [12] Cloud Canlı Log
+  [13] Cloud Bot DURDUR
+  [14] Cloud Bot YENİDEN BAŞLAT
+  [15] Cloud Son 50 Log
+  [16] Cloud Arayüzü Aç
+  [17] Cloud SSH
+  [18] Cloud Sunucu Durumu
+  [21] Local Backend DURDUR (nazik)
+  [22] Local Backend Durum
+  [23] Local Arayüzü Aç
+  [24] Local Backend ZORLA Kapat (taskkill)
+  [31] Local -> Cloud Dosya Gönder
+  [41] Local DB Durum
+  [42] Local DB TEMİZLE
+  [43] Cloud DB Durum
+  [44] Cloud DB TEMİZLE
+  [92] Durum Raporu
+  [0]  Çıkış
+
+
+================================================================================
+  KURALLAR / PRENSİPLER
+================================================================================
+
+1) İki ortam AYNI ANDA bot çalıştırmamalı (API çakışması)
+   -> Yönetim panelinden [1] veya [2] ile tek moda geç
+
+2) Cloud'da systemd devraldı
+   -> Manuel başlatma gerekmez, reboot sonrası otomatik başlar
+
+3) Local geliştirme akışı:
+   -> [1] LOCAL Moduna Geç
+   -> Değişiklik yap (patch)
+   -> Test et
+   -> [31] Sync to Cloud
+   -> [14] Cloud Bot Yeniden Başlat
+   -> [2] CLOUD Moduna Geç
+
+4) Rate limit: 6000 weight/dk (max_symbols=300)
+
+5) CRLF sorunu: patch script'leri newline='' ile
+
+6) Patch öncesi yedek: .bak_ozellik_adi
+
+7) Cloud auth KAPALI OLMAMALI (IP'yi bilen herkes girebilir)
+
+
+================================================================================
+  RAPOR SONU
+================================================================================
+
+Hazırlayan : Kadir Kumaş + AI Asistan
+Tarih      : 25 Eylül 2026
+Versiyon   : v1.0

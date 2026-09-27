@@ -60,6 +60,24 @@ def init_db():
         )
     ''')
 
+    # 4. GRID STATE - Backend grid durumu (tek dogru kaynak)
+    # Her recenter'da UPSERT edilir.
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS grid_state (
+            symbol TEXT PRIMARY KEY,
+            strategy_name TEXT NOT NULL,
+            group_id TEXT,
+            reference REAL,
+            top REAL,
+            bottom REAL,
+            levels_json TEXT,
+            interval TEXT,
+            mode TEXT,
+            recenter_ts INTEGER,
+            updated_at INTEGER
+        )
+    ''')
+
     # MIGRATION: active_trades
     cols_at = [row[1] for row in cursor.execute("PRAGMA table_info(active_trades)").fetchall()]
     migrations_at = {
@@ -75,6 +93,23 @@ def init_db():
         "pt_keep_dca": "ALTER TABLE active_trades ADD COLUMN pt_keep_dca INTEGER DEFAULT 1",
         "entry_is_maker": "ALTER TABLE active_trades ADD COLUMN entry_is_maker INTEGER DEFAULT 0",
         "dca_history": "ALTER TABLE active_trades ADD COLUMN dca_history TEXT DEFAULT '[]'",
+        # ============= FAZ 2 GRID REEL ALANLARI =============
+        # is_grid_position : 0 = klasik DCA, 1 = grid seviye pozisyonu
+        # grid_group_id    : ayni grid oturumundaki seviyeleri gruplar (uuid)
+        # grid_level       : seviye indeksi (-N..-1=BUY, +1..+N=SELL)
+        # grid_side        : "BUY" | "SELL"
+        # grid_entry_price : seviyenin tetiklenme fiyati
+        # grid_tp_price    : bu seviyenin hedef cikis fiyati (komsu seviye)
+        # grid_created_at  : grid recenter zamani (unix sn)
+        # grid_state       : "pending" | "open"
+        "is_grid_position": "ALTER TABLE active_trades ADD COLUMN is_grid_position INTEGER DEFAULT 0",
+        "grid_group_id": "ALTER TABLE active_trades ADD COLUMN grid_group_id TEXT",
+        "grid_level": "ALTER TABLE active_trades ADD COLUMN grid_level INTEGER",
+        "grid_side": "ALTER TABLE active_trades ADD COLUMN grid_side TEXT",
+        "grid_entry_price": "ALTER TABLE active_trades ADD COLUMN grid_entry_price REAL",
+        "grid_tp_price": "ALTER TABLE active_trades ADD COLUMN grid_tp_price REAL",
+        "grid_created_at": "ALTER TABLE active_trades ADD COLUMN grid_created_at INTEGER",
+        "grid_state": "ALTER TABLE active_trades ADD COLUMN grid_state TEXT DEFAULT 'open'",
     }
     for col, sql in migrations_at.items():
         if col not in cols_at:
@@ -117,27 +152,90 @@ def init_db():
             except Exception as e:
                 print(f"[DB] Migration hatası ({col}): {e}")
 
-    # ⚡ DUPLICATE PREVENTION: symbol bazlı UNIQUE index
-    # Önce mevcut duplicate'leri temizle (en eskisini tut)
+    # ==========================================================
+    # FAZ 2: CIFT PARTIAL UNIQUE INDEX
+    # ----------------------------------------------------------
+    # KLASIK : symbol UNIQUE   (is_grid_position=0) -> tek pozisyon
+    # GRID   : (symbol+group+level) UNIQUE (is_grid_position=1)
+    #          -> ayni sembolde cok seviye ayni anda acik olabilir
+    # ==========================================================
+
+    # Eski tek index'i kaldir
+    try:
+        cursor.execute("DROP INDEX IF EXISTS idx_active_symbol")
+        print("[DB] Eski idx_active_symbol kaldirildi")
+    except Exception as e:
+        print(f"[DB] Eski index drop hatasi: {e}")
+
+    # --- Klasik duplicate temizleme ---
     try:
         cursor.execute("""
             DELETE FROM active_trades
             WHERE id NOT IN (
-                SELECT MIN(id) FROM active_trades GROUP BY symbol
-            )
+                SELECT MIN(id) FROM active_trades
+                WHERE COALESCE(is_grid_position, 0) = 0
+                GROUP BY symbol
+            ) AND COALESCE(is_grid_position, 0) = 0
         """)
-        deleted = cursor.rowcount
-        if deleted > 0:
-            print(f"[DB] {deleted} duplicate aktif pozisyon temizlendi")
+        d = cursor.rowcount
+        if d > 0:
+            print(f"[DB] {d} klasik duplicate temizlendi")
     except Exception as e:
-        print(f"[DB] Duplicate temizleme hatası: {e}")
-    
-    # UNIQUE index ekle (varsa atla)
+        print(f"[DB] Klasik dup temizleme hatasi: {e}")
+
+    # --- Grid duplicate temizleme (group+level) ---
     try:
-        cursor.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_active_symbol ON active_trades(symbol)")
-        print("[DB] UNIQUE index aktif: symbol")
+        cursor.execute("""
+            DELETE FROM active_trades
+            WHERE id NOT IN (
+                SELECT MIN(id) FROM active_trades
+                WHERE is_grid_position = 1
+                GROUP BY symbol, grid_group_id, grid_level
+            ) AND is_grid_position = 1
+        """)
+        d = cursor.rowcount
+        if d > 0:
+            print(f"[DB] {d} grid duplicate temizlendi")
     except Exception as e:
-        print(f"[DB] UNIQUE index hatası: {e}")
+        print(f"[DB] Grid dup temizleme hatasi: {e}")
+
+    # --- Klasik UNIQUE: symbol (MANUAL hariç, partial) ---
+    try:
+        cursor.execute("DROP INDEX IF EXISTS idx_active_classic_symbol")
+        cursor.execute("""
+            CREATE UNIQUE INDEX IF NOT EXISTS idx_active_classic_symbol
+            ON active_trades(symbol)
+            WHERE COALESCE(is_grid_position, 0) = 0
+              AND (strategy_name IS NULL OR strategy_name != 'MANUAL')
+        """)
+        print("[DB] UNIQUE index: klasik symbol (MANUAL haric)")
+    except Exception as e:
+        print(f"[DB] Klasik index hatasi: {e}")
+
+    # --- MANUAL icin ayri UNIQUE: (symbol, id) zaten primary, ek kisit yok ---
+    # MANUAL pozisyonlar is_grid_position=0 kullanir, UNIQUE index'ten muaf
+
+    # --- Grid UNIQUE: (symbol+group+level) (partial) ---
+    try:
+        cursor.execute("""
+            CREATE UNIQUE INDEX IF NOT EXISTS idx_active_grid_level
+            ON active_trades(symbol, grid_group_id, grid_level)
+            WHERE is_grid_position = 1
+        """)
+        print("[DB] UNIQUE index: grid (symbol+group+level)")
+    except Exception as e:
+        print(f"[DB] Grid index hatasi: {e}")
+
+    # --- Sorgu performansi: group bazli ---
+    try:
+        cursor.execute("""
+            CREATE INDEX IF NOT EXISTS idx_active_grid_group
+            ON active_trades(grid_group_id)
+            WHERE is_grid_position = 1
+        """)
+        print("[DB] INDEX: grid_group_id")
+    except Exception as e:
+        print(f"[DB] Group index hatasi: {e}")
     
     conn.commit()
     conn.close()

@@ -494,16 +494,16 @@ input:checked + .slider:before { transform: translateX(20px); }
    ============================================================ */
 /* [MODAL-WIDE-FIX] */
 .modal-wide {
-    width: 1450px !important;
+    width: 1900px !important;
     max-width: 98vw !important;
     height: auto !important;
     max-height: 88vh !important;
 }
 
-/* ⚡ Bot config modal - 4 strateji panel yan yana */
+/* ⚡ Bot config modal - 5 strateji panel yan yana */
 #bot-config-modal .strategies-grid {
-    grid-template-columns: repeat(4, minmax(0, 1fr)) !important;
-    gap: 8px !important;
+    grid-template-columns: repeat(5, minmax(0, 1fr)) !important;
+    gap: 6px !important;
 }
 
 /* ⚡ Panel icindeki alanlar tasmasin */
@@ -512,13 +512,20 @@ input:checked + .slider:before { transform: translateX(20px); }
     overflow: hidden !important;
 }
 
-/* ⚡ Orta boy ekran: 2 kolon */
-@media (max-width: 1200px) {
+/* ⚡ Orta boy ekran: 3 kolon */
+@media (max-width: 1500px) {
     #bot-config-modal .strategies-grid {
-        grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+        grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
     }
     .modal-wide {
-        max-width: 96vw !important;
+        max-width: 98vw !important;
+    }
+}
+
+/* ⚡ Kucuk ekran: 2 kolon */
+@media (max-width: 1100px) {
+    #bot-config-modal .strategies-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
     }
 }
 
@@ -587,6 +594,7 @@ input:checked + .slider:before { transform: translateX(20px); }
     border-radius: 6px;
     overflow: hidden;
     transition: border-color 0.2s;
+    min-width: 0;
 }
 
 .strategy-panel:has(.strat-enabled:checked) {
@@ -620,10 +628,10 @@ input:checked + .slider:before { transform: translateX(20px); }
 }
 
 .strategy-body {
-    padding: 6px 10px;
+    padding: 5px 8px;
     display: grid;
     grid-template-columns: 1fr 1fr;
-    gap: 4px 10px;
+    gap: 3px 6px;
     align-items: center;
 }
 
@@ -3490,3 +3498,1925 @@ input:checked + .slider:before { transform: translateX(20px); }
 }
 .rc-btn-secondary:hover { color: #d1d4dc; border-color: #4a4e59; }
 
+
+
+/* ============================================================
+   [BT-COMPACT v1] Backtest modal - kompakt + scrollsuz
+   ============================================================ */
+
+/* Modal yuksekligi biraz artir */
+.backtest-modal-content {
+    height: 92vh !important;
+    max-height: 94vh !important;
+}
+
+/* Ana govde - daha az padding, gap */
+.backtest-body {
+    padding: 12px 18px !important;
+    gap: 10px !important;
+    overflow-y: hidden !important;
+    display: flex !important;
+    flex-direction: column !important;
+}
+
+/* Metrics grid - kompakt */
+.bt-metrics-grid {
+    margin-bottom: 8px !important;
+}
+
+.bt-metric-box {
+    padding: 8px 10px !important;
+    gap: 3px !important;
+}
+
+.bt-metric-lbl {
+    font-size: 9px !important;
+    letter-spacing: 0.3px !important;
+}
+
+.bt-metric-val {
+    font-size: 15px !important;
+    line-height: 1.15 !important;
+}
+
+/* Equity + trades wrap */
+.bt-equity-wrap,
+.bt-trades-wrap {
+    padding: 10px 12px !important;
+    margin-bottom: 8px !important;
+}
+
+/* Equity chart alani kucult */
+#bt-equity-chart {
+    height: 150px !important;
+}
+
+/* Section title - kompakt */
+.bt-section-title {
+    padding-bottom: 5px !important;
+    margin-bottom: 6px !important;
+    font-size: 11px !important;
+}
+
+/* Islem tablosu - kompakt */
+.bt-trades-wrap {
+    flex: 1 1 auto !important;
+    min-height: 0 !important;
+    display: flex !important;
+    flex-direction: column !important;
+}
+
+#bt-trades-table {
+    flex: 1 1 auto !important;
+    min-height: 0 !important;
+    max-height: none !important;
+    overflow-y: auto !important;
+}
+
+.bt-trades-tbl th {
+    padding: 5px 8px !important;
+    font-size: 10px !important;
+}
+
+.bt-trades-tbl td {
+    padding: 4px 8px !important;
+    font-size: 11px !important;
+}
+
+/* Modal header kompakt */
+.backtest-modal-content .modal-header {
+    padding: 10px 16px !important;
+}
+
+.backtest-modal-content .modal-header h2 {
+    font-size: 15px !important;
+}
+
+/* Form alani (form gosterirken de) kompakt */
+.bt-form-grid {
+    padding: 12px 14px !important;
+    gap: 10px 16px !important;
+}
+
+.bt-form-item input,
+.bt-form-item select {
+    padding: 6px 10px !important;
+    font-size: 12px !important;
+}
+
+#bt-params-section {
+    margin-top: 10px !important;
+    padding: 10px 12px !important;
+}
+
+#bt-params-content {
+    gap: 8px 14px !important;
+}
+
+.bt-param-row input,
+.bt-param-row select {
+    padding: 5px 8px !important;
+    font-size: 11px !important;
+}
+
+/* Action row (form ekranindaki buton) */
+.bt-action-row {
+    padding-top: 4px !important;
+}
+
+/* Scrollbar stili (kalan scroll icin) */
+.bt-trades-tbl::-webkit-scrollbar,
+.backtest-body::-webkit-scrollbar,
+#bt-trades-table::-webkit-scrollbar {
+    width: 6px;
+}
+
+.bt-trades-tbl::-webkit-scrollbar-thumb,
+.backtest-body::-webkit-scrollbar-thumb,
+#bt-trades-table::-webkit-scrollbar-thumb {
+    background: #363c4e;
+    border-radius: 3px;
+}
+
+/* [/BT-COMPACT v1] */
+
+
+/* ============================================================
+   [BT-SCROLL-ONLY-TRADES v1]
+   Scroll SADECE islem tablosunda olsun
+   ============================================================ */
+
+/* Ana modal govdesi - dis scroll YOK */
+.backtest-modal-content {
+    height: 92vh !important;
+    max-height: 94vh !important;
+    display: flex !important;
+    flex-direction: column !important;
+    overflow: hidden !important;
+}
+
+.backtest-body {
+    flex: 1 1 auto !important;
+    min-height: 0 !important;
+    overflow: hidden !important;
+    display: flex !important;
+    flex-direction: column !important;
+    gap: 8px !important;
+    padding: 10px 16px !important;
+}
+
+/* -------- FORM EKRANI -------- */
+#bt-form-section {
+    flex: 1 1 auto !important;
+    min-height: 0 !important;
+    overflow-y: auto !important;
+    overflow-x: hidden !important;
+    padding-right: 4px !important;
+}
+
+/* Form kendi scrollbar stili */
+#bt-form-section::-webkit-scrollbar { width: 6px; }
+#bt-form-section::-webkit-scrollbar-thumb { background: #363c4e; border-radius: 3px; }
+
+/* -------- PROGRESS EKRANI -------- */
+#bt-progress-section {
+    flex: 1 1 auto !important;
+    min-height: 0 !important;
+}
+
+/* -------- SONUC EKRANI -------- */
+#bt-result-section {
+    flex: 1 1 auto !important;
+    min-height: 0 !important;
+    display: none;  /* JS gosterir */
+    flex-direction: column !important;
+    gap: 8px !important;
+    overflow: hidden !important;
+}
+
+/* Metrics grid - SABIT yukseklik */
+#bt-result-section .bt-metrics-grid {
+    flex: 0 0 auto !important;
+    margin-bottom: 0 !important;
+}
+
+/* Equity curve - SABIT yukseklik */
+#bt-result-section .bt-equity-wrap {
+    flex: 0 0 auto !important;
+    margin-bottom: 0 !important;
+}
+
+#bt-equity-chart {
+    height: 140px !important;
+}
+
+/* Trades wrap - KALAN TUM ALANI KAPLAR */
+#bt-result-section .bt-trades-wrap {
+    flex: 1 1 auto !important;
+    min-height: 0 !important;
+    display: flex !important;
+    flex-direction: column !important;
+    overflow: hidden !important;
+    margin-bottom: 0 !important;
+    padding: 8px 12px !important;
+}
+
+/* Trades table - SCROLL BURADA */
+#bt-trades-table {
+    flex: 1 1 auto !important;
+    min-height: 0 !important;
+    max-height: none !important;
+    overflow-y: auto !important;
+    overflow-x: hidden !important;
+}
+
+/* Tablo scrollbar stili */
+#bt-trades-table::-webkit-scrollbar { width: 7px; }
+#bt-trades-table::-webkit-scrollbar-track { background: #1e222d; }
+#bt-trades-table::-webkit-scrollbar-thumb { background: #4a5262; border-radius: 3px; }
+#bt-trades-table::-webkit-scrollbar-thumb:hover { background: #5d6471; }
+
+/* Tablo header sticky (scroll ederken sabit kalir) */
+.bt-trades-tbl thead th {
+    position: sticky !important;
+    top: 0 !important;
+    z-index: 3 !important;
+    background: #181a20 !important;
+    box-shadow: 0 1px 0 #2b3139;
+}
+
+/* Section title sticky kalmasin */
+#bt-result-section .bt-trades-wrap .bt-section-title {
+    flex: 0 0 auto !important;
+}
+
+/* [/BT-SCROLL-ONLY-TRADES v1] */
+
+
+/* [BTC-HEADER-BADGE v1] */
+.btc-header-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 10px;
+    background: rgba(247, 147, 26, 0.10);
+    border: 1px solid rgba(247, 147, 26, 0.4);
+    border-radius: 4px;
+    font-size: 12px;
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+    user-select: none;
+    transition: border-color 0.2s, background 0.2s;
+    cursor: default;
+}
+.btc-header-badge:hover {
+    background: rgba(247, 147, 26, 0.20);
+    border-color: rgba(247, 147, 26, 0.7);
+}
+.btc-header-badge .btc-sym {
+    color: #F7931A;
+    font-weight: 800;
+    letter-spacing: 0.3px;
+}
+.btc-header-badge .btc-price {
+    color: #EAECEF;
+}
+.btc-header-badge .btc-pct {
+    font-size: 11px;
+    font-weight: 700;
+}
+.btc-header-badge .btc-pct.up   { color: #0ECB81; }
+.btc-header-badge .btc-pct.down { color: #F6465D; }
+.btc-header-badge .btc-pct.neutral { color: #848e9c; }
+
+
+/* ============================================================
+   [SIDEBAR-TABS v1]
+   Sidebar icin tek panel + tab sistemi
+   ============================================================ */
+
+/* Tab bar */
+.sidebar-tab-bar {
+    display: flex;
+    gap: 4px;
+    padding: 6px 8px;
+    background: #0b0e14;
+    border: 1px solid #2a2e39;
+    border-radius: 4px;
+    flex-shrink: 0;
+}
+
+.sidebar-tab-btn {
+    flex: 1;
+    padding: 7px 10px;
+    background: transparent;
+    color: #848e9c;
+    border: 1px solid transparent;
+    border-radius: 4px;
+    font-size: 11px;
+    font-weight: 700;
+    cursor: pointer;
+    transition: all 0.15s;
+    font-family: inherit;
+    letter-spacing: 0.3px;
+    white-space: nowrap;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 4px;
+}
+
+.sidebar-tab-btn:hover {
+    background: rgba(255, 255, 255, 0.03);
+    color: #d1d4dc;
+}
+
+.sidebar-tab-btn.active {
+    background: rgba(41, 98, 255, 0.15);
+    color: #79a0ff;
+    border-color: rgba(41, 98, 255, 0.4);
+    font-weight: 800;
+}
+
+/* Panels row - artik tek panel gosterilecek */
+.sidebar-upper .sidebar-panels-row {
+    display: flex !important;
+    flex-direction: row !important;
+    gap: 0 !important;
+    flex: 1 1 auto !important;
+    min-height: 0 !important;
+    overflow: hidden !important;
+}
+
+/* Her iki panel tam genislik */
+.sidebar-upper .sidebar-panels-row > .watchlist-module,
+.sidebar-upper .sidebar-panels-row > .signal-panel-module {
+    flex: 1 1 100% !important;
+    min-width: 0 !important;
+    max-width: none !important;
+    overflow: hidden !important;
+    display: flex !important;
+    flex-direction: column !important;
+}
+
+/* DEFAULT: watchlist gorunur, signals gizli */
+.sidebar-upper[data-active-tab="watchlist"] .sidebar-panels-row > .signal-panel-module {
+    display: none !important;
+}
+.sidebar-upper[data-active-tab="watchlist"] .sidebar-panels-row > .watchlist-module {
+    display: flex !important;
+}
+
+/* SIGNALS AKTIF: watchlist gizli, signals gorunur */
+.sidebar-upper[data-active-tab="signals"] .sidebar-panels-row > .watchlist-module {
+    display: none !important;
+}
+.sidebar-upper[data-active-tab="signals"] .sidebar-panels-row > .signal-panel-module {
+    display: flex !important;
+}
+
+/* Panel v-resizer artik gereksiz */
+.sidebar-upper .panel-v-resizer {
+    display: none !important;
+}
+
+/* [SIDEBAR-TABS v1] SONU */
+
+
+/* ============================================================
+   [STAR-0300 v1] - 03:00 Mum Yildizi
+   ============================================================ */
+.star-layer {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    pointer-events: none;
+    z-index: 19;
+    overflow: hidden;
+}
+
+.star-0300 {
+    position: absolute;
+    pointer-events: none;
+    filter: drop-shadow(0 0 3px rgba(252, 213, 53, 0.75));
+    transition: opacity 0.15s ease;
+    animation: starPulse 2.5s ease-in-out infinite;
+}
+
+@keyframes starPulse {
+    0%, 100% { opacity: 0.95; transform: scale(1); }
+    50% { opacity: 0.7; transform: scale(0.92); }
+}
+
+.star-0300 svg {
+    width: 100%;
+    height: 100%;
+    display: block;
+}
+
+/* [/STAR-0300 v1] */
+
+
+/* ============================================================
+   [MEASURE-TOOL v1] - Shift+Drag Olcum Araci
+   ============================================================ */
+.measure-layer {
+    position: absolute;
+    top: 0; left: 0; right: 0; bottom: 0;
+    pointer-events: none;
+    z-index: 23;
+    overflow: hidden;
+    display: none;
+}
+
+.measure-box {
+    position: absolute;
+    pointer-events: none;
+}
+
+.measure-hline {
+    position: absolute;
+    height: 1px;
+    pointer-events: none;
+}
+
+.measure-vline {
+    position: absolute;
+    width: 1px;
+    pointer-events: none;
+}
+
+.measure-tip {
+    position: absolute;
+    padding: 8px 14px;
+    border-radius: 6px;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Arial, sans-serif;
+    font-variant-numeric: tabular-nums;
+    text-align: center;
+    white-space: nowrap;
+    pointer-events: none;
+    box-shadow: 0 6px 20px rgba(0,0,0,0.75);
+    letter-spacing: 0.2px;
+    line-height: 1.4;
+    animation: measureFadeIn 0.12s ease-out;
+}
+
+@keyframes measureFadeIn {
+    from { opacity: 0; transform: translateX(-50%) translateY(-4px); }
+    to { opacity: 1; transform: translateX(-50%) translateY(0); }
+}
+
+/* Shift basili iken cursor crosshair */
+body[data-measure-ready] .tvchart-container {
+    cursor: crosshair !important;
+}
+
+/* [/MEASURE-TOOL v1] */
+
+
+/* ============================================================
+   [BOT-CONFIG-TABS v1]
+   Bot Ayarlari modal - 2 sekme (Bot Ayarlari / Strateji Ayarlari)
+   ============================================================ */
+
+/* Tab bar - modal-body'nin en ustunde */
+.bot-config-body > .bot-tabs {
+    display: flex;
+    gap: 4px;
+    padding: 6px;
+    background: #0b0e14;
+    border: 1px solid #2a2e39;
+    border-radius: 6px;
+    margin-bottom: 6px;
+    flex-shrink: 0;
+    position: sticky;
+    top: 0;
+    z-index: 15;
+    backdrop-filter: blur(8px);
+}
+
+.bot-config-body > .bot-tabs .bot-tab {
+    flex: 1;
+    padding: 10px 16px;
+    background: transparent;
+    color: #848e9c;
+    border: 1px solid transparent;
+    border-radius: 4px;
+    font-size: 12px;
+    font-weight: 700;
+    cursor: pointer;
+    transition: all 0.15s;
+    font-family: inherit;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    white-space: nowrap;
+    letter-spacing: 0.3px;
+}
+
+.bot-config-body > .bot-tabs .bot-tab:hover {
+    background: rgba(255, 255, 255, 0.04);
+    color: #d1d4dc;
+}
+
+.bot-config-body > .bot-tabs .bot-tab.active {
+    background: rgba(41, 98, 255, 0.15);
+    color: #79a0ff;
+    border-color: rgba(41, 98, 255, 0.4);
+    box-shadow: 0 0 0 1px rgba(41, 98, 255, 0.1) inset;
+}
+
+.bot-config-body > .bot-tabs .bot-tab .bot-tab-ico {
+    font-size: 14px;
+    line-height: 1;
+    display: inline-flex;
+    align-items: center;
+}
+
+/* [/BOT-CONFIG-TABS v1] */
+
+
+/* ============================================================
+   [BOT-CARDS v1]
+   Bot Ayarlari sekmesi - 3 sutunlu kart izgarasi
+   ============================================================ */
+
+/* ⚡ Sadece general tab'da devreye girsin */
+#bot-config-modal .bot-config-body[data-active-tab="general"] {
+    display: grid !important;
+    grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
+    gap: 12px !important;
+    align-items: start !important;
+    padding: 12px !important;
+}
+
+/* Tab bar tam genislik */
+#bot-config-modal .bot-config-body[data-active-tab="general"] > .bot-tabs {
+    grid-column: 1 / -1 !important;
+    margin-bottom: 4px !important;
+}
+
+/* ═══════════════ KART 1: TARAMA ═══════════════ */
+#bot-config-modal .bot-config-body[data-active-tab="general"] > .bot-global-row {
+    grid-column: auto !important;
+    display: flex !important;
+    flex-direction: column !important;
+    gap: 10px !important;
+    background: linear-gradient(180deg, rgba(41,98,255,0.06), rgba(41,98,255,0.02)) !important;
+    border: 1px solid rgba(41,98,255,0.25) !important;
+    border-radius: 8px !important;
+    padding: 14px 16px !important;
+    align-items: stretch !important;
+    height: 100% !important;
+    position: relative !important;
+}
+
+#bot-config-modal .bot-config-body[data-active-tab="general"] > .bot-global-row::before {
+    content: '📡 TARAMA' !important;
+    display: block !important;
+    font-size: 11px !important;
+    font-weight: 800 !important;
+    color: #79a0ff !important;
+    letter-spacing: 1px !important;
+    margin-bottom: 4px !important;
+    padding-bottom: 8px !important;
+    border-bottom: 1px solid rgba(41,98,255,0.2) !important;
+}
+
+/* ═══════════════ KART 2 & 3: EXECUTION & RISK ═══════════════ */
+#bot-config-modal .bot-config-body[data-active-tab="general"] > div[style*="margin-top"] {
+    display: flex !important;
+    flex-direction: column !important;
+    gap: 10px !important;
+    border-radius: 8px !important;
+    padding: 14px 16px !important;
+    margin-top: 0 !important;
+    height: 100% !important;
+}
+
+/* EXECUTION - sari */
+#bot-config-modal .bot-config-body[data-active-tab="general"] > div[style*="margin-top"]:nth-of-type(1) {
+    background: linear-gradient(180deg, rgba(252,213,53,0.06), rgba(252,213,53,0.02)) !important;
+    border: 1px solid rgba(252,213,53,0.25) !important;
+}
+
+/* RISK - kirmizi */
+#bot-config-modal .bot-config-body[data-active-tab="general"] > div[style*="margin-top"]:nth-of-type(2) {
+    background: linear-gradient(180deg, rgba(246,70,93,0.06), rgba(246,70,93,0.02)) !important;
+    border: 1px solid rgba(246,70,93,0.25) !important;
+}
+
+/* İç kart başlıkları - daha temiz */
+#bot-config-modal .bot-config-body[data-active-tab="general"] > div[style*="margin-top"] > .cfg-subtitle {
+    margin: 0 0 4px 0 !important;
+    padding-bottom: 8px !important;
+    border-bottom: 1px solid rgba(255,255,255,0.06) !important;
+    font-size: 11px !important;
+    font-weight: 800 !important;
+    letter-spacing: 1px !important;
+}
+
+/* ═══════════════ KART İÇİ - DİKEY LİSTE ═══════════════ */
+#bot-config-modal .bot-config-body[data-active-tab="general"] .bot-global-row .bot-global-item,
+#bot-config-modal .bot-config-body[data-active-tab="general"] > div[style*="margin-top"] .bot-global-item {
+    display: flex !important;
+    flex-direction: column !important;
+    align-items: stretch !important;
+    gap: 4px !important;
+    min-height: auto !important;
+}
+
+/* Label */
+#bot-config-modal .bot-config-body[data-active-tab="general"] .bot-global-item .cfg-label {
+    font-size: 11px !important;
+    color: #d1d4dc !important;
+    text-align: left !important;
+    white-space: normal !important;
+    overflow: visible !important;
+    text-overflow: clip !important;
+    flex: none !important;
+}
+
+/* Input - tam genislik */
+#bot-config-modal .bot-config-body[data-active-tab="general"] .bot-global-item input {
+    width: 100% !important;
+    text-align: left !important;
+    padding: 7px 11px !important;
+    font-size: 12px !important;
+    flex: none !important;
+    box-sizing: border-box !important;
+}
+
+/* Switch - sol hizali */
+#bot-config-modal .bot-config-body[data-active-tab="general"] .bot-global-item .switch {
+    align-self: flex-start !important;
+    margin-top: 4px !important;
+    transform: none !important;
+}
+
+/* Buton - tam genislik */
+#bot-config-modal .bot-config-body[data-active-tab="general"] .bot-global-item button {
+    width: 100% !important;
+    height: 32px !important;
+    font-size: 11px !important;
+    padding: 0 12px !important;
+    flex: none !important;
+}
+
+/* ═══════════════ ALT BILGI (açık pozisyon sayısı) ═══════════════ */
+#bot-config-modal .bot-config-body[data-active-tab="general"] > *:not(.bot-tabs):not(.bot-global-row):not(div[style*="margin-top"]):not(.strategies-grid) {
+    grid-column: 1 / -1 !important;
+}
+
+/* ═══════════════ RESPONSIVE ═══════════════ */
+@media (max-width: 1100px) {
+    #bot-config-modal .bot-config-body[data-active-tab="general"] {
+        grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+    }
+}
+
+@media (max-width: 750px) {
+    #bot-config-modal .bot-config-body[data-active-tab="general"] {
+        grid-template-columns: 1fr !important;
+    }
+}
+
+/* [/BOT-CARDS v1] */
+
+
+/* ============================================================
+   [BOT-VERTICAL v1]
+   Execution + Risk kartlarinin icini dikey yap
+   (Tarama karti zaten dikey, dokunulmaz)
+   ============================================================ */
+
+#bot-config-modal .bot-config-body[data-active-tab="general"]
+    > div[style*="margin-top"] > .bot-global-row {
+    display: flex !important;
+    flex-direction: column !important;
+    background: transparent !important;
+    border: none !important;
+    padding: 0 !important;
+    gap: 12px !important;
+    align-items: stretch !important;
+}
+
+/* Bu ic satirlardaki her item dikey */
+#bot-config-modal .bot-config-body[data-active-tab="general"]
+    > div[style*="margin-top"] > .bot-global-row > .bot-global-item {
+    display: flex !important;
+    flex-direction: column !important;
+    align-items: stretch !important;
+    gap: 4px !important;
+    min-height: auto !important;
+    width: 100% !important;
+}
+
+/* Label tam genislik, sola hizali */
+#bot-config-modal .bot-config-body[data-active-tab="general"]
+    > div[style*="margin-top"] > .bot-global-row > .bot-global-item .cfg-label {
+    font-size: 11px !important;
+    color: #d1d4dc !important;
+    text-align: left !important;
+    white-space: normal !important;
+    overflow: visible !important;
+    text-overflow: clip !important;
+    flex: none !important;
+    margin: 0 !important;
+}
+
+/* Input tam genislik */
+#bot-config-modal .bot-config-body[data-active-tab="general"]
+    > div[style*="margin-top"] > .bot-global-row > .bot-global-item input {
+    width: 100% !important;
+    padding: 7px 11px !important;
+    font-size: 12px !important;
+    text-align: left !important;
+    box-sizing: border-box !important;
+    flex: none !important;
+}
+
+/* Switch sol hizali */
+#bot-config-modal .bot-config-body[data-active-tab="general"]
+    > div[style*="margin-top"] > .bot-global-row > .bot-global-item .switch {
+    align-self: flex-start !important;
+    margin-top: 4px !important;
+    transform: none !important;
+    flex-shrink: 0 !important;
+}
+
+/* Buton tam genislik */
+#bot-config-modal .bot-config-body[data-active-tab="general"]
+    > div[style*="margin-top"] > .bot-global-row > .bot-global-item button {
+    width: 100% !important;
+    height: 32px !important;
+    font-size: 11px !important;
+    padding: 0 12px !important;
+    flex: none !important;
+}
+
+/* [/BOT-VERTICAL v1] */
+
+
+/* ============================================================
+   [BOT-UNIFY v1]
+   TARAMA + EXECUTION + RISK kartlarini gorsel olarak esitle
+   ============================================================ */
+
+/* ---- 1) UC KART ICIN ORTAK TEMEL STIL ---- */
+#bot-config-modal .bot-config-body[data-active-tab="general"] > .bot-global-row,
+#bot-config-modal .bot-config-body[data-active-tab="general"] > div[style*="margin-top"] {
+    padding: 12px 14px !important;
+    border-radius: 8px !important;
+    gap: 10px !important;
+    min-height: 0 !important;
+    height: auto !important;
+    align-self: start !important;
+}
+
+/* ---- 2) TARAMA - ::before'i KALDIR, basligi yeniden yaz ---- */
+#bot-config-modal .bot-config-body[data-active-tab="general"] > .bot-global-row::before {
+    content: '\1F4E1  TARAMA' !important;
+    display: block !important;
+    font-size: 11px !important;
+    font-weight: 700 !important;
+    color: #79a0ff !important;
+    letter-spacing: 0.5px !important;
+    margin: 0 0 2px 0 !important;
+    padding: 0 0 6px 0 !important;
+    border-bottom: 1px solid rgba(41,98,255,0.15) !important;
+    text-transform: none !important;
+}
+
+/* ---- 3) EXECUTION + RISK - basliklarini TARAMA'ya benzet ---- */
+#bot-config-modal .bot-config-body[data-active-tab="general"] > div[style*="margin-top"] > .cfg-subtitle {
+    margin: 0 0 2px 0 !important;
+    padding: 0 0 6px 0 !important;
+    border-bottom: 1px solid rgba(255,255,255,0.06) !important;
+    font-size: 11px !important;
+    font-weight: 700 !important;
+    letter-spacing: 0.5px !important;
+    text-transform: none !important;
+    background: transparent !important;
+}
+
+/* ---- 4) BORDER'LARI ESITLE (daha ince, ortak opacity) ---- */
+#bot-config-modal .bot-config-body[data-active-tab="general"] > .bot-global-row {
+    background: linear-gradient(180deg, rgba(41,98,255,0.05), rgba(41,98,255,0.01)) !important;
+    border: 1px solid rgba(41,98,255,0.18) !important;
+}
+
+#bot-config-modal .bot-config-body[data-active-tab="general"] > div[style*="margin-top"]:nth-of-type(1) {
+    background: linear-gradient(180deg, rgba(252,213,53,0.05), rgba(252,213,53,0.01)) !important;
+    border: 1px solid rgba(252,213,53,0.18) !important;
+}
+
+#bot-config-modal .bot-config-body[data-active-tab="general"] > div[style*="margin-top"]:nth-of-type(2) {
+    background: linear-gradient(180deg, rgba(246,70,93,0.05), rgba(246,70,93,0.01)) !important;
+    border: 1px solid rgba(246,70,93,0.18) !important;
+}
+
+/* ---- 5) "Sembolleri Yenile" butonu - gri kutuyu kaldir ---- */
+#bot-config-modal .bot-config-body[data-active-tab="general"] > .bot-global-row > .bot-global-item:has(button) {
+    background: transparent !important;
+    border: none !important;
+    padding: 0 !important;
+    margin-top: 4px !important;
+}
+
+/* Button stilleri */
+#bot-config-modal .bot-config-body[data-active-tab="general"] > .bot-global-row > .bot-global-item button {
+    background: rgba(41,98,255,0.10) !important;
+    color: #79a0ff !important;
+    border: 1px solid rgba(41,98,255,0.30) !important;
+    border-radius: 5px !important;
+    font-weight: 700 !important;
+    transition: all 0.15s !important;
+    height: 30px !important;
+    font-size: 11px !important;
+}
+
+#bot-config-modal .bot-config-body[data-active-tab="general"] > .bot-global-row > .bot-global-item button:hover {
+    background: rgba(41,98,255,0.22) !important;
+    border-color: rgba(41,98,255,0.55) !important;
+    color: #a9c3ff !important;
+}
+
+/* ---- 6) Kart ic LABEL'lari - 3 kartta ayni stil ---- */
+#bot-config-modal .bot-config-body[data-active-tab="general"] .bot-global-item .cfg-label {
+    color: #d1d4dc !important;
+    font-size: 11px !important;
+    font-weight: 600 !important;
+    margin-bottom: 0 !important;
+}
+
+/* ---- 7) Input'lar - 3 kartta ayni ---- */
+#bot-config-modal .bot-config-body[data-active-tab="general"] .bot-global-item input {
+    background: #0b0e14 !important;
+    border: 1px solid #2a2e39 !important;
+    border-radius: 4px !important;
+    color: #EAECEF !important;
+    padding: 6px 10px !important;
+    font-size: 12px !important;
+}
+
+#bot-config-modal .bot-config-body[data-active-tab="general"] .bot-global-item input:focus {
+    border-color: #2962ff !important;
+    outline: none !important;
+    box-shadow: 0 0 0 2px rgba(41,98,255,0.15) !important;
+}
+
+/* ---- 8) Switch'ler - 3 kartta ayni ---- */
+#bot-config-modal .bot-config-body[data-active-tab="general"] .bot-global-item .switch {
+    margin-top: 2px !important;
+}
+
+/* [/BOT-UNIFY v1] */
+
+
+/* ============================================================
+   [BOT-UNIFY-V2] - 3 Karti GERCEKTEN Esitle
+   ============================================================ */
+
+/* ---- A) 3 KARTIN DIS KUTUSU (Ayni padding, radius, gap) ---- */
+#bot-config-modal .bot-config-body[data-active-tab="general"] > .bot-global-row,
+#bot-config-modal .bot-config-body[data-active-tab="general"] > div[style*="margin-top"] {
+    padding: 14px 16px !important;
+    border-radius: 8px !important;
+    gap: 12px !important;
+    display: flex !important;
+    flex-direction: column !important;
+    min-height: 0 !important;
+    height: auto !important;
+    align-self: start !important;
+    margin: 0 !important;
+    box-sizing: border-box !important;
+}
+
+/* ---- B) 3 KARTIN BASLIKLARI - AYNI GORUNUM ---- */
+#bot-config-modal .bot-config-body[data-active-tab="general"] > .bot-global-row::before,
+#bot-config-modal .bot-config-body[data-active-tab="general"] > div[style*="margin-top"] > .cfg-subtitle {
+    display: block !important;
+    font-size: 12px !important;
+    font-weight: 800 !important;
+    line-height: 1.2 !important;
+    letter-spacing: 0.4px !important;
+    margin: 0 0 4px 0 !important;
+    padding: 0 0 10px 0 !important;
+    text-transform: none !important;
+    text-align: left !important;
+    background: transparent !important;
+    border-left: none !important;
+    border-right: none !important;
+    border-top: none !important;
+    width: 100% !important;
+    box-sizing: border-box !important;
+    color: inherit !important;
+}
+
+/* TARAMA - mavi */
+#bot-config-modal .bot-config-body[data-active-tab="general"] > .bot-global-row::before {
+    content: '\1F4E1  Tarama' !important;
+    color: #79a0ff !important;
+    border-bottom: 1px solid rgba(41,98,255,0.25) !important;
+}
+
+/* EXECUTION - sari */
+#bot-config-modal .bot-config-body[data-active-tab="general"] > div[style*="margin-top"]:nth-of-type(1) > .cfg-subtitle {
+    color: #fcd535 !important;
+    border-bottom: 1px solid rgba(252,213,53,0.25) !important;
+}
+
+/* RISK - kirmizi */
+#bot-config-modal .bot-config-body[data-active-tab="general"] > div[style*="margin-top"]:nth-of-type(2) > .cfg-subtitle {
+    color: #f6465d !important;
+    border-bottom: 1px solid rgba(246,70,93,0.25) !important;
+}
+
+/* ---- C) 3 KART BORDER - AYNI INTENSITY ---- */
+#bot-config-modal .bot-config-body[data-active-tab="general"] > .bot-global-row {
+    background: linear-gradient(180deg, rgba(41,98,255,0.05) 0%, rgba(41,98,255,0.01) 100%) !important;
+    border: 1px solid rgba(41,98,255,0.35) !important;
+}
+
+#bot-config-modal .bot-config-body[data-active-tab="general"] > div[style*="margin-top"]:nth-of-type(1) {
+    background: linear-gradient(180deg, rgba(252,213,53,0.05) 0%, rgba(252,213,53,0.01) 100%) !important;
+    border: 1px solid rgba(252,213,53,0.35) !important;
+}
+
+#bot-config-modal .bot-config-body[data-active-tab="general"] > div[style*="margin-top"]:nth-of-type(2) {
+    background: linear-gradient(180deg, rgba(246,70,93,0.05) 0%, rgba(246,70,93,0.01) 100%) !important;
+    border: 1px solid rgba(246,70,93,0.35) !important;
+}
+
+/* ---- D) 3 KART ICINDEKI ITEM'LER - AYNI ---- */
+#bot-config-modal .bot-config-body[data-active-tab="general"] > .bot-global-row > .bot-global-item,
+#bot-config-modal .bot-config-body[data-active-tab="general"] > div[style*="margin-top"] > .bot-global-row > .bot-global-item {
+    display: flex !important;
+    flex-direction: column !important;
+    align-items: stretch !important;
+    gap: 5px !important;
+    min-height: auto !important;
+    width: 100% !important;
+    padding: 0 !important;
+    background: transparent !important;
+    border: none !important;
+}
+
+/* ---- E) 3 KART ICINDEKI LABEL'LAR - AYNI ---- */
+#bot-config-modal .bot-config-body[data-active-tab="general"] > .bot-global-row > .bot-global-item .cfg-label,
+#bot-config-modal .bot-config-body[data-active-tab="general"] > div[style*="margin-top"] > .bot-global-row > .bot-global-item .cfg-label {
+    font-size: 11px !important;
+    font-weight: 600 !important;
+    color: #d1d4dc !important;
+    text-align: left !important;
+    white-space: normal !important;
+    overflow: visible !important;
+    text-overflow: clip !important;
+    flex: none !important;
+    margin: 0 !important;
+    line-height: 1.3 !important;
+    letter-spacing: 0 !important;
+    text-transform: none !important;
+}
+
+/* ---- F) 3 KART ICINDEKI INPUT'LAR - AYNI ---- */
+#bot-config-modal .bot-config-body[data-active-tab="general"] > .bot-global-row > .bot-global-item input,
+#bot-config-modal .bot-config-body[data-active-tab="general"] > div[style*="margin-top"] > .bot-global-row > .bot-global-item input {
+    width: 100% !important;
+    padding: 7px 11px !important;
+    font-size: 12px !important;
+    text-align: left !important;
+    box-sizing: border-box !important;
+    flex: none !important;
+    height: 32px !important;
+    background: #0b0e14 !important;
+    border: 1px solid #2a2e39 !important;
+    border-radius: 4px !important;
+    color: #EAECEF !important;
+}
+
+#bot-config-modal .bot-config-body[data-active-tab="general"] > .bot-global-row > .bot-global-item input:focus,
+#bot-config-modal .bot-config-body[data-active-tab="general"] > div[style*="margin-top"] > .bot-global-row > .bot-global-item input:focus {
+    border-color: #2962ff !important;
+    outline: none !important;
+    box-shadow: 0 0 0 2px rgba(41,98,255,0.15) !important;
+}
+
+/* ---- G) 3 KART ICINDEKI SWITCH'LER - AYNI ---- */
+#bot-config-modal .bot-config-body[data-active-tab="general"] > .bot-global-row > .bot-global-item .switch,
+#bot-config-modal .bot-config-body[data-active-tab="general"] > div[style*="margin-top"] > .bot-global-row > .bot-global-item .switch {
+    align-self: flex-start !important;
+    margin-top: 2px !important;
+    transform: none !important;
+    flex-shrink: 0 !important;
+}
+
+/* ---- H) BUTON (Sembolleri Yenile) ---- */
+#bot-config-modal .bot-config-body[data-active-tab="general"] > .bot-global-row > .bot-global-item:has(button) {
+    padding: 0 !important;
+    background: transparent !important;
+    border: none !important;
+    margin-top: 4px !important;
+}
+
+#bot-config-modal .bot-config-body[data-active-tab="general"] > .bot-global-row > .bot-global-item button {
+    width: 100% !important;
+    height: 32px !important;
+    font-size: 11px !important;
+    padding: 0 12px !important;
+    flex: none !important;
+    background: rgba(41,98,255,0.10) !important;
+    color: #79a0ff !important;
+    border: 1px solid rgba(41,98,255,0.30) !important;
+    border-radius: 5px !important;
+    font-weight: 700 !important;
+    cursor: pointer !important;
+    transition: all 0.15s !important;
+}
+
+#bot-config-modal .bot-config-body[data-active-tab="general"] > .bot-global-row > .bot-global-item button:hover {
+    background: rgba(41,98,255,0.22) !important;
+    border-color: rgba(41,98,255,0.55) !important;
+    color: #a9c3ff !important;
+}
+
+/* ---- I) EXECUTION + RISK kartlarinin ICINDEKI .bot-global-row sifirla ---- */
+#bot-config-modal .bot-config-body[data-active-tab="general"] > div[style*="margin-top"] > .bot-global-row {
+    background: transparent !important;
+    border: none !important;
+    padding: 0 !important;
+    gap: 12px !important;
+    display: flex !important;
+    flex-direction: column !important;
+    align-items: stretch !important;
+}
+
+/* [/BOT-UNIFY-V2] */
+
+
+/* ============================================================
+   [BOT-BORDER-FIX]
+   JS ile atanan bot-card-1/2/3 class'larina hedefle
+   (nth-of-type sorununu atlatir)
+   ============================================================ */
+
+/* ---- 3 KART ICIN ORTAK TEMEL ---- */
+#bot-config-modal .bot-config-body[data-active-tab="general"] > .bot-card-1,
+#bot-config-modal .bot-config-body[data-active-tab="general"] > .bot-card-2,
+#bot-config-modal .bot-config-body[data-active-tab="general"] > .bot-card-3 {
+    padding: 14px 16px !important;
+    border-radius: 8px !important;
+    gap: 12px !important;
+    display: flex !important;
+    flex-direction: column !important;
+    align-items: stretch !important;
+    box-sizing: border-box !important;
+    min-height: 0 !important;
+    align-self: start !important;
+}
+
+/* ---- KART 1: TARAMA (mavi) ---- */
+#bot-config-modal .bot-config-body[data-active-tab="general"] > .bot-card-1 {
+    background: linear-gradient(180deg, rgba(41,98,255,0.06) 0%, rgba(41,98,255,0.02) 100%) !important;
+    border: 1px solid rgba(41,98,255,0.40) !important;
+}
+
+/* ---- KART 2: EXECUTION (sari) ---- */
+#bot-config-modal .bot-config-body[data-active-tab="general"] > .bot-card-2 {
+    background: linear-gradient(180deg, rgba(252,213,53,0.06) 0%, rgba(252,213,53,0.02) 100%) !important;
+    border: 1px solid rgba(252,213,53,0.40) !important;
+}
+
+/* ---- KART 3: RISK (kirmizi) ---- */
+#bot-config-modal .bot-config-body[data-active-tab="general"] > .bot-card-3 {
+    background: linear-gradient(180deg, rgba(246,70,93,0.06) 0%, rgba(246,70,93,0.02) 100%) !important;
+    border: 1px solid rgba(246,70,93,0.40) !important;
+}
+
+/* ---- BASLIKLAR ---- */
+#bot-config-modal .bot-config-body[data-active-tab="general"] > .bot-card-1::before {
+    content: '\1F4E1  Tarama' !important;
+    display: block !important;
+    font-size: 12px !important;
+    font-weight: 800 !important;
+    letter-spacing: 0.4px !important;
+    color: #79a0ff !important;
+    margin: 0 0 4px 0 !important;
+    padding: 0 0 10px 0 !important;
+    border-bottom: 1px solid rgba(41,98,255,0.30) !important;
+    text-transform: none !important;
+}
+
+#bot-config-modal .bot-config-body[data-active-tab="general"] > .bot-card-2 > .cfg-subtitle,
+#bot-config-modal .bot-config-body[data-active-tab="general"] > .bot-card-3 > .cfg-subtitle {
+    display: block !important;
+    font-size: 12px !important;
+    font-weight: 800 !important;
+    letter-spacing: 0.4px !important;
+    margin: 0 0 4px 0 !important;
+    padding: 0 0 10px 0 !important;
+    text-transform: none !important;
+    text-align: left !important;
+    background: transparent !important;
+    width: 100% !important;
+    box-sizing: border-box !important;
+}
+
+#bot-config-modal .bot-config-body[data-active-tab="general"] > .bot-card-2 > .cfg-subtitle {
+    color: #fcd535 !important;
+    border-bottom: 1px solid rgba(252,213,53,0.30) !important;
+}
+
+#bot-config-modal .bot-config-body[data-active-tab="general"] > .bot-card-3 > .cfg-subtitle {
+    color: #f6465d !important;
+    border-bottom: 1px solid rgba(246,70,93,0.30) !important;
+}
+
+/* ---- IC ITEM'LER ---- */
+#bot-config-modal .bot-config-body[data-active-tab="general"] > .bot-card-1 > .bot-global-item,
+#bot-config-modal .bot-config-body[data-active-tab="general"] > .bot-card-2 > .bot-global-row > .bot-global-item,
+#bot-config-modal .bot-config-body[data-active-tab="general"] > .bot-card-3 > .bot-global-row > .bot-global-item {
+    display: flex !important;
+    flex-direction: column !important;
+    align-items: stretch !important;
+    gap: 5px !important;
+    width: 100% !important;
+    padding: 0 !important;
+    background: transparent !important;
+    border: none !important;
+}
+
+/* ---- KART 2/3 icindeki .bot-global-row sifirla ---- */
+#bot-config-modal .bot-config-body[data-active-tab="general"] > .bot-card-2 > .bot-global-row,
+#bot-config-modal .bot-config-body[data-active-tab="general"] > .bot-card-3 > .bot-global-row {
+    background: transparent !important;
+    border: none !important;
+    padding: 0 !important;
+    gap: 12px !important;
+    display: flex !important;
+    flex-direction: column !important;
+    align-items: stretch !important;
+}
+
+/* ---- LABEL'LAR ---- */
+#bot-config-modal .bot-config-body[data-active-tab="general"] > .bot-card-1 .cfg-label,
+#bot-config-modal .bot-config-body[data-active-tab="general"] > .bot-card-2 .cfg-label,
+#bot-config-modal .bot-config-body[data-active-tab="general"] > .bot-card-3 .cfg-label {
+    font-size: 11px !important;
+    font-weight: 600 !important;
+    color: #d1d4dc !important;
+    text-align: left !important;
+    margin: 0 !important;
+    line-height: 1.3 !important;
+}
+
+/* ---- INPUT'LAR ---- */
+#bot-config-modal .bot-config-body[data-active-tab="general"] > .bot-card-1 input,
+#bot-config-modal .bot-config-body[data-active-tab="general"] > .bot-card-2 input,
+#bot-config-modal .bot-config-body[data-active-tab="general"] > .bot-card-3 input {
+    width: 100% !important;
+    padding: 7px 11px !important;
+    font-size: 12px !important;
+    text-align: left !important;
+    height: 32px !important;
+    background: #0b0e14 !important;
+    border: 1px solid #2a2e39 !important;
+    border-radius: 4px !important;
+    color: #EAECEF !important;
+    box-sizing: border-box !important;
+}
+
+#bot-config-modal .bot-config-body[data-active-tab="general"] > .bot-card-1 input:focus,
+#bot-config-modal .bot-config-body[data-active-tab="general"] > .bot-card-2 input:focus,
+#bot-config-modal .bot-config-body[data-active-tab="general"] > .bot-card-3 input:focus {
+    border-color: #2962ff !important;
+    outline: none !important;
+}
+
+/* ---- SWITCH'LER ---- */
+#bot-config-modal .bot-config-body[data-active-tab="general"] > .bot-card-1 .switch,
+#bot-config-modal .bot-config-body[data-active-tab="general"] > .bot-card-2 .switch,
+#bot-config-modal .bot-config-body[data-active-tab="general"] > .bot-card-3 .switch {
+    align-self: flex-start !important;
+    margin-top: 2px !important;
+    transform: none !important;
+    flex-shrink: 0 !important;
+}
+
+/* ---- BUTON (Sembolleri Yenile) ---- */
+#bot-config-modal .bot-config-body[data-active-tab="general"] > .bot-card-1 button {
+    width: 100% !important;
+    height: 32px !important;
+    font-size: 11px !important;
+    padding: 0 12px !important;
+    background: rgba(41,98,255,0.10) !important;
+    color: #79a0ff !important;
+    border: 1px solid rgba(41,98,255,0.30) !important;
+    border-radius: 5px !important;
+    font-weight: 700 !important;
+    cursor: pointer !important;
+    transition: all 0.15s !important;
+}
+
+#bot-config-modal .bot-config-body[data-active-tab="general"] > .bot-card-1 button:hover {
+    background: rgba(41,98,255,0.22) !important;
+    border-color: rgba(41,98,255,0.55) !important;
+    color: #a9c3ff !important;
+}
+
+/* [/BOT-BORDER-FIX] */
+
+
+/* ============================================================
+   [AI-TTP-WIDTH]
+   AI TTP (trailingSteps) input - tam genislik
+   ============================================================ */
+
+/* AI TTP row - label ustte, input altta */
+#bot-config-modal .strat-param[data-param="trailingSteps"] {
+    width: 100% !important;
+    min-width: 100% !important;
+    max-width: 100% !important;
+    flex: 1 1 100% !important;
+    padding: 6px 9px !important;
+    font-size: 10.5px !important;
+    text-align: left !important;
+    font-family: 'Courier New', monospace !important;
+    letter-spacing: 0.2px !important;
+    box-sizing: border-box !important;
+}
+
+/* Parent cfg-row - tam genislik */
+#bot-config-modal .cfg-row:has(.strat-param[data-param="trailingSteps"]) {
+    display: flex !important;
+    flex-direction: column !important;
+    align-items: stretch !important;
+    gap: 5px !important;
+    grid-column: 1 / -1 !important;
+    width: 100% !important;
+    padding: 4px 0 !important;
+}
+
+/* Label sola hizali */
+#bot-config-modal .cfg-row:has(.strat-param[data-param="trailingSteps"]) .cfg-label {
+    text-align: left !important;
+    width: 100% !important;
+    font-weight: 700 !important;
+    color: #79a0ff !important;
+}
+
+/* ============================================================
+   Backtest modalindaki AI TTP icin de ayni
+   ============================================================ */
+#backtest-modal #btp-trailingSteps {
+    width: 100% !important;
+    font-family: 'Courier New', monospace !important;
+    font-size: 11px !important;
+    letter-spacing: 0.2px !important;
+}
+
+#backtest-modal .bt-param-row:has(#btp-trailingSteps) {
+    grid-column: span 3 !important;
+}
+
+/* [/AI-TTP-WIDTH] */
+
+
+/* ============================================================
+   [BT-AI-TTP-WIDTH]
+   Backtest modal AI TTP input - tam genislik
+   ============================================================ */
+#backtest-modal #btp-trailingSteps,
+#backtest-modal input[id="btp-trailingSteps"] {
+    width: 100% !important;
+    min-width: 100% !important;
+    font-family: 'Courier New', monospace !important;
+    font-size: 11px !important;
+    letter-spacing: 0.2px !important;
+    padding: 6px 9px !important;
+}
+
+#backtest-modal .bt-param-row:has(input[id="btp-trailingSteps"]) {
+    grid-column: span 3 !important;
+    width: 100% !important;
+}
+
+/* Eski İzleyen Stop input varsa gizle */
+#backtest-modal input#btp-trailing {
+    display: none !important;
+}
+
+/* [/BT-AI-TTP-WIDTH] */
+
+
+/* ============================================================
+   [STRATEGY-DOT]
+   Tablo satirlarinda strateji noktasi (yon yazisinin saginda)
+   ============================================================ */
+.strat-dot {
+    display: inline-block;
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    margin-left: 6px;
+    vertical-align: middle;
+    flex-shrink: 0;
+    box-shadow: 0 0 4px rgba(0, 0, 0, 0.4);
+    transition: transform 0.15s, box-shadow 0.15s;
+    cursor: help;
+}
+
+.strat-dot:hover {
+    transform: scale(1.4);
+    box-shadow: 0 0 8px currentColor;
+}
+
+/* Sütun hizasini bozmasin */
+.btp-table td.left {
+    white-space: nowrap;
+}
+
+/* [/STRATEGY-DOT] */
+
+
+/* ============================================================
+   [TABLE-ALIGN-FIX]
+   Btp tablolarinda dikey hizalama (PT rozetli satir sola kaymasin)
+   ============================================================ */
+
+/* Fixed layout: sutun genislikleri sabit kalsin */
+#bottom-trade-panel .btp-table,
+.btp-table {
+    table-layout: fixed !important;
+    width: 100% !important;
+}
+
+/* Tum td ve th: icerik tasmasin, hiza bozulmasin */
+.btp-table td,
+.btp-table th {
+    overflow: hidden !important;
+    text-overflow: ellipsis !important;
+    white-space: nowrap !important;
+    vertical-align: middle !important;
+    box-sizing: border-box !important;
+}
+
+/* Flex item'lar genisligi itmesin */
+.btp-table td > * {
+    max-width: 100% !important;
+    box-sizing: border-box !important;
+}
+
+/* td icindeki flex span'ler (volCell gibi) sigdirsin */
+.btp-table td > span,
+.btp-table td > div {
+    min-width: 0 !important;
+}
+
+/* Sag hizali td'ler icin */
+.btp-table td.right {
+    text-align: right !important;
+}
+
+/* Sol hizali td'ler icin */
+.btp-table td.left {
+    text-align: left !important;
+}
+
+/* Merkez hizali */
+.btp-table td.center {
+    text-align: center !important;
+}
+
+/* [/TABLE-ALIGN-FIX] */
+
+
+/* ============================================================
+   [MANUAL-ORDER]
+   Manuel Emir Butonu + Modal
+   ============================================================ */
+
+/* Sidebar tab bar ⚡ butonu */
+.manual-order-btn {
+    flex: 0 0 auto !important;
+    min-width: 36px !important;
+    padding: 7px 10px !important;
+    background: linear-gradient(135deg, rgba(252,213,53,0.15), rgba(255,152,0,0.08)) !important;
+    border: 1px solid rgba(252,213,53,0.4) !important;
+    color: #fcd535 !important;
+    font-size: 15px !important;
+    font-weight: bold !important;
+    margin-left: 4px !important;
+    transition: all 0.15s !important;
+}
+
+.manual-order-btn:hover {
+    background: linear-gradient(135deg, rgba(252,213,53,0.28), rgba(255,152,0,0.15)) !important;
+    border-color: rgba(252,213,53,0.7) !important;
+    color: #fff !important;
+    transform: scale(1.05);
+}
+
+.manual-order-btn:active {
+    transform: scale(0.95);
+}
+
+/* Modal */
+.manual-order-modal-content {
+    width: 620px !important;
+    max-width: 95vw !important;
+    height: auto !important;
+    max-height: 92vh !important;
+    background: #0b0e14 !important;
+    border: 1px solid #2b3139 !important;
+}
+
+.manual-order-modal-content .modal-header {
+    background: #181a20 !important;
+    border-bottom: 1px solid #2b3139 !important;
+    padding: 14px 20px !important;
+}
+
+.manual-order-modal-content .modal-header h2 {
+    font-size: 16px !important;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.manual-order-body {
+    padding: 16px 20px !important;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    overflow-y: auto;
+    background: #0b0e14;
+}
+
+/* Field gruplari */
+.mo-field {
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+}
+
+.mo-field label {
+    font-size: 11px;
+    color: #d1d4dc;
+    font-weight: 600;
+    letter-spacing: 0.3px;
+}
+
+.mo-field-full {
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+    grid-column: 1 / -1;
+}
+
+.mo-field-full label {
+    font-size: 11px;
+    color: #79a0ff;
+    font-weight: 700;
+}
+
+.mo-row-2 {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+}
+
+/* Toggle buton gruplari */
+.mo-toggle-group {
+    display: flex;
+    background: #131722;
+    border: 1px solid #2a2e39;
+    border-radius: 5px;
+    padding: 3px;
+    gap: 2px;
+}
+
+.mo-toggle-btn {
+    flex: 1;
+    padding: 8px 12px;
+    background: transparent;
+    color: #848e9c;
+    border: none;
+    border-radius: 3px;
+    font-size: 11px;
+    font-weight: 700;
+    cursor: pointer;
+    transition: all 0.15s;
+    font-family: inherit;
+    letter-spacing: 0.3px;
+}
+
+.mo-toggle-btn:hover {
+    background: rgba(255,255,255,0.04);
+    color: #d1d4dc;
+}
+
+.mo-toggle-btn.active[data-side="BUY"] {
+    background: rgba(14,203,129,0.20);
+    color: #0ECB81;
+    box-shadow: 0 0 0 1px rgba(14,203,129,0.3) inset;
+}
+
+.mo-toggle-btn.active[data-side="SELL"] {
+    background: rgba(246,70,93,0.20);
+    color: #F6465D;
+    box-shadow: 0 0 0 1px rgba(246,70,93,0.3) inset;
+}
+
+.mo-toggle-btn.active[data-mode] {
+    background: rgba(41,98,255,0.20);
+    color: #79a0ff;
+    box-shadow: 0 0 0 1px rgba(41,98,255,0.3) inset;
+}
+
+/* Section title */
+.mo-section-title {
+    font-size: 11px;
+    font-weight: 800;
+    color: #fcd535;
+    letter-spacing: 0.8px;
+    text-transform: uppercase;
+    padding: 6px 0 4px;
+    border-top: 1px dashed #2a2e39;
+    margin-top: 4px;
+}
+
+/* Monospace input (AI TTP) */
+.mo-mono {
+    font-family: 'Courier New', monospace !important;
+    font-size: 11px !important;
+    letter-spacing: 0.2px !important;
+}
+
+/* Ozet kutusu */
+.mo-summary {
+    background: #131722;
+    border: 1px solid #2a2e39;
+    border-radius: 6px;
+    padding: 10px 14px;
+    margin-top: 4px;
+}
+
+.mo-summary-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 4px 0;
+    font-size: 12px;
+    color: #848e9c;
+}
+
+.mo-summary-row > span:last-child {
+    color: #EAECEF;
+    font-weight: 700;
+    font-family: 'Courier New', monospace;
+    font-variant-numeric: tabular-nums;
+}
+
+.mo-summary-last {
+    border-top: 1px solid #2a2e39;
+    padding-top: 8px;
+    margin-top: 4px;
+}
+
+.mo-summary-last > span:last-child {
+    color: #0ECB81;
+    font-size: 14px;
+}
+
+/* Footer */
+.manual-order-footer {
+    display: flex !important;
+    justify-content: flex-end !important;
+    gap: 10px !important;
+    padding: 12px 20px !important;
+    background: #181a20 !important;
+    border-top: 1px solid #2b3139 !important;
+}
+
+.manual-order-footer button {
+    padding: 9px 22px !important;
+    font-size: 13px !important;
+    font-weight: 700 !important;
+    border-radius: 5px !important;
+    cursor: pointer !important;
+    border: none !important;
+    transition: all 0.15s !important;
+    font-family: inherit !important;
+}
+
+.manual-order-footer .btn-success {
+    background: linear-gradient(135deg, #0ECB81, #089981) !important;
+    color: #fff !important;
+}
+
+.manual-order-footer .btn-success:hover {
+    background: linear-gradient(135deg, #0ab56e, #067654) !important;
+    box-shadow: 0 0 15px rgba(14,203,129,0.4) !important;
+}
+
+.manual-order-footer .btn-success:disabled {
+    background: #2a2e39 !important;
+    color: #5d6471 !important;
+    cursor: not-allowed !important;
+    box-shadow: none !important;
+}
+
+/* input disabled (limit fiyat) */
+.manual-order-body input:disabled {
+    background: #0b0e14 !important;
+    color: #5d6471 !important;
+    cursor: not-allowed !important;
+    opacity: 0.5;
+}
+
+/* [/MANUAL-ORDER] */
+
+
+/* ============================================================
+   [MANUAL-PANEL]
+   Sidebar icinde 3. tab: Manuel Emir
+   ============================================================ */
+
+/* 3. tab gorunurluk: manual aktifken sadece bu panel gorunur */
+.sidebar-upper[data-active-tab="manual"] .sidebar-panels-row > .watchlist-module {
+    display: none !important;
+}
+.sidebar-upper[data-active-tab="manual"] .sidebar-panels-row > .signal-panel-module {
+    display: none !important;
+}
+.sidebar-upper[data-active-tab="manual"] .sidebar-panels-row > .manual-order-panel {
+    display: flex !important;
+}
+
+/* Diger tablar aktifken manuel panel gizli */
+.manual-order-panel {
+    display: none;
+    flex-direction: column !important;
+    flex: 1 1 100% !important;
+    min-width: 0 !important;
+    overflow: hidden !important;
+    padding: 8px 6px !important;
+}
+
+/* Panel scroll alani */
+.mo-panel-scroll {
+    flex: 1 1 auto;
+    overflow-y: auto;
+    overflow-x: hidden;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    padding-right: 4px;
+}
+
+.mo-panel-scroll::-webkit-scrollbar { width: 5px; }
+.mo-panel-scroll::-webkit-scrollbar-thumb { background: #363c4e; border-radius: 3px; }
+
+/* Field */
+.mo-p-field {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.mo-p-field label {
+    font-size: 10.5px;
+    color: #d1d4dc;
+    font-weight: 600;
+    letter-spacing: 0.2px;
+}
+
+.mo-p-field .search-input {
+    padding: 6px 9px !important;
+    font-size: 11.5px !important;
+}
+
+/* 2 kolonlu satir */
+.mo-p-row2 {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+}
+
+.mo-p-row2 .mo-p-field {
+    min-width: 0;
+}
+
+/* Toggle butonlar */
+.mo-toggle-group {
+    display: flex;
+    background: #131722;
+    border: 1px solid #2a2e39;
+    border-radius: 4px;
+    padding: 2px;
+    gap: 2px;
+}
+
+.mo-toggle-btn {
+    flex: 1;
+    padding: 6px 8px;
+    background: transparent;
+    color: #848e9c;
+    border: none;
+    border-radius: 3px;
+    font-size: 10.5px;
+    font-weight: 700;
+    cursor: pointer;
+    transition: all 0.15s;
+    font-family: inherit;
+    letter-spacing: 0.3px;
+    white-space: nowrap;
+}
+
+.mo-toggle-btn:hover {
+    background: rgba(255,255,255,0.05);
+    color: #d1d4dc;
+}
+
+.mo-toggle-btn.active[data-side="BUY"] {
+    background: rgba(14,203,129,0.20);
+    color: #0ECB81;
+}
+
+.mo-toggle-btn.active[data-side="SELL"] {
+    background: rgba(246,70,93,0.20);
+    color: #F6465D;
+}
+
+.mo-toggle-btn.active[data-mode] {
+    background: rgba(41,98,255,0.20);
+    color: #79a0ff;
+}
+
+/* Section title */
+.mo-p-section-title {
+    font-size: 10px;
+    font-weight: 800;
+    color: #fcd535;
+    letter-spacing: 0.6px;
+    text-transform: uppercase;
+    padding: 6px 0 3px;
+    border-top: 1px dashed #2a2e39;
+    margin-top: 2px;
+}
+
+/* AI TTP mono */
+.mo-mono {
+    font-family: 'Courier New', monospace !important;
+    font-size: 10.5px !important;
+    letter-spacing: 0.1px !important;
+}
+
+/* Ozet */
+.mo-p-summary {
+    background: #131722;
+    border: 1px solid #2a2e39;
+    border-radius: 5px;
+    padding: 8px 10px;
+    margin-top: 4px;
+}
+
+.mo-p-summary-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 3px 0;
+    font-size: 11px;
+    color: #848e9c;
+}
+
+.mo-p-summary-row > span:last-child {
+    color: #EAECEF;
+    font-weight: 700;
+    font-family: 'Courier New', monospace;
+    font-variant-numeric: tabular-nums;
+    font-size: 11px;
+}
+
+.mo-p-summary-last {
+    border-top: 1px solid #2a2e39;
+    padding-top: 6px;
+    margin-top: 3px;
+}
+
+.mo-p-summary-last > span:last-child {
+    color: #0ECB81;
+    font-size: 12.5px;
+}
+
+/* Footer - sabit altta */
+.mo-p-footer {
+    flex: 0 0 auto;
+    padding-top: 10px;
+    border-top: 1px solid #2a2e39;
+    margin-top: 6px;
+}
+
+.mo-p-submit {
+    width: 100%;
+    padding: 10px 16px;
+    background: linear-gradient(135deg, #0ECB81, #089981);
+    color: #fff;
+    border: none;
+    border-radius: 5px;
+    font-size: 12px;
+    font-weight: 800;
+    letter-spacing: 0.5px;
+    cursor: pointer;
+    transition: all 0.15s;
+    font-family: inherit;
+}
+
+.mo-p-submit:hover {
+    background: linear-gradient(135deg, #0ab56e, #067654);
+    box-shadow: 0 0 15px rgba(14,203,129,0.4);
+}
+
+.mo-p-submit:disabled {
+    background: #2a2e39;
+    color: #5d6471;
+    cursor: not-allowed;
+    box-shadow: none;
+}
+
+.mo-p-field input:disabled {
+    background: #0b0e14 !important;
+    color: #5d6471 !important;
+    cursor: not-allowed !important;
+    opacity: 0.5;
+}
+
+/* [/MANUAL-PANEL] */
+
+
+/* ============================================================
+   [TAB-ICONS-ONLY]
+   Sidebar tab bar - sadece buyuk ikonlar
+   ============================================================ */
+
+/* Tab bar daha kompakt */
+.sidebar-tab-bar {
+    padding: 5px 6px !important;
+    gap: 4px !important;
+}
+
+/* Buton: sabit genislik, ortalanmis */
+.sidebar-tab-btn {
+    flex: 1 !important;
+    min-width: 0 !important;
+    padding: 10px 8px !important;
+    font-size: 20px !important;
+    line-height: 1 !important;
+    display: flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    gap: 0 !important;
+    transition: all 0.15s !important;
+    border-radius: 5px !important;
+}
+
+/* Ikon stili */
+.sb-tab-ico {
+    display: inline-block;
+    font-size: 20px;
+    line-height: 1;
+    filter: grayscale(0.4) opacity(0.75);
+    transition: all 0.15s;
+}
+
+/* Aktif tab ikonu parlatsin */
+.sidebar-tab-btn.active .sb-tab-ico {
+    filter: grayscale(0) opacity(1);
+    transform: scale(1.15);
+}
+
+/* Hover: parla */
+.sidebar-tab-btn:hover .sb-tab-ico {
+    filter: grayscale(0) opacity(1);
+    transform: scale(1.1);
+}
+
+/* Aktif buton belirgin */
+.sidebar-tab-btn.active {
+    background: rgba(41, 98, 255, 0.18) !important;
+    border: 1px solid rgba(41, 98, 255, 0.45) !important;
+    box-shadow: 0 0 10px rgba(41, 98, 255, 0.25) !important;
+}
+
+/* Eski label varsa gizle (defansif) */
+.sidebar-tab-btn .sb-tab-label {
+    display: none !important;
+}
+
+/* [/TAB-ICONS-ONLY] */

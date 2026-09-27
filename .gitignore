@@ -29,6 +29,8 @@ env/
 *.db-journal
 *.sqlite
 *.sqlite3
+*.db-wal
+*.db-shm
 
 # ============ LOGS ============
 *.log
@@ -51,3 +53,6 @@ test..txt
 config_update.json
 scan_project.py
 cleanup_project.py
+# ============ ARSIVLER ============
+*.tar.gz
+broker_cloud.tar.gz

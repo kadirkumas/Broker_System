@@ -60,7 +60,7 @@
             </div>
             <div class="hdr-actions">
                 <button class="hdr-btn" id="btn-refresh" title="Yenile">🔄</button>
-                <a class="hdr-btn" href="/?desktop=1" title="Masaüstü görünüm">🖥️</a>
+                <button class="hdr-btn manual-order-btn" onclick="openManualOrderModal()" title="Manuel Emir">⚡</button>
             </div>
         </header>
 
@@ -132,9 +132,9 @@
         <section class="card">
             <div class="row-between">
                 <div class="lbl">📊 AÇIK POZİSYONLAR (<span id="pos-count">0</span>)</div>
-                <button class="collapse-btn" data-target="pos-list">▼</button>
+                <button class="collapse-btn" data-target="pos-list">▶</button>
             </div>
-            <div class="list" id="pos-list">
+            <div class="list collapsed" id="pos-list">
                 <div class="empty">Yükleniyor...</div>
             </div>
         </section>
@@ -145,9 +145,9 @@
         <section class="card">
             <div class="row-between">
                 <div class="lbl">🔔 SON SİNYALLER</div>
-                <button class="collapse-btn" data-target="sig-list">▼</button>
+                <button class="collapse-btn" data-target="sig-list">▶</button>
             </div>
-            <div class="list" id="sig-list">
+            <div class="list collapsed" id="sig-list">
                 <div class="empty">Yükleniyor...</div>
             </div>
         </section>
@@ -163,7 +163,6 @@
         <!-- FOOTER -->
         <footer class="footer">
             <span id="last-update">--</span>
-            <a href="/?desktop=1" class="footer-link">Masaüstü</a>
         </footer>
     </div>
 
@@ -181,6 +180,116 @@
             </div>
         </div>
     </div>
+
+    <!-- MANUEL EMIR MODAL -->
+    <div id="mo-modal" class="mo-modal" style="display:none;">
+        <div class="mo-modal-content">
+            <div class="mo-modal-hdr">
+                <h3>⚡ Manuel Emir</h3>
+                <button class="mo-modal-close" onclick="closeManualOrderModal()">✕</button>
+            </div>
+
+            <div class="mo-modal-body">
+                <div class="mo-field">
+                    <label>Sembol</label>
+                    <div class="mo-symbol-search">
+                        <input type="text" id="mo-symbol" class="mo-input" placeholder="Ara... (ornek: BTC)" autocomplete="off">
+                        <input type="hidden" id="mo-symbol-value" value="">
+                        <div id="mo-symbol-list" class="mo-symbol-list" style="display:none;"></div>
+                    </div>
+                </div>
+
+                <div class="mo-field">
+                    <label>Yön</label>
+                    <div class="mo-toggle-group">
+                        <button type="button" class="mo-toggle-btn active" data-side="BUY" onclick="setManualSide('BUY')">▲ LONG</button>
+                        <button type="button" class="mo-toggle-btn" data-side="SELL" onclick="setManualSide('SELL')">▼ SHORT</button>
+                    </div>
+                </div>
+
+                <div class="mo-field">
+                    <label>Emir Tipi</label>
+                    <div class="mo-toggle-group">
+                        <button type="button" class="mo-toggle-btn active" data-mode="market" onclick="setManualOrderMode('market')">MARKET</button>
+                        <button type="button" class="mo-toggle-btn" data-mode="limit" onclick="setManualOrderMode('limit')">LIMIT</button>
+                    </div>
+                </div>
+
+                <div class="mo-row-2">
+                    <div class="mo-field">
+                        <label>Miktar (USDT)</label>
+                        <input type="number" id="mo-base-order" class="mo-input" value="100" min="5" step="1" oninput="updateManualPreview()">
+                    </div>
+                    <div class="mo-field">
+                        <label>Kaldıraç X</label>
+                        <input type="number" id="mo-leverage" class="mo-input" value="5" min="1" max="125" step="1" oninput="updateManualPreview()">
+                    </div>
+                </div>
+
+                <div class="mo-field">
+                    <label>Limit Fiyat (LIMIT için)</label>
+                    <input type="number" id="mo-limit-price" class="mo-input" placeholder="—" step="any" disabled>
+                </div>
+
+                <div class="mo-section-title">TARGET / STOP (opsiyonel)</div>
+
+                <div class="mo-row-2">
+                    <div class="mo-field">
+                        <label>Hedef Kâr %</label>
+                        <input type="number" id="mo-tp" class="mo-input" value="1.5" min="0" step="0.1">
+                    </div>
+                    <div class="mo-field">
+                        <label>Stop Loss %</label>
+                        <input type="number" id="mo-sl" class="mo-input" value="5.0" min="0" step="0.1">
+                    </div>
+                </div>
+
+                <div class="mo-field">
+                    <label>🎯 AI TTP</label>
+                    <input type="text" id="mo-ttp" class="mo-input mo-mono" value="1.5:0.3, 2.5:0.2, 4:0.12, 6:0.07, 10:0.03">
+                </div>
+
+                <div class="mo-section-title">KISMİ TP</div>
+
+                <div class="mo-row-2">
+                    <div class="mo-field">
+                        <label>Kısmi TP Aktif</label>
+                        <label class="switch switch-small" style="margin-top: 6px;">
+                            <input type="checkbox" id="mo-pt-enabled">
+                            <span class="slider round"></span>
+                        </label>
+                    </div>
+                    <div class="mo-field">
+                        <label>Kapatma %</label>
+                        <input type="number" id="mo-pt-percent" class="mo-input" value="50" min="1" max="99" step="1">
+                    </div>
+                </div>
+
+                <div class="mo-summary">
+                    <div class="mo-summary-row">
+                        <span>Marjin</span>
+                        <span id="mo-preview-margin">20.00 USDT</span>
+                    </div>
+                    <div class="mo-summary-row">
+                        <span>Komisyon</span>
+                        <span id="mo-preview-commission">0.04 USDT</span>
+                    </div>
+                    <div class="mo-summary-row mo-summary-last">
+                        <span>Pozisyon</span>
+                        <span id="mo-preview-size">100.00 USDT</span>
+                    </div>
+                </div>
+            </div>
+
+            <div class="mo-modal-footer">
+                <button class="btn btn-secondary" onclick="closeManualOrderModal()">İPTAL</button>
+                <button class="btn btn-primary" id="mo-submit-btn" onclick="submitManualOrder()">⚡ GÖNDER</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- TOAST CONTAINER -->
+    <div id="mobile-toast-container" class="mobile-toast-container"></div>
 
     <script src="/static/mobile/mobile.js"></script>
 </body>

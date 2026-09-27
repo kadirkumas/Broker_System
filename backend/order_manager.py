@@ -200,11 +200,463 @@ class OrderManager:
         except Exception as e:
             return {"status": "error", "message": str(e)}
 
+    # ==========================================================
+    # GRID REEL: Seviye pozisyonu acma
+    # ==========================================================
+    def open_grid_position(self, side: str, base_amount_usdt: float = 5.0,
+                           strategy_name: str = "DYNAMIC_GRID_REEL",
+                           leverage: int = 1,
+                           grid_group_id: str = None,
+                           grid_level: int = 0,
+                           grid_side: str = None,
+                           grid_entry_price: float = 0,
+                           grid_tp_price: float = 0,
+                           use_limit_order: bool = True,
+                           limit_timeout_sec: int = 3,
+                           fallback_market: bool = True):
+        """
+        Grid seviyesi icin TEK pozisyon acar.
+        DCA YOK -- her seviye bagimsiz.
+
+        Duplicate kontrolu: (symbol + grid_group_id + grid_level) UNIQUE
+        """
+        if grid_group_id is None:
+            return {"status": "error", "message": "grid_group_id zorunlu"}
+
+        # ⚡ Duplicate kontrolu (SADECE symbol + level, group bagimsiz)
+        # State kaybi durumunda ayni seviye farkli group_id ile tekrar tetiklenebilir.
+        # Bunu engellemek icin son 5 dk icinde acilmis ayni seviye varsa atla.
+        import time as _time
+        conn = get_db_connection()
+
+        # 1) Birebir eslesme (mevcut kontrol)
+        existing = conn.execute(
+            """SELECT id FROM active_trades
+               WHERE symbol = ? AND grid_group_id = ? AND grid_level = ?
+                 AND is_grid_position = 1""",
+            (self.symbol, grid_group_id, grid_level)
+        ).fetchone()
+
+        if existing:
+            conn.close()
+            print(f"[GRID-DUP] {self.symbol} L{grid_level} zaten acik (ayni grup), atlandi")
+            return {"status": "duplicate", "grid_level": grid_level, "reason": "same_group"}
+
+        # 2) YENI: Ayni sembol + seviye, HERHANGI bir grupta, son 5 dk icinde acilmissa atla
+        try:
+            recent = conn.execute(
+                """SELECT id, grid_group_id, entry_time FROM active_trades
+                   WHERE symbol = ? AND grid_level = ? AND is_grid_position = 1
+                   ORDER BY id DESC LIMIT 1""",
+                (self.symbol, grid_level)
+            ).fetchone()
+        except Exception:
+            recent = None
+
+        if recent:
+            _age = int(_time.time()) - int(recent["entry_time"] or 0)
+            if _age < 300:  # 5 dk
+                conn.close()
+                print(f"[GRID-DUP] {self.symbol} L{grid_level} son {_age}s icinde acildi "
+                      f"(id={recent['id']}, grup={recent['grid_group_id']}) - atlandi")
+                return {"status": "duplicate", "grid_level": grid_level, "reason": "recent_same_level"}
+
+        conn.close()
+
+        price_prec, qty_prec = self.get_symbol_precision(self.symbol)
+        ticker = self.client.futures_symbol_ticker(symbol=self.symbol)
+        current_price = float(ticker["price"])
+
+        qty = round(base_amount_usdt / current_price, qty_prec)
+        leverage = max(1, int(leverage))
+        margin = base_amount_usdt / leverage if leverage > 0 else base_amount_usdt
+        strat = strategy_name or "DYNAMIC_GRID_REEL"
+
+        # ⚡ Grid seviyesinin gercek fiyati (fallback: o anki market)
+        _level_price = grid_entry_price if (grid_entry_price and grid_entry_price > 0) else current_price
+
+        # ==========================================================
+        # ⚡ SPIKE KORUMASI: current_price ile grid_entry_price arasinda
+        # %10'dan fazla fark varsa testnet spike -> REDDET
+        # ==========================================================
+        if grid_entry_price and grid_entry_price > 0:
+            _diff_pct = abs(current_price - grid_entry_price) / grid_entry_price * 100
+            if _diff_pct > 10:
+                print(f"[SPIKE-GUARD] {self.symbol} L{grid_level} "
+                      f"REDDEDILDI! current={current_price:.6f} "
+                      f"level={grid_entry_price:.6f} fark=%{_diff_pct:.2f}")
+                return {
+                    "status": "error",
+                    "message": f"Fiyat spike (fark %{_diff_pct:.1f}), işlem reddedildi",
+                    "spike_guard": True
+                }
+
+        # --- TEST MODU ---
+        if self.test_mode:
+            if use_limit_order:
+                success, entry_price, is_maker, msg = self._place_entry_order_with_fallback(
+                    self.symbol, side, qty, price_prec,
+                    timeout_sec=limit_timeout_sec, fallback=fallback_market
+                )
+                if not success:
+                    print(f"[!] GRID TEST LIMIT basarisiz: {msg}")
+                    return {"status": "error", "message": msg}
+                entry_is_maker = 1 if is_maker else 0
+                mode_label = "MAKER" if is_maker else "TAKER"
+            else:
+                entry_is_maker = 0
+                mode_label = "MARKET"
+
+            # ⚡ Simulasyonda seviye fiyatini kullan (gercekci grid davranisi)
+            entry_price = _level_price
+
+            print(f"[GRID-TEST] {self.symbol} L{grid_level} [{grid_side}] {side} {mode_label} | "
+                  f"Seviye: {_level_price} | Market: {current_price} | Vol: {base_amount_usdt} | TP: {grid_tp_price}")
+
+            ok = self._save_grid_to_db(
+                symbol=self.symbol,
+                side=side,
+                total_vol=base_amount_usdt,
+                avg_price=entry_price,
+                strategy_name=strat,
+                initial_price=_level_price,
+                initial_vol=base_amount_usdt,
+                leverage=leverage,
+                entry_is_maker=entry_is_maker,
+                grid_group_id=grid_group_id,
+                grid_level=grid_level,
+                grid_side=grid_side or side,
+                grid_entry_price=grid_entry_price,
+                grid_tp_price=grid_tp_price,
+            )
+            return {
+                "status": "success" if ok else "error",
+                "mode": "TEST",
+                "symbol": self.symbol,
+                "grid_level": grid_level,
+                "grid_group_id": grid_group_id,
+                "entry_price": entry_price,
+                "order_type": mode_label,
+            }
+
+        # --- GERCEK EMIR ---
+        try:
+            if leverage > 1:
+                try:
+                    self.client.futures_change_leverage(symbol=self.symbol, leverage=leverage)
+                except Exception as le:
+                    print(f"[!] Grid leverage ayarlanamadi: {le}")
+
+            if use_limit_order:
+                success, entry_price, is_maker, msg = self._place_entry_order_with_fallback(
+                    self.symbol, side, qty, price_prec,
+                    timeout_sec=limit_timeout_sec, fallback=fallback_market
+                )
+                if not success:
+                    return {"status": "error", "message": msg}
+                entry_is_maker = 1 if is_maker else 0
+            else:
+                order = self.client.futures_create_order(
+                    symbol=self.symbol, side=side, type="MARKET", quantity=qty
+                )
+                entry_price = float(order.get("avgPrice") or current_price)
+                entry_is_maker = 0
+
+            # ⚡ Grid seviyesi icin TP emri (komsu seviye)
+            if grid_tp_price and grid_tp_price > 0:
+                tp_side = "SELL" if side == "BUY" else "BUY"
+                tp_price_rounded = round(grid_tp_price, price_prec)
+                try:
+                    self.client.futures_create_order(
+                        symbol=self.symbol,
+                        side=tp_side,
+                        type="TAKE_PROFIT_MARKET",
+                        stopPrice=tp_price_rounded,
+                        closePosition=True
+                    )
+                    print(f"[GRID-TP] {self.symbol} L{grid_level} TP emri @ {tp_price_rounded}")
+                except Exception as te:
+                    print(f"[!] Grid TP emri hatasi {self.symbol}: {te}")
+
+            ok = self._save_grid_to_db(
+                symbol=self.symbol,
+                side=side,
+                total_vol=base_amount_usdt,
+                avg_price=entry_price,
+                strategy_name=strat,
+                initial_price=_level_price,
+                initial_vol=base_amount_usdt,
+                leverage=leverage,
+                entry_is_maker=entry_is_maker,
+                grid_group_id=grid_group_id,
+                grid_level=grid_level,
+                grid_side=grid_side or side,
+                grid_entry_price=grid_entry_price,
+                grid_tp_price=grid_tp_price,
+            )
+            return {
+                "status": "success" if ok else "error",
+                "mode": "REAL",
+                "symbol": self.symbol,
+                "grid_level": grid_level,
+                "grid_group_id": grid_group_id,
+                "entry_price": entry_price,
+                "tp": grid_tp_price,
+                "leverage": leverage,
+            }
+        except Exception as e:
+            return {"status": "error", "message": str(e)}
+
+    def _save_grid_to_db(self, symbol, side, total_vol, avg_price, strategy_name,
+                         initial_price, initial_vol, leverage, entry_is_maker,
+                         grid_group_id, grid_level, grid_side,
+                         grid_entry_price, grid_tp_price):
+        """Grid pozisyonunu active_trades'e yazar (retry + leak fix)."""
+        import time as _time
+        max_retries = 3
+        conn = None
+        for attempt in range(max_retries):
+            try:
+                conn = get_db_connection()
+                conn.execute(
+                    """INSERT INTO active_trades
+                       (symbol, trade_type, total_vol, avg_price, dca_count, entry_time,
+                        strategy_name, initial_price, initial_vol, leverage,
+                        pt_enabled, pt_percent, pt_done, pt_volume, pt_pnl, pt_keep_dca,
+                        entry_is_maker,
+                        is_grid_position, grid_group_id, grid_level, grid_side,
+                        grid_entry_price, grid_tp_price, grid_created_at, grid_state)
+                       VALUES (?, ?, ?, ?, 0, ?, ?, ?, ?, ?, 0, 0, 0, 0, 0, 0, ?, 1, ?, ?, ?, ?, ?, ?, 'open')""",
+                    (symbol, side, total_vol, avg_price, int(_time.time()),
+                     strategy_name, initial_price, initial_vol, leverage,
+                     entry_is_maker,
+                     grid_group_id, grid_level, grid_side,
+                     grid_entry_price, grid_tp_price, int(_time.time()))
+                )
+                conn.commit()
+                return True
+            except Exception as e:
+                err_lower = str(e).lower()
+                if "unique" in err_lower or "integrity" in err_lower:
+                    print(f"[GRID-DB] Duplicate, atlandi: {symbol} L{grid_level}")
+                    return False
+                if "database is locked" in err_lower and attempt < max_retries - 1:
+                    _time.sleep(0.5 * (attempt + 1))
+                    continue
+                print(f"[GRID-DB] INSERT hatasi {symbol} L{grid_level}: {e}")
+                return False
+            finally:
+                if conn is not None:
+                    try:
+                        conn.close()
+                    except Exception:
+                        pass
+                    conn = None
+        return False
+
+    # ==========================================================
+    # GRID REEL: Seviye pozisyonu kapatma
+    # ==========================================================
+    def close_grid_position(self, symbol: str, grid_group_id: str, grid_level: int):
+        """Tek grid seviyesini kapatir."""
+        if self.test_mode:
+            print(f"[GRID-TEST] {symbol} L{grid_level} (grup={grid_group_id}) kapatildi")
+            self._close_in_db(symbol, is_grid=True,
+                              grid_group_id=grid_group_id, grid_level=grid_level)
+            return {"status": "success", "mode": "TEST",
+                    "symbol": symbol, "grid_level": grid_level}
+
+        try:
+            # Bekleyen TP/SL emirleri varsa iptal
+            try:
+                self.client.futures_cancel_all_open_orders(symbol=symbol)
+            except Exception:
+                pass
+
+            positions = self.client.futures_position_information(symbol=symbol)
+            pos = next((p for p in positions
+                        if p["symbol"] == symbol and float(p["positionAmt"]) != 0), None)
+            if pos:
+                amt = float(pos["positionAmt"])
+                close_side = "SELL" if amt > 0 else "BUY"
+                self.client.futures_create_order(
+                    symbol=symbol, side=close_side, type="MARKET",
+                    quantity=abs(amt), reduceOnly=True
+                )
+
+            self._close_in_db(symbol, is_grid=True,
+                              grid_group_id=grid_group_id, grid_level=grid_level)
+            return {"status": "success", "mode": "REAL",
+                    "symbol": symbol, "grid_level": grid_level}
+        except Exception as e:
+            return {"status": "error", "message": str(e)}
+
+    # ==========================================================
+    # MANUEL EMIR - Kullanici tarafindan manuel acilan pozisyon
+    # ==========================================================
+    def open_manual_position(self, side: str, base_amount_usdt: float = 100.0,
+                             order_mode: str = "market",
+                             leverage: int = 1,
+                             limit_price: float = 0,
+                             limit_timeout: int = 5,
+                             take_profit: float = 1.5,
+                             trailing_steps: str = "",
+                             stop_loss: float = 5.0,
+                             pt_enabled: int = 0,
+                             pt_percent: float = 50,
+                             pt_keep_dca: int = 1):
+        """
+        Manuel emir acar.
+        order_mode: "market" | "limit" | "limit_with_fallback"
+        Duplicate check YOK (MANUAL strateji icin ozel UNIQUE index kullanilir).
+        """
+        price_prec, qty_prec = self.get_symbol_precision(self.symbol)
+        ticker = self.client.futures_symbol_ticker(symbol=self.symbol)
+        current_price = float(ticker["price"])
+
+        qty = round(base_amount_usdt / current_price, qty_prec)
+        leverage = max(1, int(leverage))
+        margin = base_amount_usdt / leverage if leverage > 0 else base_amount_usdt
+        strat = "MANUAL"
+
+        # ============ TEST MODU ============
+        if self.test_mode:
+            if order_mode == "market":
+                entry_price = current_price
+                entry_is_maker = 0
+                mode_label = "MARKET"
+            elif order_mode == "limit":
+                entry_price = limit_price if limit_price > 0 else current_price
+                entry_is_maker = 1
+                mode_label = "LIMIT (MAKER)"
+            elif order_mode == "limit_with_fallback":
+                success, entry_price, is_maker, msg = self._place_entry_order_with_fallback(
+                    self.symbol, side, qty, price_prec,
+                    timeout_sec=limit_timeout, fallback=True
+                )
+                if not success:
+                    return {"status": "error", "message": msg}
+                entry_is_maker = 1 if is_maker else 0
+                mode_label = "LIMIT+FB (MAKER)" if is_maker else "LIMIT+FB (TAKER)"
+            else:
+                return {"status": "error", "message": f"Gecersiz order_mode: {order_mode}"}
+
+            print(f"[MANUAL-TEST] {self.symbol} {side} {mode_label} | "
+                  f"Fiyat: {entry_price} | Vol: {base_amount_usdt} | Lev: {leverage}x | "
+                  f"TP: {take_profit}% | TTP: {trailing_steps or '-'} | SL: {stop_loss}%")
+
+            self._save_to_db(
+                self.symbol, side, base_amount_usdt, entry_price, 0, strat,
+                entry_price, base_amount_usdt, leverage,
+                pt_enabled, pt_percent, pt_keep_dca, entry_is_maker
+            )
+            return {
+                "status": "success",
+                "mode": "TEST",
+                "symbol": self.symbol,
+                "strategy": strat,
+                "side": side,
+                "entry_price": entry_price,
+                "quantity": base_amount_usdt,
+                "leverage": leverage,
+                "margin": round(margin, 4),
+                "order_type": mode_label
+            }
+
+        # ============ GERCEK EMIR ============
+        try:
+            if leverage > 1:
+                try:
+                    self.client.futures_change_leverage(symbol=self.symbol, leverage=leverage)
+                except Exception as le:
+                    print(f"[!] Leverage ayarlanamadi: {le}")
+
+            if order_mode == "market":
+                order = self.client.futures_create_order(
+                    symbol=self.symbol, side=side, type="MARKET", quantity=qty
+                )
+                entry_price = float(order.get("avgPrice") or current_price)
+                entry_is_maker = 0
+
+            elif order_mode == "limit":
+                if limit_price <= 0:
+                    return {"status": "error", "message": "Limit fiyat gerekli"}
+                order = self.client.futures_create_order(
+                    symbol=self.symbol, side=side, type="LIMIT",
+                    timeInForce="GTC", quantity=qty, price=limit_price
+                )
+                entry_price = limit_price
+                entry_is_maker = 1
+
+            elif order_mode == "limit_with_fallback":
+                success, entry_price, is_maker, msg = self._place_entry_order_with_fallback(
+                    self.symbol, side, qty, price_prec,
+                    timeout_sec=limit_timeout, fallback=True
+                )
+                if not success:
+                    return {"status": "error", "message": msg}
+                entry_is_maker = 1 if is_maker else 0
+            else:
+                return {"status": "error", "message": f"Gecersiz order_mode: {order_mode}"}
+
+            # TP/SL emirleri (opsiyonel)
+            tp_side = "SELL" if side == "BUY" else "BUY"
+
+            if take_profit > 0:
+                try:
+                    tp_price = round(
+                        entry_price * (1 + take_profit/100) if side == "BUY"
+                        else entry_price * (1 - take_profit/100),
+                        price_prec
+                    )
+                    self.client.futures_create_order(
+                        symbol=self.symbol, side=tp_side,
+                        type="TAKE_PROFIT_MARKET",
+                        stopPrice=tp_price, closePosition=True
+                    )
+                except Exception as _te:
+                    print(f"[!] TP emri hatasi: {_te}")
+
+            if stop_loss > 0:
+                try:
+                    sl_price = round(
+                        entry_price * (1 - stop_loss/100) if side == "BUY"
+                        else entry_price * (1 + stop_loss/100),
+                        price_prec
+                    )
+                    self.client.futures_create_order(
+                        symbol=self.symbol, side=tp_side,
+                        type="STOP_MARKET",
+                        stopPrice=sl_price, closePosition=True
+                    )
+                except Exception as _se:
+                    print(f"[!] SL emri hatasi: {_se}")
+
+            self._save_to_db(
+                self.symbol, side, base_amount_usdt, entry_price, 0, strat,
+                entry_price, base_amount_usdt, leverage,
+                pt_enabled, pt_percent, pt_keep_dca, entry_is_maker
+            )
+            return {
+                "status": "success",
+                "mode": "REAL",
+                "symbol": self.symbol,
+                "strategy": strat,
+                "side": side,
+                "entry_price": entry_price,
+                "leverage": leverage,
+                "margin": round(margin, 4),
+                "order_type": order_mode
+            }
+
+        except Exception as e:
+            return {"status": "error", "message": str(e)}
+
     def close_position(self, symbol: str = None):
         target_symbol = symbol or self.symbol
 
         if self.test_mode:
-            print(f"[TEST MODU] {target_symbol} pozisyonu kapatıldı.")
+            print(f"[TEST MODU] {target_symbol} klasik pozisyon kapatildi.")
             self._close_in_db(target_symbol)
             return {"status": "success", "mode": "TEST", "symbol": target_symbol, "action": "CLOSED"}
 
@@ -224,7 +676,7 @@ class OrderManager:
                     reduceOnly=True
                 )
 
-            self._close_in_db(target_symbol)
+            self._close_in_db(target_symbol, is_grid=False)
             return {"status": "success", "mode": "REAL", "symbol": target_symbol, "action": "CLOSED"}
 
         except Exception as e:
@@ -415,8 +867,24 @@ class OrderManager:
             print(f"[PARTIAL] HATA {symbol}: {e}")
             return {"status": "error", "message": str(e)}
     
-    def _close_in_db(self, symbol: str):
+    def _close_in_db(self, symbol: str, is_grid: bool = False,
+                     grid_group_id: str = None, grid_level: int = None):
+        """
+        Klasik pozisyon : is_grid=False  -> sadece is_grid_position=0 sil
+        Grid seviyesi   : is_grid=True   -> symbol+group+level sil
+        """
         conn = get_db_connection()
-        conn.execute("DELETE FROM active_trades WHERE symbol = ?", (symbol,))
+        if is_grid:
+            conn.execute(
+                """DELETE FROM active_trades
+                   WHERE symbol = ? AND grid_group_id = ? AND grid_level = ?
+                     AND is_grid_position = 1""",
+                (symbol, grid_group_id, grid_level)
+            )
+        else:
+            conn.execute(
+                "DELETE FROM active_trades WHERE symbol = ? AND COALESCE(is_grid_position,0) = 0",
+                (symbol,)
+            )
         conn.commit()
         conn.close()

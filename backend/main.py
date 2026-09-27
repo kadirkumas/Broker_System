@@ -1,12 +1,16 @@
 import os
+import shutil
 import time
 import asyncio
 import contextlib
 import base64
 import secrets
+import hashlib as _hashlib
+import urllib.request as _urlreq
+import urllib.error as _urlerr
 from pathlib import Path
 
-from fastapi import Request, FastAPI
+from fastapi import HTTPException, Request, FastAPI
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, RedirectResponse
 from starlette.staticfiles import StaticFiles as StarletteStaticFiles
@@ -40,6 +44,19 @@ ADMIN_USERNAME = os.getenv("ADMIN_USERNAME", "admin").strip()
 ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD", "").strip()
 AUTH_ENABLED = bool(ADMIN_PASSWORD)
 
+# DB Sync
+SYNC_MODE = os.getenv("SYNC_MODE", "standalone").strip().lower()
+IS_MASTER = (SYNC_MODE == "master")
+IS_REPLICA = (SYNC_MODE == "replica")
+CLOUD_SYNC_URL = os.getenv("CLOUD_SYNC_URL", "").strip().rstrip("/")
+SYNC_TOKEN = os.getenv("SYNC_TOKEN", "").strip()
+SYNC_INTERVAL_SEC = int(os.getenv("SYNC_INTERVAL_SEC", "30"))
+SYNC_ENABLED = IS_MASTER and bool(CLOUD_SYNC_URL) and bool(SYNC_TOKEN)
+
+print(f"[*] Sync modu: {SYNC_MODE} | master={IS_MASTER} replica={IS_REPLICA}")
+if SYNC_ENABLED:
+    print(f"[*] Sync aktif: {CLOUD_SYNC_URL} (her {SYNC_INTERVAL_SEC}sn)")
+
 print(f"[*] API_KEY yüklendi mi: {'EVET' if API_KEY else 'HAYIR'}")
 print(f"[*] API_SECRET yüklendi mi: {'EVET' if API_SECRET else 'HAYIR'}")
 print(f"[*] Testnet modu: {USE_TESTNET}")
@@ -72,22 +89,76 @@ bot = StrategyEngine(client, order_manager=order_manager, position_manager=posit
 @contextlib.asynccontextmanager
 async def lifespan(app: FastAPI):
     init_db()
-    task = asyncio.create_task(bot.start())
-    try:
-        yield
-    finally:
-        bot.stop()
-        task.cancel()
+
+    # ⚡ REPLICA KORUMASI: Cloud'da bot ASLA calismaz
+    if IS_REPLICA:
+        print("[REPLICA-GUARD] Replica modu algilandi - bot BASLATILMIYOR")
+        # Config'de active=true olsa bile zorla false yap (disk'e yaz)
         try:
-            await task
-        except asyncio.CancelledError:
-            pass
+            _cfg = load_config()
+            if _cfg.get("active", False):
+                _cfg["active"] = False
+                save_config(_cfg)
+                bot.config = _cfg
+                print("[REPLICA-GUARD] bot_config.active = False (zorla)")
+            else:
+                print("[REPLICA-GUARD] bot_config.active zaten False")
+        except Exception as _e:
+            print(f"[REPLICA-GUARD] Config override hatasi: {_e}")
+
+        # Sync loop calissin (replica veri alir)
+        sync_task = asyncio.create_task(_sync_loop()) if SYNC_ENABLED else None
+
+        try:
+            yield
+        finally:
+            if sync_task:
+                sync_task.cancel()
+                try:
+                    await sync_task
+                except asyncio.CancelledError:
+                    pass
+    else:
+        # MASTER modu - normal akis
+        task = asyncio.create_task(bot.start())
+        sync_task = asyncio.create_task(_sync_loop()) if SYNC_ENABLED else None
+        try:
+            yield
+        finally:
+            bot.stop()
+            task.cancel()
+            if sync_task:
+                sync_task.cancel()
+            try:
+                await task
+            except asyncio.CancelledError:
+                pass
+            if sync_task:
+                try:
+                    await sync_task
+                except asyncio.CancelledError:
+                    pass
 
 
 # ----------------------------------------------------------------------
 # FASTAPI
 # ----------------------------------------------------------------------
 app = FastAPI(title="Broker System API", lifespan=lifespan)
+
+
+@app.middleware("http")
+async def readonly_middleware(request: Request, call_next):
+    if not IS_REPLICA:
+        return await call_next(request)
+    if request.url.path.startswith("/api/sync/"):
+        return await call_next(request)
+    if request.method in ("POST", "PUT", "DELETE", "PATCH"):
+        return Response(
+            content='{"status":"error","message":"Replica mode: read-only"}',
+            status_code=403,
+            media_type="application/json"
+        )
+    return await call_next(request)
 
 
 # ======================================================================
@@ -106,6 +177,10 @@ async def auth_middleware(request: Request, call_next):
 
     # Favicon ve robots.txt bypass
     if request.url.path in ("/favicon.ico", "/robots.txt"):
+        return await call_next(request)
+
+    # ⚡ Sync endpoint bypass (X-Sync-Token ile korunuyor)
+    if request.url.path.startswith("/api/sync/"):
         return await call_next(request)
 
     auth_header = request.headers.get("Authorization", "")
@@ -298,6 +373,20 @@ async def engine_status():
     return bot.get_status()
 
 
+@app.get("/api/symbols/list")
+async def symbols_list():
+    """
+    Bot'un taranan TUM sembol listesini dondurur.
+    Mobile manuel emir dropdown icin kullanilir.
+    """
+    symbols = list(bot.symbols or [])
+    return {
+        "status": "success",
+        "count": len(symbols),
+        "symbols": symbols
+    }
+
+
 @app.get("/api/engine/signals")
 async def engine_signals():
     return bot.latest_signals
@@ -435,6 +524,87 @@ async def get_recent_signals(limit: int = 100):
 # ----------------------------------------------------------------------
 # MANUEL EMİR
 # ----------------------------------------------------------------------
+# ----------------------------------------------------------------------
+# MANUEL EMIR - Detayli form ile manuel emir acma
+# ----------------------------------------------------------------------
+@app.post("/api/trade/manual")
+async def manual_order(payload: dict):
+    """
+    Manuel emir acma (MARKET / LIMIT).
+    Ayni sembolde acik pozisyon varsa 'duplicate_warning' doner.
+    confirm_overwrite=true ise MANUAL strateji olarak acilir.
+    """
+    import time as _t
+
+    symbol = str(payload.get("symbol", "")).upper().replace(".P", "")
+    side = str(payload.get("side", "BUY")).upper()
+    order_mode = str(payload.get("order_mode", "market")).lower()
+    base_order = float(payload.get("base_order", 100))
+    leverage = int(payload.get("leverage", 1))
+    limit_price = float(payload.get("limit_price", 0) or 0)
+    limit_timeout = int(payload.get("limit_timeout", 5))
+    take_profit = float(payload.get("take_profit", 0) or 0)
+    trailing_steps = str(payload.get("trailingSteps", "") or "")
+    stop_loss = float(payload.get("stop_loss", 0) or 0)
+    pt_enabled = 1 if payload.get("partial_tp_enabled") else 0
+    pt_percent = float(payload.get("partial_tp_percent", 50))
+    pt_keep_dca = 1 if payload.get("partial_tp_keep_dca", True) else 0
+    confirm_overwrite = bool(payload.get("confirm_overwrite", False))
+
+    # Validasyon
+    if not symbol:
+        return {"status": "error", "message": "Sembol gerekli"}
+    if side not in ("BUY", "SELL"):
+        return {"status": "error", "message": "Gecersiz yon"}
+    if base_order <= 0:
+        return {"status": "error", "message": "Miktar > 0 olmali"}
+    if order_mode not in ("market", "limit", "limit_with_fallback"):
+        return {"status": "error", "message": "Gecersiz emir tipi"}
+    if order_mode in ("limit", "limit_with_fallback") and limit_price <= 0 and order_mode == "limit":
+        return {"status": "error", "message": "LIMIT icin fiyat gerekli"}
+
+    # Duplicate kontrol: ayni sembolde strateji pozisyonu var mi?
+    if not confirm_overwrite:
+        conn = get_db_connection()
+        existing = conn.execute(
+            """SELECT id, strategy_name, trade_type FROM active_trades
+               WHERE symbol = ? AND COALESCE(is_grid_position,0) = 0
+                 AND (strategy_name IS NULL OR strategy_name != 'MANUAL')""",
+            (symbol,)
+        ).fetchone()
+        conn.close()
+
+        if existing:
+            return {
+                "status": "duplicate_warning",
+                "message": f"{symbol} icin zaten acik pozisyon var ({existing['strategy_name']}).",
+                "existing": dict(existing)
+            }
+
+    # Emir ac
+    order_manager.symbol = symbol
+    result = await asyncio.to_thread(
+        order_manager.open_manual_position,
+        side=side,
+        base_amount_usdt=base_order,
+        order_mode=order_mode,
+        leverage=leverage,
+        limit_price=limit_price,
+        limit_timeout=limit_timeout,
+        take_profit=take_profit,
+        trailing_steps=trailing_steps,
+        stop_loss=stop_loss,
+        pt_enabled=pt_enabled,
+        pt_percent=pt_percent,
+        pt_keep_dca=pt_keep_dca,
+    )
+
+    print(f"[MANUAL] {symbol} {side} {order_mode} | {base_order} USDT | {leverage}x | "
+          f"result={result.get('status')}")
+
+    return result
+
+
 @app.post("/api/trade/open")
 async def trigger_trade(symbol: str = "BTCUSDT", side: str = "BUY"):
     clean_symbol = symbol.replace(".P", "")
@@ -453,6 +623,10 @@ async def trigger_close(symbol: str = "BTCUSDT"):
 
 @app.post("/api/trade/close-all")
 async def close_all_trades():
+    """
+    Klasik akis - sadece klasik (grid olmayan) pozisyonlari kapatir.
+    Grid pozisyonlar korunur.
+    """
     conn = get_db_connection()
     trades = conn.execute("SELECT symbol FROM active_trades").fetchall()
     conn.close()
@@ -463,18 +637,66 @@ async def close_all_trades():
     return {"status": "success", "closed": len(results), "details": results}
 
 
+@app.post("/api/trade/close-all-force")
+async def close_all_trades_force():
+    """
+    ⚡ FORCE - Bot durdurma icin: HER SEYI siler.
+    Klasik + Grid REEL pozisyonlar + aktif emirler.
+    Anomali validasyonu YAPMAZ (spike'lari da temizler).
+    """
+    conn = get_db_connection()
+
+    # Once sayalim (rapor icin)
+    n_classic = conn.execute(
+        "SELECT COUNT(*) FROM active_trades WHERE COALESCE(is_grid_position,0)=0"
+    ).fetchone()[0]
+    n_grid = conn.execute(
+        "SELECT COUNT(*) FROM active_trades WHERE is_grid_position=1"
+    ).fetchone()[0]
+
+    # Tum aktif sembolleri topla (order iptali icin)
+    symbols = [r["symbol"] for r in conn.execute(
+        "SELECT DISTINCT symbol FROM active_trades"
+    ).fetchall()]
+
+    # ⚡ Tum aktif pozisyonlari sil (klasik + grid)
+    conn.execute("DELETE FROM active_trades")
+    conn.commit()
+    conn.close()
+
+    # ⚡ Binance'te bekleyen emirleri iptal et (test mode'da no-op)
+    cancelled = 0
+    for sym in symbols:
+        try:
+            if hasattr(order_manager, "client") and not getattr(order_manager, "test_mode", False):
+                order_manager.client.futures_cancel_all_open_orders(symbol=sym)
+                cancelled += 1
+        except Exception as e:
+            print(f"[CLOSE-ALL-FORCE] {sym} emir iptali hatasi: {e}")
+
+    total_count = n_classic + n_grid
+    print(f"[CLOSE-ALL-FORCE] {n_classic} klasik + {n_grid} grid = {total_count} pozisyon silindi")
+    print(f"[CLOSE-ALL-FORCE] {len(symbols)} sembol, {cancelled} sembolde emir iptal edildi")
+
+    return {
+        "status": "success",
+        "closed_classic": n_classic,
+        "closed_grid": n_grid,
+        "total": total_count,
+        "symbols": symbols,
+        "cancelled_orders": cancelled,
+    }
+
+
 @app.get("/api/trade/active-with-pnl")
 async def get_active_trades_with_pnl():
-    """Aktif pozisyonlar + anlik PnL (Binance fiyatlarindan hesaplanir)."""
+    """Aktif pozisyonlar + anlik PnL (Binance fiyatlarindan)."""
     conn = get_db_connection()
     trades = conn.execute("SELECT * FROM active_trades").fetchall()
     conn.close()
     trades = [dict(t) for t in trades]
-
     if not trades:
         return []
-
-    # Anlik fiyatlari cek (async -> to_thread)
     try:
         tickers = await asyncio.to_thread(client.futures_ticker)
         price_map = {}
@@ -485,14 +707,11 @@ async def get_active_trades_with_pnl():
                 price_map[sym] = float(p)
     except Exception as e:
         print(f"[!] PnL fiyat cekme hatasi: {e}")
-        # Fiyat yoksa DB verileri doner, pnl=0 olur
         for t in trades:
             t["unrealized_pnl"] = 0.0
             t["unrealized_pnl_pct"] = 0.0
             t["current_price"] = 0.0
         return trades
-
-    # Her pozisyon icin PnL hesapla
     for t in trades:
         sym = t.get("symbol", "")
         cur = price_map.get(sym)
@@ -501,30 +720,19 @@ async def get_active_trades_with_pnl():
             t["unrealized_pnl_pct"] = 0.0
             t["current_price"] = 0.0
             continue
-
         avg = float(t.get("avg_price") or 0)
         vol = float(t.get("total_vol") or 0)
         ttype = t.get("trade_type", "BUY")
-
         if avg <= 0:
             t["unrealized_pnl"] = 0.0
             t["unrealized_pnl_pct"] = 0.0
             t["current_price"] = cur
             continue
-
-        if ttype == "BUY":  # LONG
-            pnl_pct = (cur - avg) / avg
-        else:                # SHORT
-            pnl_pct = (avg - cur) / avg
-
-        # PnL (USDT) = hacim x pnl_pct
-        # total_vol zaten kaldiracli degil, marjinal bazli -> hacim = notional
+        pnl_pct = (cur - avg) / avg if ttype == "BUY" else (avg - cur) / avg
         pnl_usdt = vol * pnl_pct
-
         t["current_price"] = cur
         t["unrealized_pnl"] = round(pnl_usdt, 4)
         t["unrealized_pnl_pct"] = round(pnl_pct * 100, 4)
-
     return trades
 
 
@@ -727,6 +935,80 @@ async def admin_clean_anomalies(min_pnl_pct: float = 30.0, min_ratio: float = 1.
         "deleted_count": len(anomalies),
         "deleted": anomalies[:50]
     }
+
+# ----------------------------------------------------------------------
+# GRID STATE - Backend grid durumu (tek dogru kaynak)
+# ----------------------------------------------------------------------
+@app.get("/api/grid/state/{symbol}")
+async def get_grid_state(symbol: str):
+    """
+    Sembolun mevcut grid durumunu dondurur.
+    Frontend grafigi bu veriden cizer -> sapma olmaz.
+    """
+    import json as _json
+    sym = symbol.replace(".P", "").upper()
+    try:
+        conn = get_db_connection()
+        row = conn.execute(
+            "SELECT * FROM grid_state WHERE symbol = ?", (sym,)
+        ).fetchone()
+        conn.close()
+
+        if not row:
+            return {"status": "not_found", "symbol": sym}
+
+        d = dict(row)
+        levels = []
+        try:
+            levels = _json.loads(d.get("levels_json") or "[]")
+        except Exception:
+            levels = []
+
+        now = int(time.time())
+        age = now - int(d.get("updated_at") or now)
+
+        return {
+            "status": "ok",
+            "symbol": sym,
+            "strategy": d.get("strategy_name"),
+            "group_id": d.get("group_id"),
+            "reference": d.get("reference"),
+            "top": d.get("top"),
+            "bottom": d.get("bottom"),
+            "levels": levels,
+            "interval": d.get("interval"),
+            "mode": d.get("mode"),
+            "recenter_ts": d.get("recenter_ts"),
+            "updated_at": d.get("updated_at"),
+            "age_sec": age,
+        }
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
+
+@app.get("/api/grid/state-all")
+async def get_grid_state_all():
+    """Tum aktif grid state'lerini dondurur (toplu)."""
+    import json as _json
+    try:
+        conn = get_db_connection()
+        rows = conn.execute(
+            "SELECT * FROM grid_state ORDER BY updated_at DESC"
+        ).fetchall()
+        conn.close()
+
+        out = []
+        for row in rows:
+            d = dict(row)
+            try:
+                d["levels"] = _json.loads(d.get("levels_json") or "[]")
+            except Exception:
+                d["levels"] = []
+            out.append(d)
+        return {"status": "ok", "count": len(out), "data": out}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
 
 # ----------------------------------------------------------------------
 # FUNDING RATE - Anlık funding oranı ve sonraki zaman
@@ -1027,7 +1309,9 @@ async def get_close_reason_stats():
         SELECT 
             CASE 
                 WHEN close_reason LIKE '%PARTIAL%' THEN 'PARTIAL TP'
-                WHEN close_reason LIKE '%TRAILING%' THEN 'TRAILING'
+                WHEN close_reason LIKE '%AI-TTP%' THEN 'AI TTP'
+                WHEN close_reason LIKE '%AI TTP%' THEN 'AI TTP'
+                WHEN close_reason LIKE '%TRAILING%' THEN 'AI TTP'
                 WHEN close_reason LIKE '%STOP%' THEN 'STOP LOSS'
                 WHEN close_reason LIKE '%DELIST%' THEN 'DELISTED'
                 WHEN close_reason LIKE '%TIME%' THEN 'TIME LIMIT'
@@ -1053,3 +1337,103 @@ async def get_close_reason_stats():
         d["win_rate"] = round((wins / total) * 100, 2) if total > 0 else 0
         result.append(d)
     return result
+
+
+# ======================================================================
+# DB SYNC
+# ======================================================================
+DB_SYNC_PATH = Path(__file__).resolve().parent / "bot_data.db"
+
+
+async def _sync_push_once() -> bool:
+    try:
+        if not DB_SYNC_PATH.exists():
+            return False
+        with open(DB_SYNC_PATH, 'rb') as f:
+            data = f.read()
+        if len(data) < 1024:
+            return False
+        url = f"{CLOUD_SYNC_URL}/api/sync/db-receive"
+        auth_str = f"{ADMIN_USERNAME}:{ADMIN_PASSWORD}"
+        auth_b64 = base64.b64encode(auth_str.encode()).decode()
+        req = _urlreq.Request(
+            url, data=data, method='POST',
+            headers={
+                'Content-Type': 'application/octet-stream',
+                'X-Sync-Token': SYNC_TOKEN,
+                'Authorization': f'Basic {auth_b64}',
+                'Content-Length': str(len(data)),
+            }
+        )
+        def _do():
+            try:
+                with _urlreq.urlopen(req, timeout=20) as resp:
+                    return resp.status, resp.read()[:200]
+            except _urlerr.HTTPError as he:
+                return he.code, b''
+            except Exception as e:
+                return -1, str(e).encode()[:200]
+        status, body = await asyncio.to_thread(_do)
+        if status == 200:
+            print(f"[SYNC] push OK | {len(data)} byte")
+            return True
+        print(f"[SYNC] push hata | status={status} | {body[:100]}")
+        return False
+    except Exception as e:
+        print(f"[SYNC] push exception: {e}")
+        return False
+
+
+async def _sync_loop():
+    last_hash = None
+    print("[SYNC] Loop basladi")
+    while True:
+        try:
+            await asyncio.sleep(SYNC_INTERVAL_SEC)
+            if not DB_SYNC_PATH.exists():
+                continue
+            with open(DB_SYNC_PATH, 'rb') as f:
+                data = f.read()
+            cur_hash = _hashlib.md5(data).hexdigest()
+            if cur_hash == last_hash:
+                continue
+            if await _sync_push_once():
+                last_hash = cur_hash
+        except asyncio.CancelledError:
+            print("[SYNC] Loop durduruldu")
+            raise
+        except Exception as e:
+            print(f"[SYNC] Loop hata: {e}")
+            await asyncio.sleep(60)
+
+
+@app.post("/api/sync/db-receive")
+async def sync_db_receive(request: Request):
+    if not IS_REPLICA:
+        return {"status": "ignored", "reason": "not_replica"}
+    token = request.headers.get("X-Sync-Token", "")
+    if not SYNC_TOKEN or token != SYNC_TOKEN:
+        raise HTTPException(status_code=403, detail="Invalid sync token")
+    body = await request.body()
+    if len(body) < 1024:
+        raise HTTPException(status_code=400, detail="DB cok kucuk")
+    db_path = Path(__file__).resolve().parent / "bot_data.db"
+    try:
+        if db_path.exists():
+            shutil.copy2(str(db_path), str(db_path) + ".bak_sync_recv")
+    except Exception as e:
+        print(f"[SYNC-RECV] yedek uyari: {e}")
+    tmp = str(db_path) + ".sync_tmp"
+    try:
+        with open(tmp, 'wb') as f:
+            f.write(body)
+        os.replace(tmp, str(db_path))
+        print(f"[SYNC-RECV] DB guncellendi | {len(body)} byte")
+        return {"status": "ok", "size": len(body)}
+    except Exception as e:
+        try:
+            os.remove(tmp)
+        except Exception:
+            pass
+        raise HTTPException(status_code=500, detail=f"Yazma hatasi: {e}")
+

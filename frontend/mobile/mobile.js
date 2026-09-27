@@ -286,22 +286,96 @@ window.closePosition = async function() {
 window.toggleBot = async function() {
     const btn = document.getElementById('bot-toggle');
     btn.disabled = true;
+
     try {
-        const r = await fetch('/api/engine/toggle', { method: 'POST' });
-        if (r.ok) {
-            await fetchBotStatus();
+        // ⚡ 1) Mevcut durumu al
+        const statusRes = await fetch('/api/engine/status');
+        const status = await statusRes.json();
+        const isRunning = status.running && status.config && status.config.active;
+
+        // ⚡ 2) Ters yone cevir
+        const targetActive = !isRunning;
+
+        // ⚡ 3) Kapatiliyorsa acik pozisyon var mi kontrol et
+        if (!targetActive) {
+            const posRes = await fetch('/api/trade/active');
+            const positions = await posRes.json();
+            const count = Array.isArray(positions) ? positions.length : 0;
+
+            if (count > 0) {
+                const preview = positions.slice(0, 5).map(p => '  • ' + p.symbol + ' (' + p.trade_type + ')').join('\n');
+                const more = count > 5 ? '\n  ... ve ' + (count - 5) + ' tane daha' : '';
+                const msg =
+                    'Şu an ' + count + ' açık pozisyon var:\n\n' + preview + more +
+                    '\n\nBotu durdurunca:\n' +
+                    '  ✓ Yeni sinyal üretilmez\n' +
+                    '  ✓ Açık pozisyonlar KAPATILACAK\n' +
+                    '  ✓ TP/SL izlemesi durur\n\n' +
+                    'Devam edilsin mi?';
+
+                if (!confirm(msg)) {
+                    btn.disabled = false;
+                    return;
+                }
+            }
         }
+
+        // ⚡ 4) Doğru parametrelerle istek at
+        let url = '/api/engine/toggle?active=' + targetActive;
+        if (!targetActive) {
+            // Kapatirken pozisyonlari da kapat
+            url += '&force=true';
+
+            // ⚡ FORCE close-all: klasik + grid HER SEYI kapat
+            try {
+                const posRes2 = await fetch('/api/trade/active');
+                const pos2 = await posRes2.json();
+                if (Array.isArray(pos2) && pos2.length > 0) {
+                    const closeRes = await fetch('/api/trade/close-all-force', { method: 'POST' });
+                    const closeData = await closeRes.json();
+                    console.log('[CLOSE-ALL-FORCE]', closeData);
+                }
+            } catch(e) {
+                console.warn('Pozisyon kapatma hatasi:', e);
+            }
+        }
+
+        const r = await fetch(url, { method: 'POST' });
+        const data = await r.json();
+
+        // ⚡ 5) Backend "warning" dondurse (force olmadan)
+        if (data.status === 'warning') {
+            if (confirm(data.message + '\n\nZorla kapatılsın mı?')) {
+                await fetch('/api/engine/toggle?active=false&force=true', { method: 'POST' });
+            } else {
+                btn.disabled = false;
+                return;
+            }
+        }
+
+        // ⚡ 6) Durumu yenile
+        await fetchBotStatus();
+
     } catch(e) {
-        alert('Bağlantı hatası');
+        alert('Bağlantı hatası: ' + e.message);
     } finally {
         btn.disabled = false;
     }
 };
 
 // ---------- COLLAPSE ----------
+// ⚡ Default olarak collapsed olan listeleri senkronize et
 document.querySelectorAll('.collapse-btn').forEach(btn => {
+    const target = document.getElementById(btn.dataset.target);
+
+    // Baslangic durumunu butona yansit
+    if (target && target.classList.contains('collapsed')) {
+        btn.textContent = '▶';
+    } else if (target) {
+        btn.textContent = '▼';
+    }
+
     btn.addEventListener('click', () => {
-        const target = document.getElementById(btn.dataset.target);
         if (target) {
             target.classList.toggle('collapsed');
             btn.textContent = target.classList.contains('collapsed') ? '▶' : '▼';
@@ -350,10 +424,33 @@ let _pinTempFirst = '';
 let _pinFails = 0;
 
 // --- HASH (SHA-256) ---
+// Basit fallback hash (crypto.subtle yoksa)
+function simplePinHash(pin) {
+    let h = 0;
+    const s = 'broker_salt_' + pin;
+    for (let i = 0; i < s.length; i++) {
+        h = ((h << 5) - h) + s.charCodeAt(i);
+        h |= 0;
+    }
+    return 'sh_' + Math.abs(h).toString(16).padStart(8, '0');
+}
+
 async function hashPin(pin) {
-    const data = new TextEncoder().encode('broker_salt_' + pin);
-    const hash = await crypto.subtle.digest('SHA-256', data);
-    return Array.from(new Uint8Array(hash)).map(b => b.toString(16).padStart(2,'0')).join('');
+    if (typeof crypto !== 'undefined' &&
+        crypto.subtle &&
+        typeof crypto.subtle.digest === 'function') {
+        try {
+            const data = new TextEncoder().encode('broker_salt_' + pin);
+            const hash = await crypto.subtle.digest('SHA-256', data);
+            return Array.from(new Uint8Array(hash))
+                .map(b => b.toString(16).padStart(2,'0'))
+                .join('');
+        } catch(e) {
+            console.warn('[PIN] crypto.subtle hata, fallback:', e);
+        }
+    }
+    console.log('[PIN] crypto.subtle yok, basit hash kullaniliyor');
+    return simplePinHash(pin);
 }
 
 // --- STORAGE ---
@@ -591,3 +688,376 @@ window.resetMobilePin = function() {
     console.log('[PIN] Sifirlandi - sayfayi yenile');
 };
 
+
+
+/* MO-MANUAL-ORDER v1 */
+// =============================================================
+// Manuel Emir - Mobile
+// =============================================================
+(function() {
+    'use strict';
+
+    var _moState = {
+        side: 'BUY',
+        order_mode: 'market'
+    };
+
+    window.showMobileToast = function(message, type) {
+        type = type || 'info';
+        var container = document.getElementById('mobile-toast-container');
+        if (!container) return;
+
+        var toast = document.createElement('div');
+        toast.className = 'mobile-toast ' + type;
+        toast.textContent = message;
+        container.appendChild(toast);
+
+        requestAnimationFrame(function() {
+            toast.classList.add('show');
+        });
+
+        setTimeout(function() {
+            toast.classList.remove('show');
+            setTimeout(function() { toast.remove(); }, 300);
+        }, 4000);
+    };
+
+    // ⚡ Sembol listesi cache
+    window._moSymbolsCache = null;
+    window._moFilteredSymbols = [];
+    window._moSelectedSymbol = '';
+
+    window._loadManualSymbols = async function() {
+        var input = document.getElementById('mo-symbol');
+        if (!input) return;
+
+        // Cache kontrolu (5 dk)
+        var now = Date.now();
+        if (window._moSymbolsCache && (now - window._moSymbolsCache.ts) < 300000) {
+            window._renderSymbolList(window._moSymbolsCache.symbols);
+            return;
+        }
+
+        try {
+            // ⚡ Bot'un taranan TUM sembolleri
+            var res = await fetch('/api/symbols/list');
+            var data = await res.json();
+            var symbols = (data && data.symbols) ? data.symbols : [];
+
+            // Bos ise engine/status fallback
+            if (!symbols || symbols.length === 0) {
+                try {
+                    var res2 = await fetch('/api/engine/status');
+                    var st = await res2.json();
+                    symbols = (st && st.symbols) ? st.symbols : [];
+                } catch(e2) {}
+            }
+
+            // Hala bos ise hardcoded
+            if (!symbols || symbols.length === 0) {
+                symbols = ['BTCUSDT', 'ETHUSDT', 'SOLUSDT', 'BNBUSDT', 'XRPUSDT',
+                           'DOGEUSDT', 'ADAUSDT', 'AVAXUSDT', 'LINKUSDT', 'MATICUSDT'];
+            }
+
+            symbols = symbols.filter(function(s) {
+                return s && typeof s === 'string' && s.endsWith('USDT');
+            });
+            symbols = Array.from(new Set(symbols)).sort();
+
+            window._moSymbolsCache = { ts: now, symbols: symbols };
+            window._renderSymbolList(symbols);
+
+            console.log('[MO-SEARCH] ' + symbols.length + ' sembol yuklendi');
+        } catch(e) {
+            console.error('[MO-SEARCH] Hata:', e);
+            document.getElementById('mo-symbol-list').innerHTML =
+                '<div class="mo-symbol-empty">Yukleme hatasi</div>';
+        }
+    };
+
+    // ⚡ Filter + render
+    window._filterSymbols = function(query) {
+        var all = (window._moSymbolsCache && window._moSymbolsCache.symbols) || [];
+        var q = String(query || '').trim().toUpperCase();
+
+        var filtered = all;
+        if (q.length > 0) {
+            filtered = all.filter(function(s) {
+                return s.indexOf(q) >= 0;
+            });
+        }
+
+        // Max 30 goster
+        filtered = filtered.slice(0, 30);
+        window._moFilteredSymbols = filtered;
+        return filtered;
+    };
+
+    window._renderSymbolList = function(symbols) {
+        var list = document.getElementById('mo-symbol-list');
+        if (!list) return;
+
+        var q = (document.getElementById('mo-symbol') || {}).value || '';
+        q = q.trim().toUpperCase();
+
+        var items = window._filterSymbols(q);
+
+        if (items.length === 0) {
+            list.innerHTML = '<div class="mo-symbol-empty">Sonuc yok: ' + q + '</div>';
+            list.style.display = 'block';
+            return;
+        }
+
+        var html = '';
+        items.forEach(function(s) {
+            // Query'yi vurgula
+            var display = s;
+            if (q.length > 0 && s.indexOf(q) >= 0) {
+                var idx = s.indexOf(q);
+                display = s.substring(0, idx) +
+                          '<span class="match">' + s.substring(idx, idx + q.length) + '</span>' +
+                          s.substring(idx + q.length);
+            }
+            html += '<div class="mo-symbol-item" data-sym="' + s + '">' + display + '</div>';
+        });
+        list.innerHTML = html;
+        list.style.display = 'block';
+
+        // Tiklama event
+        list.querySelectorAll('.mo-symbol-item').forEach(function(el) {
+            el.addEventListener('click', function(e) {
+                e.stopPropagation();
+                window._selectSymbol(el.dataset.sym);
+            });
+        });
+    };
+
+    window._selectSymbol = function(sym) {
+        var input = document.getElementById('mo-symbol');
+        var hidden = document.getElementById('mo-symbol-value');
+        var list = document.getElementById('mo-symbol-list');
+        if (input) input.value = sym;
+        if (hidden) hidden.value = sym;
+        window._moSelectedSymbol = sym;
+        if (list) list.style.display = 'none';
+        window.showMobileToast(sym + ' secildi', 'info');
+    };
+
+    window._getSelectedSymbol = function() {
+        // Once hidden value
+        var hidden = document.getElementById('mo-symbol-value');
+        if (hidden && hidden.value) return hidden.value;
+
+        // Input'a yazilmissa ve eslesme varsa
+        var input = document.getElementById('mo-symbol');
+        var raw = (input || {}).value || '';
+        raw = raw.trim().toUpperCase();
+        if (!raw) return '';
+
+        var all = (window._moSymbolsCache && window._moSymbolsCache.symbols) || [];
+        // Tam eslesme
+        if (all.indexOf(raw) >= 0) return raw;
+        // "BTC" -> "BTCUSDT" varsa
+        if (all.indexOf(raw + 'USDT') >= 0) return raw + 'USDT';
+
+        return raw;
+    };
+
+    // ⚡ Input event (arama)
+    document.addEventListener('input', function(e) {
+        if (e.target && e.target.id === 'mo-symbol') {
+            var list = document.getElementById('mo-symbol-list');
+            if (list) {
+                // Hidden value sifirla
+                var hidden = document.getElementById('mo-symbol-value');
+                if (hidden) hidden.value = '';
+                window._renderSymbolList();
+            }
+        }
+    });
+
+    // ⚡ Focus event (liste ac)
+    document.addEventListener('focusin', function(e) {
+        if (e.target && e.target.id === 'mo-symbol') {
+            if (!window._moSymbolsCache) {
+                window._loadManualSymbols();
+            } else {
+                window._renderSymbolList();
+            }
+        }
+    });
+
+    // ⚡ Blur event (biraz gecikmeli kapat, tiklama kacmasin)
+    document.addEventListener('focusout', function(e) {
+        if (e.target && e.target.id === 'mo-symbol') {
+            setTimeout(function() {
+                var list = document.getElementById('mo-symbol-list');
+                if (list) list.style.display = 'none';
+            }, 200);
+        }
+    });
+
+
+
+    window.openManualOrderModal = function() {
+        var modal = document.getElementById('mo-modal');
+        if (!modal) return;
+
+        _moState.side = 'BUY';
+        _moState.order_mode = 'market';
+        window.setManualSide('BUY');
+        window.setManualOrderMode('market');
+
+        var lpEl = document.getElementById('mo-limit-price');
+        if (lpEl) { lpEl.disabled = true; lpEl.value = ''; }
+
+        // Sembol input temizle
+        var symInput = document.getElementById('mo-symbol');
+        var symHidden = document.getElementById('mo-symbol-value');
+        if (symInput) symInput.value = '';
+        if (symHidden) symHidden.value = '';
+
+        window.updateManualPreview();
+        window._loadManualSymbols();
+
+        modal.style.display = 'flex';
+    };
+
+    window.closeManualOrderModal = function() {
+        var modal = document.getElementById('mo-modal');
+        if (modal) modal.style.display = 'none';
+    };
+
+    window.setManualSide = function(side) {
+        _moState.side = side;
+        document.querySelectorAll('#mo-modal .mo-toggle-btn[data-side]').forEach(function(b) {
+            if (b.dataset.side === side) b.classList.add('active');
+            else b.classList.remove('active');
+        });
+    };
+
+    window.setManualOrderMode = function(mode) {
+        _moState.order_mode = mode;
+        document.querySelectorAll('#mo-modal .mo-toggle-btn[data-mode]').forEach(function(b) {
+            if (b.dataset.mode === mode) b.classList.add('active');
+            else b.classList.remove('active');
+        });
+
+        var lpEl = document.getElementById('mo-limit-price');
+        if (lpEl) {
+            if (mode === 'limit') {
+                lpEl.disabled = false;
+                lpEl.placeholder = 'Fiyat girin';
+            } else {
+                lpEl.disabled = true;
+                lpEl.value = '';
+                lpEl.placeholder = '—';
+            }
+        }
+    };
+
+    window.updateManualPreview = function() {
+        var baseOrder = parseFloat((document.getElementById('mo-base-order') || {}).value) || 0;
+        var leverage = parseInt((document.getElementById('mo-leverage') || {}).value) || 1;
+
+        var margin = leverage > 0 ? baseOrder / leverage : baseOrder;
+        var commission = baseOrder * 0.0004;
+
+        var fmt = function(v) { return v.toFixed(2) + ' USDT'; };
+
+        var elM = document.getElementById('mo-preview-margin');
+        var elC = document.getElementById('mo-preview-commission');
+        var elS = document.getElementById('mo-preview-size');
+
+        if (elM) elM.textContent = fmt(margin);
+        if (elC) elC.textContent = fmt(commission);
+        if (elS) elS.textContent = fmt(baseOrder);
+    };
+
+    window.submitManualOrder = async function() {
+        var btn = document.getElementById('mo-submit-btn');
+        if (btn) { btn.disabled = true; btn.textContent = 'GONDERILIYOR...'; }
+
+        try {
+            var symbol = window._getSelectedSymbol();
+            symbol = String(symbol || '').trim().toUpperCase().replace('.P', '');
+
+            if (!symbol) {
+                window.showMobileToast('Sembol sec', 'error');
+                return;
+            }
+
+            var payload = {
+                symbol: symbol,
+                side: _moState.side,
+                order_mode: _moState.order_mode,
+                base_order: parseFloat((document.getElementById('mo-base-order') || {}).value) || 0,
+                leverage: parseInt((document.getElementById('mo-leverage') || {}).value) || 1,
+                limit_price: parseFloat((document.getElementById('mo-limit-price') || {}).value) || 0,
+                take_profit: parseFloat((document.getElementById('mo-tp') || {}).value) || 0,
+                trailingSteps: (document.getElementById('mo-ttp') || {}).value || '',
+                stop_loss: parseFloat((document.getElementById('mo-sl') || {}).value) || 0,
+                partial_tp_enabled: (document.getElementById('mo-pt-enabled') || {}).checked || false,
+                partial_tp_percent: parseFloat((document.getElementById('mo-pt-percent') || {}).value) || 50,
+            };
+
+            if (payload.base_order <= 0) {
+                window.showMobileToast('Miktar > 0 olmali', 'error');
+                return;
+            }
+
+            var _sideLabel = payload.side === 'BUY' ? 'LONG' : 'SHORT';
+            var _msg = 'Sembol: ' + payload.symbol + '\n' +
+                       'Yon: ' + _sideLabel + '\n' +
+                       'Tip: ' + payload.order_mode.toUpperCase() + '\n' +
+                       'Miktar: ' + payload.base_order + ' USDT\n' +
+                       'Kaldırac: ' + payload.leverage + 'x\n\n' +
+                       'Onaylıyor musun?';
+            if (!confirm(_msg)) return;
+
+            var res = await fetch('/api/trade/manual', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify(payload)
+            });
+            var data = await res.json();
+
+            if (data.status === 'duplicate_warning') {
+                var _dupMsg = data.message + '\n\n' +
+                    'Ayni sembolde AYRI pozisyon olarak acilsin mi?';
+                if (!confirm(_dupMsg)) return;
+
+                payload.confirm_overwrite = true;
+                var res2 = await fetch('/api/trade/manual', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify(payload)
+                });
+                data = await res2.json();
+            }
+
+            if (data.status === 'success') {
+                window.showMobileToast(
+                    'Emir acildi: ' + data.symbol + ' ' + data.side + ' @ ' + (data.entry_price || '-'),
+                    'success'
+                );
+                window.closeManualOrderModal();
+                setTimeout(function() {
+                    if (window.refreshAll) window.refreshAll();
+                }, 500);
+            } else if (res.status === 403) {
+                window.showMobileToast('Bu ortam read-only (cloud). Manuel emir gonderilemez.', 'warning');
+            } else {
+                window.showMobileToast(data.message || 'Bilinmeyen hata', 'error');
+            }
+
+        } catch(e) {
+            console.error('[MO-MANUAL] Hata:', e);
+            window.showMobileToast('Baglanti hatasi: ' + e.message, 'error');
+        } finally {
+            if (btn) { btn.disabled = false; btn.textContent = 'GONDER'; }
+        }
+    };
+
+    console.log('[MO-MANUAL] Hazir');
+})();
