@@ -73,6 +73,11 @@ class OrderManager:
         """
         İlk pozisyonu açar. DCA kademeleri position_manager tarafından yönetilir.
         """
+        # FUNDING_ARBITRAGE: hizli giris zorunlu (limit emri funding firsatini kacirir)
+        if strategy_name == "FUNDING_ARBITRAGE":
+            use_limit_order = False
+            limit_timeout_sec = 0
+
         # ⚡ SON KONTROL: Aynı sembolde zaten pozisyon var mı? (race condition son savunma)
         conn = get_db_connection()
         existing = conn.execute(
@@ -115,9 +120,10 @@ class OrderManager:
                 mode_label = "MARKET"
                 print(f"[TEST MODU] {self.symbol} [{strat}] {side} MARKET | Fiyat: {entry_price} | Adet: {qty} | Kaldıraç: {leverage}x | Marjin: {margin:.4f} | Toplam: {base_amount_usdt:.2f} USDT")
 
+            # F38: initial_price = entry_price (current_price degil - spike koruma)
             self._save_to_db(
                 self.symbol, side, base_amount_usdt, entry_price, 0, strat,
-                current_price, base_amount_usdt, leverage,
+                entry_price, base_amount_usdt, leverage,
                 pt_enabled, pt_percent, pt_keep_dca, entry_is_maker
             )
             return {

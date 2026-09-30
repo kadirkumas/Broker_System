@@ -63,6 +63,17 @@ async function fetchTrades() {
     }
 }
 
+async function fetchClosed() {
+    try {
+        const r = await fetch('/api/trade/history?limit=15');
+        const d = await r.json();
+        renderClosed(Array.isArray(d) ? d : []);
+    } catch(e) {
+        const el = document.getElementById('closed-list');
+        if (el) el.innerHTML = '<div class="empty">Bağlantı hatası</div>';
+    }
+}
+
 async function fetchSignals() {
     try {
         const r = await fetch('/api/engine/recent-signals?limit=10');
@@ -186,6 +197,78 @@ function renderPositions(trades) {
             </div>
         `;
     }).join('');
+}
+
+// ---------- RENDER: KAPANAN ISLEMLER ----------
+function renderClosed(trades) {
+    const list = document.getElementById('closed-list');
+    const countEl = document.getElementById('closed-count');
+    if (!list) return;
+
+    // Sayac
+    if (countEl) countEl.textContent = trades.length;
+
+    if (!trades || trades.length === 0) {
+        list.innerHTML = '<div class="empty">Kapanan işlem yok</div>';
+        return;
+    }
+
+    // exit_time DESC (yeni -> eski)
+    trades = trades.slice().sort((a, b) => (b.exit_time || 0) - (a.exit_time || 0));
+
+    list.innerHTML = trades.map(t => {
+        const sym = (t.symbol || '').replace('.P', '');
+        const isLong = t.trade_type === 'BUY';
+        const dir = isLong ? 'LONG' : 'SHORT';
+        const dirClass = isLong ? 'long' : 'short';
+        const pnl = parseFloat(t.pnl_amount) || 0;
+        const pnlPct = parseFloat(t.pnl_pct) || 0;
+        const isProfit = pnl >= 0;
+
+        const pnlClass = isProfit ? 'green' : 'red';
+        const pnlTxt = (pnl >= 0 ? '+' : '') + fmtNum(pnl, 2) + ' $';
+        const pctTxt = (pnlPct >= 0 ? '+' : '') + fmtNum(pnlPct, 2) + '%';
+
+        // Sebep kısalt
+        let reason = (t.close_reason || '').toUpperCase();
+        let shortReason = '—';
+        if (reason.includes('AI-TTP') || reason.includes('AI TTP') || reason.includes('TRAILING')) shortReason = 'TTP';
+        else if (reason.includes('PARTIAL')) shortReason = 'PT';
+        else if (reason.includes('STOP')) shortReason = 'SL';
+        else if (reason.includes('TAKE')) shortReason = 'TP';
+        else if (reason.includes('DELIST')) shortReason = 'DEL';
+
+        const durationStr = _fmtDuration(t.entry_time, t.exit_time);
+
+        return `
+            <div class="list-item ${dirClass}" onclick="openClosedModal('${t.id}')">
+                <div class="li-left">
+                    <div class="li-sym">${sym}</div>
+                    <div class="li-meta">
+                        <span>${dir}</span>
+                        <span>${shortReason}</span>
+                        <span>${durationStr}</span>
+                    </div>
+                </div>
+                <div class="li-right">
+                    <div class="li-pnl ${pnlClass}">${pnlTxt}</div>
+                    <div class="li-sub">${pctTxt}</div>
+                </div>
+            </div>
+        `;
+    }).join('');
+}
+
+// Sure formatlama (g/s/dk)
+function _fmtDuration(entryTs, exitTs) {
+    if (!entryTs || !exitTs) return '—';
+    const sec = Math.max(0, exitTs - entryTs);
+    const d = Math.floor(sec / 86400);
+    const h = Math.floor((sec % 86400) / 3600);
+    const m = Math.floor((sec % 3600) / 60);
+    if (d > 0) return d + 'g ' + h + 's';
+    if (h > 0) return h + 's ' + m + 'dk';
+    return m + 'dk';
 }
 
 // ---------- RENDER: SİNYALLER ----------
@@ -389,6 +472,7 @@ async function refreshAll() {
         fetchWallet(),
         fetchTrades(),
         fetchDaily(),
+        fetchClosed(),
         fetchSignals(),
         fetchBotStatus(),
     ]);
@@ -406,8 +490,8 @@ document.addEventListener('DOMContentLoaded', () => {
     // İlk yükleme
     refreshAll();
 
-    // 8 saniyede bir otomatik güncelle
-    setInterval(refreshAll, 8000);
+    // 15 saniyede bir otomatik güncelle (F19: rate limit icin yavaslatildi)
+    setInterval(refreshAll, 15000);
 });
 
 // ============================================================
@@ -1060,4 +1144,305 @@ window.resetMobilePin = function() {
     };
 
     console.log('[MO-MANUAL] Hazir');
+})();
+
+
+/* ============================================================
+   F50 - MOBILE TAKVIM
+   ============================================================ */
+(function() {
+    'use strict';
+
+    var _calData = {};
+    var _calMonth = null;
+
+    function trNow() {
+        var d = new Date();
+        return new Date(d.getTime() + 3 * 60 * 60 * 1000);
+    }
+
+    function pad(n) { return String(n).padStart(2, '0'); }
+
+    function loadCalData() {
+        return fetch('/api/stats/daily?days=365')
+            .then(function(r) { return r.json(); })
+            .then(function(arr) {
+                _calData = {};
+                if (Array.isArray(arr)) {
+                    arr.forEach(function(row) {
+                        _calData[row.date] = {
+                            trades: row.trades || 0,
+                            net_pnl: row.net_pnl || 0,
+                            wins: row.wins || 0,
+                            losses: row.losses || 0,
+                        };
+                    });
+                }
+            })
+            .catch(function(e) {
+                console.warn('[CAL] Veri hatasi:', e);
+            });
+    }
+
+    function renderCal() {
+        if (!_calMonth) _calMonth = trNow();
+
+        var y = _calMonth.getUTCFullYear();
+        var m = _calMonth.getUTCMonth();
+
+        var months = ['Ocak','Şubat','Mart','Nisan','Mayıs','Haziran',
+                      'Temmuz','Ağustos','Eylül','Ekim','Kasım','Aralık'];
+
+        var titleEl = document.getElementById('cal-title');
+        if (titleEl) titleEl.textContent = months[m] + ' ' + y;
+
+        var firstDay = new Date(Date.UTC(y, m, 1));
+        var lastDay = new Date(Date.UTC(y, m + 1, 0));
+        var totalDays = lastDay.getUTCDate();
+
+        // Pzt = 0
+        var startOffset = firstDay.getUTCDay() - 1;
+        if (startOffset < 0) startOffset = 6;
+
+        var tr = trNow();
+        var todayKey = tr.getUTCFullYear() + '-' + pad(tr.getUTCMonth() + 1) + '-' + pad(tr.getUTCDate());
+
+        var grid = document.getElementById('cal-grid');
+        if (!grid) return;
+        grid.innerHTML = '';
+
+        // Bos gunler
+        for (var i = 0; i < startOffset; i++) {
+            var e = document.createElement('div');
+            e.className = 'cal-day cal-empty';
+            grid.appendChild(e);
+        }
+
+        var monthTotal = 0, monthTrades = 0, monthWins = 0, monthLosses = 0;
+
+        for (var d = 1; d <= totalDays; d++) {
+            var dateKey = y + '-' + pad(m + 1) + '-' + pad(d);
+            var dayData = _calData[dateKey] || null;
+            var el = document.createElement('div');
+            el.className = 'cal-day';
+
+            if (dateKey === todayKey) el.classList.add('cal-today');
+
+            var pnlClass = 'empty';
+            var pnlText = '—';
+            var countText = '';
+
+            if (dayData && dayData.trades > 0) {
+                var pnl = dayData.net_pnl;
+                if (pnl >= 0) {
+                    el.classList.add('cal-profit');
+                    pnlClass = 'profit';
+                } else {
+                    el.classList.add('cal-loss');
+                    pnlClass = 'loss';
+                }
+                var s = pnl >= 0 ? '+' : '';
+                pnlText = s + pnl.toFixed(1);
+                countText = dayData.trades + ' işl.';
+
+                monthTotal += pnl;
+                monthTrades += dayData.trades;
+                if (pnl >= 0) monthWins++; else monthLosses++;
+            }
+
+            el.innerHTML =
+                '<div class="cal-num">' + d + '</div>' +
+                '<div class="cal-pnl ' + pnlClass + '">' + pnlText + '</div>' +
+                '<div class="cal-count">' + countText + '</div>';
+
+            grid.appendChild(el);
+        }
+
+        // Ay toplami
+        var totEl = document.getElementById('cal-month-total');
+        if (totEl) {
+            var st = monthTotal >= 0 ? '+' : '';
+            totEl.textContent = st + monthTotal.toFixed(2) + ' USDT';
+            totEl.style.color = monthTotal >= 0 ? '#0ECB81' : '#F6465D';
+        }
+
+        var trEl = document.getElementById('cal-sum-trades');
+        var wEl = document.getElementById('cal-sum-wins');
+        var lEl = document.getElementById('cal-sum-losses');
+        if (trEl) trEl.textContent = monthTrades;
+        if (wEl) wEl.textContent = monthWins;
+        if (lEl) lEl.textContent = monthLosses;
+    }
+
+    window.openMobileCalendar = function() {
+        _calMonth = trNow();
+        var modal = document.getElementById('cal-modal');
+        if (modal) modal.style.display = 'flex';
+        loadCalData().then(renderCal);
+    };
+
+    window.closeMobileCalendar = function() {
+        var modal = document.getElementById('cal-modal');
+        if (modal) modal.style.display = 'none';
+    };
+
+    window.calPrevMonth = function() {
+        if (!_calMonth) _calMonth = trNow();
+        _calMonth.setUTCMonth(_calMonth.getUTCMonth() - 1);
+        renderCal();
+    };
+
+    window.calNextMonth = function() {
+        if (!_calMonth) _calMonth = trNow();
+        _calMonth.setUTCMonth(_calMonth.getUTCMonth() + 1);
+        renderCal();
+    };
+
+    window.calGoToday = function() {
+        _calMonth = trNow();
+        renderCal();
+    };
+
+    // Modal disina tiklayinca kapat
+    document.addEventListener('click', function(e) {
+        var modal = document.getElementById('cal-modal');
+        if (modal && e.target === modal) {
+            window.closeMobileCalendar();
+        }
+    });
+
+    console.log('[F50] Mobile takvim hazir');
+})();
+
+
+/* F61 - Risk Siren (Mobile) */
+(function() {
+    'use strict';
+    var OVERLAY_ID = 'mobile-siren-overlay';
+    var DISMISS_KEY = 'mobileRiskSirenDismissUntil';
+    var CHECK_INTERVAL = 15000;
+    var DISMISS_MS = 3 * 60 * 1000;
+    var _last = null;
+    var _vibrateInterval = null;
+    var _audioCtx = null;
+
+    function shouldDismiss() {
+        try { return Date.now() < parseInt(localStorage.getItem(DISMISS_KEY) || '0'); }
+        catch (e) { return false; }
+    }
+    function dismiss() {
+        try { localStorage.setItem(DISMISS_KEY, String(Date.now() + DISMISS_MS)); } catch (e) {}
+    }
+
+    function playSirenTone() {
+        try {
+            if (!_audioCtx) _audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+            if (_audioCtx.state === 'suspended') _audioCtx.resume();
+            var now = _audioCtx.currentTime;
+            var osc = _audioCtx.createOscillator();
+            var gain = _audioCtx.createGain();
+            osc.connect(gain); gain.connect(_audioCtx.destination);
+            osc.type = 'sawtooth';
+            osc.frequency.setValueAtTime(800, now);
+            osc.frequency.linearRampToValueAtTime(400, now + 0.25);
+            osc.frequency.linearRampToValueAtTime(800, now + 0.5);
+            osc.frequency.linearRampToValueAtTime(400, now + 0.75);
+            gain.gain.setValueAtTime(0.1, now);
+            gain.gain.linearRampToValueAtTime(0.001, now + 0.85);
+            osc.start(now); osc.stop(now + 0.9);
+        } catch (e) {}
+    }
+
+    function startVibrate() {
+        if (!navigator.vibrate) return;
+        var pattern = [200, 100, 200, 100, 400];
+        try {
+            navigator.vibrate(pattern);
+            _vibrateInterval = setInterval(function() {
+                try { navigator.vibrate(pattern); } catch (e) {}
+            }, 1500);
+        } catch (e) {}
+    }
+
+    function stopVibrate() {
+        if (_vibrateInterval) { clearInterval(_vibrateInterval); _vibrateInterval = null; }
+        if (navigator.vibrate) try { navigator.vibrate(0); } catch (e) {}
+    }
+
+    function showOverlay(s) {
+        var existing = document.getElementById(OVERLAY_ID);
+        if (existing) { updateStats(existing, s); return; }
+        var o = document.createElement('div');
+        o.id = OVERLAY_ID;
+        o.className = 'risk-siren-overlay ambulance';
+        o.innerHTML = '<div class="siren-box">' +
+            '<div class="siren-emoji">🚨</div>' +
+            '<div class="siren-h1">RİSK LİMİTİ AŞILDI</div>' +
+            '<div class="siren-h2">Yeni pozisyon açılmıyor.<br>Pozisyon azaltın veya limiti yükseltin.</div>' +
+            '<div class="siren-metrics">' +
+                '<div class="siren-metric"><div class="siren-metric-lbl">RİSK</div><div class="siren-metric-val danger" id="ms-risk">--%</div></div>' +
+                '<div class="siren-metric"><div class="siren-metric-lbl">LİMİT</div><div class="siren-metric-val" id="ms-limit">60%</div></div>' +
+                '<div class="siren-metric"><div class="siren-metric-lbl">KULLANILAN</div><div class="siren-metric-val" id="ms-used">--</div></div>' +
+                '<div class="siren-metric"><div class="siren-metric-lbl">BAKİYE</div><div class="siren-metric-val" id="ms-equity">--</div></div>' +
+            '</div>' +
+            '<button class="siren-btn" onclick="window._dismissMobileSiren()">3 DAKİKA SUSTUR</button>' +
+            '<div class="siren-note">Susturulsa bile bot yeni poz AÇMAZ</div>' +
+        '</div>';
+        document.body.appendChild(o);
+        updateStats(o, s);
+        startVibrate();
+        playSirenTone();
+    }
+
+    function updateStats(o, s) {
+        var r = o.querySelector('#ms-risk'), l = o.querySelector('#ms-limit'),
+            u = o.querySelector('#ms-used'), e = o.querySelector('#ms-equity');
+        if (r) r.textContent = s.risk_pct.toFixed(1) + '%';
+        if (l) l.textContent = s.max_ratio.toFixed(0) + '%';
+        if (u) u.textContent = s.used_margin.toFixed(0) + ' $';
+        if (e) e.textContent = s.equity.toFixed(0) + ' $';
+    }
+
+    function hideOverlay() {
+        var o = document.getElementById(OVERLAY_ID);
+        if (o) o.remove();
+        stopVibrate();
+    }
+
+    document.addEventListener('touchstart', function initAudio() {
+        if (!_audioCtx) {
+            try {
+                _audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+                if (_audioCtx.state === 'suspended') _audioCtx.resume();
+            } catch (e) {}
+        }
+        document.removeEventListener('touchstart', initAudio);
+    }, { once: true });
+
+    window._dismissMobileSiren = function() {
+        dismiss();
+        hideOverlay();
+        window.showMobileToast && window.showMobileToast('🚨 Siren 3 dk susturuldu', 'warning');
+    };
+
+    function checkRisk() {
+        fetch('/api/risk/status')
+            .then(function(r) { return r.json(); })
+            .then(function(s) {
+                _last = s;
+                if (s.is_over_limit) {
+                    if (shouldDismiss()) return;
+                    showOverlay(s);
+                } else {
+                    hideOverlay();
+                }
+            })
+            .catch(function(e) { console.warn('[F61] hata:', e.message); });
+    }
+
+    setTimeout(checkRisk, 4000);
+    setInterval(checkRisk, CHECK_INTERVAL);
+    window._mobileRiskCheck = checkRisk;
+    window._mobileRiskStatus = function() { return _last; };
+    console.log('[F61] Mobile siren aktif');
 })();

@@ -111,7 +111,10 @@
 
         <!-- BUGÜN ÖZET -->
         <section class="card">
-            <div class="lbl">📉 BUGÜN</div>
+            <div class="row-between" style="margin-bottom:8px;">
+                <div class="lbl" style="margin-bottom:0;">📉 BUGÜN</div>
+                <button class="cal-icon-btn-sm" onclick="openMobileCalendar()" title="Kâr/Zarar Takvimi">📅</button>
+            </div>
             <div class="row-3col">
                 <div>
                     <div class="lbl-s">İŞLEM</div>
@@ -141,6 +144,17 @@
 
         
 
+        <!-- KAPATILAN ISLEMLER -->
+        <section class="card">
+            <div class="row-between">
+                <div class="lbl">📁 KAPANAN İŞLEMLER (<span id="closed-count">0</span>)</div>
+                <button class="collapse-btn" data-target="closed-list">▶</button>
+            </div>
+            <div class="list collapsed" id="closed-list">
+                <div class="empty">Yükleniyor...</div>
+            </div>
+        </section>
+
         <!-- SON SİNYALLER -->
         <section class="card">
             <div class="row-between">
@@ -164,6 +178,51 @@
         <footer class="footer">
             <span id="last-update">--</span>
         </footer>
+    </div>
+
+    <!-- TAKVIM MODAL -->
+    <div id="cal-modal" class="mobile-modal" style="display:none;">
+        <div class="mobile-modal-content" style="max-height: 92vh;">
+            <div class="mobile-modal-hdr">
+                <div style="display:flex; align-items:center; gap:8px;">
+                    <span style="font-size:18px;">📅</span>
+                    <h3>Kâr / Zarar Takvimi</h3>
+                </div>
+                <button class="mobile-modal-close" onclick="closeMobileCalendar()">✕</button>
+            </div>
+
+            <div class="cal-header">
+                <button class="cal-nav" onclick="calPrevMonth()">◀</button>
+                <div class="cal-title" id="cal-title">--</div>
+                <button class="cal-nav" onclick="calNextMonth()">▶</button>
+            </div>
+
+            <div style="padding: 0 12px 6px;">
+                <div class="cal-month-total" id="cal-month-total">--</div>
+            </div>
+
+            <div class="cal-body">
+                <div class="cal-weekdays">
+                    <div>Pzt</div>
+                    <div>Sal</div>
+                    <div>Çar</div>
+                    <div>Per</div>
+                    <div>Cum</div>
+                    <div>Cmt</div>
+                    <div>Paz</div>
+                </div>
+                <div class="cal-grid" id="cal-grid"></div>
+            </div>
+
+            <div class="cal-footer">
+                <div class="cal-summary">
+                    <span>İşlem: <b id="cal-sum-trades">0</b></span>
+                    <span>Kârlı: <b id="cal-sum-wins" style="color:#0ECB81;">0</b></span>
+                    <span>Zararlı: <b id="cal-sum-losses" style="color:#F6465D;">0</b></span>
+                </div>
+                <button class="cal-today-btn" onclick="calGoToday()">Bugüne Dön</button>
+            </div>
+        </div>
     </div>
 
     <!-- POZİSYON DETAY MODAL -->

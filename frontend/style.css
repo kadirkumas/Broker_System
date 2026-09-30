@@ -5536,3 +5536,173 @@ body[data-measure-ready] .tvchart-container {
 }
 
 /* [/MO-CLEAR-BTN] */
+
+
+/* ============================================================
+   F43 - Alt Panel Fullscreen
+   ============================================================ */
+#bottom-trade-panel.fullscreen {
+    position: fixed !important;
+    top: 0 !important;
+    left: 0 !important;
+    right: 0 !important;
+    bottom: 0 !important;
+    height: 100vh !important;
+    width: 100vw !important;
+    z-index: 99998 !important;
+    border-radius: 0 !important;
+    border-top: none !important;
+    animation: f43-slide 0.18s ease;
+}
+
+@keyframes f43-slide {
+    from { opacity: 0.4; transform: scale(0.98); }
+    to   { opacity: 1; transform: scale(1); }
+}
+
+#bottom-trade-panel.fullscreen .btp-content {
+    height: calc(100vh - 60px) !important;
+    max-height: none !important;
+    overflow-y: auto !important;
+}
+
+#bottom-trade-panel.fullscreen .btp-table {
+    font-size: 13px !important;
+}
+
+#bottom-trade-panel.fullscreen .btp-table th {
+    font-size: 12px !important;
+    padding: 10px 14px !important;
+    position: sticky !important;
+    top: 0 !important;
+    z-index: 10 !important;
+    background: #181a20 !important;
+}
+
+#bottom-trade-panel.fullscreen .btp-table td {
+    font-size: 12.5px !important;
+    padding: 9px 14px !important;
+}
+
+#bottom-trade-panel.fullscreen .btp-header {
+    padding: 0 24px !important;
+    height: 56px !important;
+    background: #181a20 !important;
+    border-bottom: 2px solid #2b3139 !important;
+}
+
+/* Buton aktifken vurgulanmasi */
+#btp-fullscreen-btn.active {
+    background: rgba(41, 98, 255, 0.2) !important;
+    border-color: #2962ff !important;
+    color: #79a0ff !important;
+}
+
+/* Fullscreen iken body kaydirmasin */
+body.trade-panel-fullscreen {
+    overflow: hidden !important;
+}
+
+
+/* ============================================================
+   F44 - Trade Only Mode (chart gizle, sidebar korunur)
+   ============================================================ */
+
+/* Chart alani trade-only iken: header + grid gizle, trade panel buyu */
+.chart-section.trade-only .chart-header {
+    display: none !important;
+}
+
+.chart-section.trade-only .charts-grid {
+    display: none !important;
+}
+
+.chart-section.trade-only #bottom-trade-panel {
+    flex: 1 1 auto !important;
+    height: auto !important;
+    max-height: none !important;
+    border-top: none !important;
+    background: #131722;
+}
+
+.chart-section.trade-only .btp-content {
+    height: auto !important;
+    max-height: none !important;
+    overflow-y: auto !important;
+    flex: 1 1 auto !important;
+}
+
+.chart-section.trade-only .btp-header {
+    padding: 0 20px !important;
+    height: 52px !important;
+    border-bottom: 2px solid #2b3139 !important;
+    background: #181a20 !important;
+}
+
+/* Tablolar buyuk font */
+.chart-section.trade-only .btp-table {
+    font-size: 13px !important;
+}
+
+.chart-section.trade-only .btp-table th {
+    font-size: 12px !important;
+    padding: 10px 14px !important;
+    position: sticky !important;
+    top: 0 !important;
+    z-index: 10 !important;
+    background: #181a20 !important;
+}
+
+.chart-section.trade-only .btp-table td {
+    font-size: 12.5px !important;
+    padding: 9px 14px !important;
+}
+
+/* Fullscreen butonu aktif iken vurgu */
+#btp-fullscreen-btn.active {
+    background: rgba(41, 98, 255, 0.2) !important;
+    border-color: #2962ff !important;
+    color: #79a0ff !important;
+    font-weight: bold !important;
+}
+
+/* Eski F43 .fullscreen stillerini etkisiz kil (varsa) */
+#bottom-trade-panel.fullscreen {
+    position: static !important;
+    width: auto !important;
+    height: auto !important;
+    z-index: auto !important;
+}
+
+
+/* ============================================================
+   F64 - Pozisyon hizli kapatma butonu
+   ============================================================ */
+.btn-quick-close {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 22px;
+    height: 22px;
+    border-radius: 50%;
+    background: rgba(246, 70, 93, 0.10);
+    color: #f23645;
+    font-size: 12px;
+    font-weight: 700;
+    cursor: pointer;
+    border: 1px solid rgba(246, 70, 93, 0.30);
+    transition: all 0.15s;
+    font-family: inherit;
+    padding: 0;
+    line-height: 1;
+    user-select: none;
+}
+.btn-quick-close:hover {
+    background: #f23645;
+    color: #fff;
+    transform: scale(1.15);
+    box-shadow: 0 0 10px rgba(246, 70, 93, 0.65);
+}
+.btn-quick-close:active {
+    transform: scale(0.95);
+}

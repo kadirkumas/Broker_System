@@ -5,7 +5,7 @@ import shutil
 import time
 import sqlite3
 from binance.client import Client
-from backend.strategies import RSIScalperStrategy, HullSRPStrategy, DynamicGridStrategy, DynamicGridReelStrategy, DeepHunterStrategy
+from backend.strategies import RSIScalperStrategy, HullSRPStrategy, DynamicGridStrategy, DynamicGridReelStrategy, DeepHunterStrategy, FundingArbitrageStrategy, TrendFollowStrategy
 from backend.database import get_db_connection
 from backend import telegram_notifier
 
@@ -207,9 +207,51 @@ class StrategyEngine:
         """
         A1: Gunluk max zarar limiti (TR saatine gore)
         A2: Max acik pozisyon sayisi
+        A3: F60a - Marjin orani (%)
         Ihlal varsa sebep string'i, yoksa bos string doner.
         """
         cfg = self.config or {}
+
+        # --- A3: F60a Marjin orani kontrolu ---
+        try:
+            max_ratio = float(cfg.get("max_margin_ratio", 60.0))
+        except Exception:
+            max_ratio = 60.0
+
+        if max_ratio > 0:
+            try:
+                conn = get_db_connection()
+                rows = conn.execute(
+                    "SELECT total_vol, leverage FROM active_trades"
+                ).fetchall()
+                conn.close()
+
+                used_margin = 0.0
+                for r in rows:
+                    r = dict(r)
+                    vol = float(r.get("total_vol") or 0)
+                    lev = max(1, int(r.get("leverage") or 1))
+                    used_margin += vol / lev
+
+                # Bakiye
+                try:
+                    balances = self.client.futures_account_balance()
+                    balance = 0.0
+                    for b in balances:
+                        if b.get("asset") == "USDT":
+                            balance = float(b.get("balance", 0))
+                            break
+                except Exception:
+                    balance = 0.0
+
+                if balance > 0:
+                    ratio = (used_margin / balance) * 100
+                    if ratio >= max_ratio:
+                        return f"Marjin limiti asildi ({ratio:.1f}%/{max_ratio:.0f}%)"
+            except Exception as e:
+                print(f"[RISK] A3 kontrol hatasi: {e}")
+
+        # --- Eski kontroller (A1, A2) ---
 
         # --- A2: Max acik pozisyon ---
         try:
@@ -291,6 +333,10 @@ class StrategyEngine:
             return DynamicGridReelStrategy(strat_cfg)
         elif strategy_name == "DEEP_HUNTER":
             return DeepHunterStrategy(strat_cfg)
+        elif strategy_name == "FUNDING_ARBITRAGE":
+            return FundingArbitrageStrategy(strat_cfg)
+        elif strategy_name == "TREND_FOLLOW":
+            return TrendFollowStrategy(strat_cfg)
         return None
 
     def _create_strategy_for_symbol(self, strategy_name: str, strat_cfg: dict, symbol: str):
@@ -413,10 +459,157 @@ class StrategyEngine:
 
         return result
 
+    async def _run_funding_arbitrage(self, strategy, strat_cfg):
+        """
+        FUNDING ARBITRAGE icin ozel tarama yolu.
+        Mum yerine bulk funding rate ceker, en yuksek |funding|'i bulur.
+        Rate limit: 60 saniyede 1 kez cagrilir.
+        """
+        try:
+            if not self.config.get("active", False):
+                return
+
+            # Rate limit: 60 sn min interval (API spamini onler)
+            _now = time.time()
+            if not hasattr(self, "_funding_last_fetch"):
+                self._funding_last_fetch = 0
+            if _now - self._funding_last_fetch < 60:
+                return
+            self._funding_last_fetch = _now
+
+            # Bulk mark price + funding
+            try:
+                premiums = await asyncio.to_thread(self.client.futures_mark_price)
+            except Exception as e:
+                _err = str(e)
+                if "-1003" in _err or "Too many" in _err:
+                    print(f"[FUNDING] Rate limit - 90 sn bekleniyor")
+                    self._funding_last_fetch = _now + 30  # ekstra bekleme
+                else:
+                    print(f"[FUNDING] Mark price hatasi: {_err[:100]}")
+                return
+
+            if not premiums:
+                return
+
+            # Sembol filtresi
+            scan_set = set(self.symbols or [])
+            funding_data = []
+            for p in premiums:
+                sym = p.get("symbol", "")
+                if scan_set and sym not in scan_set:
+                    continue
+                try:
+                    fr = float(p.get("lastFundingRate", 0) or 0)
+                except Exception:
+                    continue
+                funding_data.append({
+                    "symbol": sym,
+                    "funding": fr,
+                    "mark_price": float(p.get("markPrice", 0) or 0),
+                    "next_ts": int(p.get("nextFundingTime", 0) or 0),
+                })
+
+            if not funding_data:
+                return
+
+            # Strateji karari
+            result = strategy.evaluate(funding_data=funding_data)
+            sig = result.get("signal")
+            meta = result.get("meta", {}) or {}
+
+            if sig not in ("LONG", "SHORT"):
+                # Log spamini onleme (60 sn'de 1)
+                _now = int(time.time())
+                if not hasattr(self, "_funding_last_log") or _now - self._funding_last_log >= 60:
+                    self._funding_last_log = _now
+                    print(f"[FUNDING] {result.get('reason', '?')} | {len(funding_data)} sembol")
+                return
+
+            symbol = meta.get("funding_symbol")
+            fr_rate = float(meta.get("funding_rate", 0))
+            if not symbol:
+                return
+
+            print(f"\n[FUNDING] FIRSAT: {symbol} {sig} | Funding {fr_rate*100:+.4f}%")
+
+            if not self.config.get("active", False):
+                return
+
+            risk_reason = self._check_risk_limits()
+            if risk_reason:
+                print(f"[FUNDING] Risk limit: {risk_reason}")
+                return
+
+            existing = self.get_open_position(symbol)
+            if existing:
+                # Log spam koruma: ayni sembol icin 5 dk'da 1
+                _now2 = time.time()
+                if not hasattr(self, "_funding_skip_log"):
+                    self._funding_skip_log = {}
+                _last = self._funding_skip_log.get(symbol, 0)
+                if _now2 - _last >= 300:
+                    print(f"[FUNDING] {symbol} zaten acik, atlandi (5dk log)")
+                    self._funding_skip_log[symbol] = _now2
+                return
+
+            base_order = float(strat_cfg.get("baseOrder", 20))
+            leverage = int(strat_cfg.get("leverage", 3))
+            tp_pct = float(strat_cfg.get("takeProfit", 0.3))
+            sl_pct = float(strat_cfg.get("stopLoss", 1.5))
+
+            self.order_manager.symbol = symbol
+
+            try:
+                order_result = await asyncio.to_thread(
+                    self.order_manager.open_dca_position,
+                    side="BUY" if sig == "LONG" else "SELL",
+                    base_amount_usdt=base_order,
+                    strategy_name="FUNDING_ARBITRAGE",
+                    leverage=leverage,
+                    tp_pct=tp_pct,
+                    sl_pct=sl_pct,
+                    use_limit_order=False,
+                )
+            except Exception as e:
+                print(f"[FUNDING] Emir hatasi: {e}")
+                return
+
+            status = order_result.get("status")
+            _now_ms = int(time.time() * 1000)
+            _sig_id = f"{symbol}_FUNDING_{_now_ms}"
+
+            if status == "success":
+                print(f"[FUNDING] Emir ACILDI: {symbol} {sig}")
+                self._save_signal_to_db(
+                    _sig_id, symbol, "FUNDING_ARBITRAGE", sig,
+                    order_result.get("entry_price", 0), 0, base_order,
+                    int(time.time()), _now_ms,
+                    opened=1, skip_reason=None
+                )
+                self.stats["signals_found"] += 1
+            else:
+                print(f"[FUNDING] Emir BASARISIZ: {status}")
+                self._save_signal_to_db(
+                    _sig_id, symbol, "FUNDING_ARBITRAGE", sig,
+                    0, 0, base_order,
+                    int(time.time()), _now_ms,
+                    opened=0, skip_reason=str(order_result.get("message", "hata"))
+                )
+
+        except Exception as e:
+            self.stats["errors"] += 1
+            print(f"[FUNDING] Genel hata: {e}")
+
     async def run_strategy(self, strategy_name: str, strat_cfg: dict, candle_cache: dict):
         strategy = self._create_strategy(strategy_name, strat_cfg)
         if not strategy:
             print(f"[!] Bilinmeyen strateji: {strategy_name}")
+            return
+
+        # FUNDING ARBITRAGE ozel yolu (mum taramaz)
+        if strategy_name == "FUNDING_ARBITRAGE":
+            await self._run_funding_arbitrage(strategy, strat_cfg)
             return
 
         interval = strat_cfg.get("interval", "5m")

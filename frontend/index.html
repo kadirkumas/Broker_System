@@ -166,7 +166,8 @@
                             
                             <input type="text" id="btp-search-input" placeholder="Sembol Ara..." class="search-input" style="width: 120px; padding: 4px 8px; font-size: 11px; margin-right: 15px;" oninput="refreshBottomPanel()">
                             
-                            <span class="btp-btn" id="btp-toggle-btn" onclick="toggleBottomTradePanel()" style="border: 1px solid #2b3139; padding: 4px 10px; border-radius: 4px; background: #131722; margin-left:10px;">▼ Gizle</span>
+                            <span class="btp-btn" id="btp-fullscreen-btn" onclick="window.toggleTradePanelFullscreen()" title="Tam ekran (F11 tarzi)" style="border: 1px solid #2b3139; padding: 4px 10px; border-radius: 4px; background: #131722; margin-left:6px; font-size:13px; cursor:pointer;">&#9974;</span>
+                            <span class="btp-btn" id="btp-toggle-btn" onclick="toggleBottomTradePanel()" style="border: 1px solid #2b3139; padding: 4px 10px; border-radius: 4px; background: #131722; margin-left:6px;">▼ Gizle</span>
                         </div>
                     </div>
                     <div class="btp-content">
@@ -198,12 +199,13 @@
                                         </div>
                                     </th>
                                     <th class="right" style="width:9%;">Komisyon (-%0.1)</th>
-                                    <th class="right sortable" style="width:11%;" onclick="window.togglePosSort('entryTime')">İşlem Baş. Tar. <span class="sort-icon" id="psort-entryTime"></span></th>
-                                    <th class="right" style="width:7%;">Süre</th>
+                                    <th class="right sortable" style="width:10%;" onclick="window.togglePosSort('entryTime')">İşlem Baş. Tar. <span class="sort-icon" id="psort-entryTime"></span></th>
+                                    <th class="right" style="width:6%;">Süre</th>
+                                    <th class="center" style="width:3%;" title="Pozisyon kapat">✕</th>
                                 </tr>
                             </thead>
                             <tbody id="btp-tbody-positions">
-                                <tr><td colspan="11" style="text-align:center; color:#848e9c; padding:30px; border:none;">Açık işlem bulunmuyor.</td></tr>
+                                <tr><td colspan="13" style="text-align:center; color:#848e9c; padding:30px; border:none;">Açık işlem bulunmuyor.</td></tr>
                             </tbody>
                         </table>
                         
@@ -577,6 +579,7 @@
                                 <option value="DYNAMIC_GRID">Dynamic Grid (DCA)</option>
                                 <option value="DYNAMIC_GRID_REEL">Dynamic Grid REEL</option>
                                 <option value="DEEP_HUNTER">Deep Hunter</option>
+                                <option value="FUNDING_ARBITRAGE">Funding Arbitrage</option>
                             </select>
                         </div>
                         <div class="bt-form-item">
@@ -686,6 +689,7 @@
                 <div class="stats-tab" data-tab="symbol" onclick="switchStatsTab('symbol')">💰 En Kârlı Semboller</div>
                 <div class="stats-tab" data-tab="reason" onclick="switchStatsTab('reason')">📉 Kapanış Sebepleri</div>
                 <div class="stats-tab" data-tab="count" onclick="switchStatsTab('count')">🔢 Coin İşlem Sayısı</div>
+                <div class="stats-tab" data-tab="funding" onclick="switchStatsTab('funding')">💵 Funding Arbitraj</div>
             </div>
 
             <div class="stats-summary-bar">
@@ -860,6 +864,10 @@
                         <div class="bot-global-item">
                             <span class="cfg-label" data-tip="Ayni anda acik olabilecek maksimum pozisyon sayisi (tum stratejiler toplami). 0 = sinirsiz.">📌 Max Açık Pozisyon</span>
                             <input type="number" id="cfg-max-open-positions" class="search-input" min="0" step="1" value="0">
+                        </div>
+                        <div class="bot-global-item">
+                            <span class="cfg-label" data-tip="Marjin kullanim orani (%). Kullanilan marjin / guncel bakiye * 100. Bu esik asilirsa bot YENI POZISYON ACMAZ ve PC+mobile'da KIRMIZI SIREN cikar. 0 = devre disi. Ornek: 60 = %60.">⚠️ Max Marjin Oranı (%)</span>
+                            <input type="number" id="cfg-max-margin-ratio" class="search-input" min="0" max="100" step="1" value="60">
                         </div>
                     </div>
                 </div>
@@ -1472,6 +1480,185 @@
                     </div>
                     </div>
                     </div>
+
+                    <!-- ========== FUNDING ARBITRAGE PANEL ========== -->
+                    <div class="strategy-panel" data-strategy="FUNDING_ARBITRAGE">
+                        <div class="strategy-header">
+                            <div class="strategy-title">
+                                <span class="strategy-dot" style="background:#26a17b;"></span>
+                                Funding Arbitrage
+                            </div>
+                            <label class="switch">
+                                <input type="checkbox" class="strat-enabled" data-strategy="FUNDING_ARBITRAGE">
+                                <span class="slider round"></span>
+                            </label>
+                        </div>
+                        <div class="strategy-body">
+                            <div class="cfg-row">
+                                <span class="cfg-label" data-tip="Funding taramasi periyodu. Kucuk = daha sik kontrol, ancak API kullanimi artar.">Zaman Dilimi</span>
+                                <select class="search-input strat-interval" data-strategy="FUNDING_ARBITRAGE">
+                                    <option value="1m">1m</option>
+                                    <option value="5m">5m</option>
+                                    <option value="15m">15m</option>
+                                    <option value="1h">1h</option>
+                                    <option value="4h">4h</option>
+                                </select>
+                            </div>
+                            <div class="cfg-row">
+                                <span class="cfg-label" data-tip="Yon secimi: both=her ikisi, long=sadece negatif funding, short=sadece pozitif funding.">Mod</span>
+                                <select class="search-input strat-param" data-strategy="FUNDING_ARBITRAGE" data-param="mode">
+                                    <option value="both">Neutral (L+S)</option>
+                                    <option value="long">Long only</option>
+                                    <option value="short">Short only</option>
+                                </select>
+                            </div>
+                            <div class="cfg-row">
+                                <span class="cfg-label" data-tip="Minimum funding orani (%). Bu esigin altindaki firsatlar atlanir. Ornek: 0.05 = %0.05.">Min Funding (%)</span>
+                                <input type="number" class="search-input strat-param" data-strategy="FUNDING_ARBITRAGE" data-param="minFundingRate" value="0.05" min="0.001" step="0.01">
+                            </div>
+                            <div class="cfg-row">
+                                <span class="cfg-label" data-tip="Maksimum funding orani (%). Bu esigin ustundeki firsatlar suphelidir (testnet data hatasi, likidite sifir). Ornek: 0.5 = %0.5.">Max Funding (%)</span>
+                                <input type="number" class="search-input strat-param" data-strategy="FUNDING_ARBITRAGE" data-param="maxFundingRate" value="0.5" min="0.01" step="0.1">
+                            </div>
+                        </div>
+                        <div class="strategy-body">
+                            <div class="cfg-subtitle">📈 YON AKTIFLIK</div>
+                            <div class="cfg-row">
+                                <span class="cfg-label" data-tip="Negatif funding (short'lar long'lara odeme yapar) firsatlarini al.">Long Aktif</span>
+                                <label class="switch switch-small">
+                                    <input type="checkbox" class="strat-param" data-strategy="FUNDING_ARBITRAGE" data-param="longEnabled" checked>
+                                    <span class="slider round"></span>
+                                </label>
+                            </div>
+                            <div class="cfg-row">
+                                <span class="cfg-label" data-tip="Pozitif funding (long'lar short'lara odeme yapar) firsatlarini al.">Short Aktif</span>
+                                <label class="switch switch-small">
+                                    <input type="checkbox" class="strat-param" data-strategy="FUNDING_ARBITRAGE" data-param="shortEnabled" checked>
+                                    <span class="slider round"></span>
+                                </label>
+                            </div>
+                        </div>
+                        <div class="strategy-body strategy-trade-section">
+                            <div class="cfg-subtitle">💰 ISLEM AYARLARI <span class="funding-info-icon" title="">ℹ️</span></div>
+                            <div class="cfg-row">
+                                <span class="cfg-label" data-tip="Her funding firsatinda kullanilacak USDT miktari.">Ilk Islem (USDT)</span>
+                                <input type="number" class="search-input strat-param" data-strategy="FUNDING_ARBITRAGE" data-param="baseOrder" value="20" min="1" step="1" oninput="window.updateMarginPreview('FUNDING_ARBITRAGE')">
+                            </div>
+                            <div class="cfg-row">
+                                <span class="cfg-label" data-tip="Kaldiracli orani. Arbitraj icin dusuk tutulmasi onerilir (3-5x).">Kaldıraç <span class="lev-badge">X</span></span>
+                                <input type="number" class="search-input strat-param" data-strategy="FUNDING_ARBITRAGE" data-param="leverage" value="3" min="1" max="20" step="1" oninput="window.updateMarginPreview('FUNDING_ARBITRAGE')">
+                            </div>
+                            <div class="cfg-row margin-row">
+                                <span class="cfg-label" data-tip="Kilitlenen gercek teminat.">💵 Marjin (Kilitlenen)</span>
+                                <span id="margin-preview-FUNDING_ARBITRAGE" class="margin-preview">6.67 USDT</span>
+                            </div>
+                            <div class="cfg-row">
+                                <span class="cfg-label" data-tip="Hedef kar yuzdesi. Arbitraj icin dusuk tutulur (0.3 = %0.3).">Hedef Kâr (%)</span>
+                                <input type="number" class="search-input strat-param" data-strategy="FUNDING_ARBITRAGE" data-param="takeProfit" value="0.3" min="0.05" step="0.05">
+                            </div>
+                            <div class="cfg-row">
+                                <span class="cfg-label" data-tip="Fiyat girise gore ters giderse kapat. Arbitraj icin sikica tutulur.">Stop Loss (%)</span>
+                                <input type="number" class="search-input strat-param" data-strategy="FUNDING_ARBITRAGE" data-param="stopLoss" value="1.5" min="0.1" step="0.1">
+                            </div>
+                            <div style="margin-top:6px; padding:6px 8px; background:rgba(38,161,123,0.08); border:1px solid rgba(38,161,123,0.25); border-radius:4px; font-size:10px; color:#d1d4dc; line-height:1.4;">
+                                ⚡ <b>Funding Arbitrage:</b> Pozitif funding = SHORT ac (odeme al), negatif funding = LONG ac. Piyasa yonunden bagimsiz, dusuk riskli gelir.
+                            </div>
+                        </div>
+                    </div>
+                    <!-- ========== /FUNDING ARBITRAGE PANEL ========== -->
+
+                    <!-- ========== TREND_FOLLOW PANEL ========== -->
+                    <div class="strategy-panel" data-strategy="TREND_FOLLOW">
+                        <div class="strategy-header">
+                            <div class="strategy-title">
+                                <span class="strategy-dot" style="background:#00bcd4;"></span>
+                                Trend Follow
+                            </div>
+                            <label class="switch">
+                                <input type="checkbox" class="strat-enabled" data-strategy="TREND_FOLLOW">
+                                <span class="slider round"></span>
+                            </label>
+                        </div>
+                        <div class="strategy-body">
+                            <div class="cfg-row">
+                                <span class="cfg-label" data-tip="Mum periyodu. 15m orta vade, 1h guclu trend. 5m cok gurultulu.">Zaman Dilimi</span>
+                                <select class="search-input strat-interval" data-strategy="TREND_FOLLOW">
+                                    <option value="5m">5m</option>
+                                    <option value="15m" selected>15m</option>
+                                    <option value="1h">1h</option>
+                                    <option value="4h">4h</option>
+                                </select>
+                            </div>
+                            <div class="cfg-row">
+                                <span class="cfg-label" data-tip="Donchian kanal periyodu. Son N mumun en yuksek/dusuk seviyesi. 20 klasik, 55 uzun trend.">Donchian Period</span>
+                                <input type="number" class="search-input strat-param" data-strategy="TREND_FOLLOW" data-param="donchianPeriod" value="20" min="5" max="200" step="1">
+                            </div>
+                            <div class="cfg-row">
+                                <span class="cfg-label" data-tip="Hizli EMA periyodu. Kucuk = daha hassas, buyuk = daha gec ama guvenli.">EMA Fast</span>
+                                <input type="number" class="search-input strat-param" data-strategy="TREND_FOLLOW" data-param="emaFast" value="20" min="3" max="200" step="1">
+                            </div>
+                            <div class="cfg-row">
+                                <span class="cfg-label" data-tip="Yavas EMA periyodu. Trend yonu belirleyici.">EMA Slow</span>
+                                <input type="number" class="search-input strat-param" data-strategy="TREND_FOLLOW" data-param="emaSlow" value="50" min="10" max="500" step="1">
+                            </div>
+                            <div class="cfg-row">
+                                <span class="cfg-label" data-tip="LONG (alis) sinyalleri acilsin mi?">Long Aktif</span>
+                                <label class="switch switch-small">
+                                    <input type="checkbox" class="strat-param" data-strategy="TREND_FOLLOW" data-param="longTrade" checked>
+                                    <span class="slider round"></span>
+                                </label>
+                            </div>
+                            <div class="cfg-row">
+                                <span class="cfg-label" data-tip="SHORT (satis) sinyalleri acilsin mi?">Short Aktif</span>
+                                <label class="switch switch-small">
+                                    <input type="checkbox" class="strat-param" data-strategy="TREND_FOLLOW" data-param="shortTrade" checked>
+                                    <span class="slider round"></span>
+                                </label>
+                            </div>
+                            <div class="cfg-row">
+                                <span class="cfg-label" data-tip="Kapanis bazli breakout (daha guvenli). Kapaliysa anlik high/low bazli (daha hizli ama gurultulu).">Kapanis Bazli</span>
+                                <label class="switch switch-small">
+                                    <input type="checkbox" class="strat-param" data-strategy="TREND_FOLLOW" data-param="confirmClose" checked>
+                                    <span class="slider round"></span>
+                                </label>
+                            </div>
+                            <div class="cfg-row" style="grid-column: 1/-1;">
+                                <span class="cfg-label" data-tip="Breakout icin ekstra buffer (%). Ornek: 0.2 = fiyat Donchian'in %0.2 ustunde olmali.">Min Breakout (%)</span>
+                                <input type="number" class="search-input strat-param" data-strategy="TREND_FOLLOW" data-param="minBreakoutPct" value="0" min="0" max="5" step="0.05">
+                            </div>
+                        </div>
+                        <div class="strategy-body strategy-trade-section">
+                            <div class="cfg-subtitle">💰 ISLEM AYARLARI (DCA YOK)</div>
+                            <div class="cfg-row">
+                                <span class="cfg-label" data-tip="Her sinyalde kullanilacak USDT.">İlk İşlem (USDT)</span>
+                                <input type="number" class="search-input strat-param" data-strategy="TREND_FOLLOW" data-param="baseOrder" value="20" min="1" step="1" oninput="window.updateMarginPreview('TREND_FOLLOW')">
+                            </div>
+                            <div class="cfg-row">
+                                <span class="cfg-label" data-tip="Trend icin 3x onerilir. Yuksek kaldiric trend donusunde LIQ yapar.">Kaldıraç <span class="lev-badge">X</span></span>
+                                <input type="number" class="search-input strat-param" data-strategy="TREND_FOLLOW" data-param="leverage" value="3" min="1" max="10" step="1" oninput="window.updateMarginPreview('TREND_FOLLOW')">
+                            </div>
+                            <div class="cfg-row margin-row">
+                                <span class="cfg-label" data-tip="Kilitlenen teminat.">💵 Marjin (Kilitlenen)</span>
+                                <span id="margin-preview-TREND_FOLLOW" class="margin-preview">6.67 USDT</span>
+                            </div>
+                            <div class="cfg-row">
+                                <span class="cfg-label" data-tip="Hedef kar yuzdesi. Trend icin yuksek tutulur (3+).">Hedef Kâr (%)</span>
+                                <input type="number" class="search-input strat-param" data-strategy="TREND_FOLLOW" data-param="takeProfit" value="3.0" min="0.5" step="0.5">
+                            </div>
+                            <div class="cfg-row" style="grid-column: 1/-1;">
+                                <span class="cfg-label" data-tip="Kademeli trailing stop. Trend boyunca kari buyutur. Format: kar%:trail%">🎯 AI TTP</span>
+                                <input type="text" class="search-input strat-param" data-strategy="TREND_FOLLOW" data-param="trailingSteps" value="3:0.5, 5:0.3, 8:0.15, 12:0.08, 20:0.04" style="font-family: monospace; font-size: 10.5px; width: 100%;">
+                            </div>
+                            <div class="cfg-row">
+                                <span class="cfg-label" data-tip="Fiyat ters giderse stop. Trend icin sikica tutulur.">Stop Loss (%)</span>
+                                <input type="number" class="search-input strat-param" data-strategy="TREND_FOLLOW" data-param="stopLoss" value="2.5" min="0.5" step="0.5">
+                            </div>
+                            <div style="margin-top:6px; padding:6px 8px; background:rgba(0,188,212,0.08); border:1px solid rgba(0,188,212,0.25); border-radius:4px; font-size:10px; color:#d1d4dc; line-height:1.4;">
+                                ⚡ <b>Trend Follow:</b> Donchian breakout + EMA filter. Trend baslarken girer, AI TTP ile kar realize eder. DCA YOK.
+                            </div>
+                        </div>
+                    </div>
+                    <!-- ========== /TREND_FOLLOW PANEL ========== -->
                 </div>            </div>
 
             <div class="modal-footer bot-config-footer">
@@ -1701,6 +1888,29 @@
                     <button class="cs-reset-btn" onclick="testTelegram()" id="tg-test-btn">📤 Test Mesajı Gönder</button>
 
                     <span id="tg-status-badge" class="tg-status-badge unknown" style="display:block; margin-top:6px; text-align:center;">● Bağlantı kontrol ediliyor...</span>
+                </div>
+
+                <div class="cs-section">
+                    <div class="cs-section-title">KAPANIŞ ANİMASYONU</div>
+
+                    <div class="cs-row-check">
+                        <input type="checkbox" id="cs-anim-enabled" checked>
+                        <span class="cs-check-label">İşlem kapanınca animasyon göster</span>
+                    </div>
+
+                    <div style="font-size:10.5px; color:#848e9c; line-height:1.4; padding:4px 2px;">
+                        Kâr → yeşil konfeti 🎉<br>
+                        Zarar → kırmızı titreşim 💔
+                    </div>
+
+                    <div style="display:flex; gap:6px; margin-top:6px;">
+                        <button class="cs-reset-btn" onclick="window.previewCloseAnim(true)" style="flex:1; background:rgba(14,203,129,0.1); border-color:rgba(14,203,129,0.35); color:#0ECB81;">💰 Kâr Önizle</button>
+                        <button class="cs-reset-btn" onclick="window.previewCloseAnim(false)" style="flex:1; background:rgba(246,70,93,0.1); border-color:rgba(246,70,93,0.35); color:#F6465D;">💔 Zarar Önizle</button>
+                    </div>
+
+                    <div style="font-size:9.5px; color:#5d6471; font-style:italic; margin-top:8px; text-align:center;">
+                        Değişiklik anında uygulanır
+                    </div>
                 </div>
             </div>
 

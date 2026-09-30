@@ -30,7 +30,9 @@
       "partialTPPercent": 50,
       "partialTPKeepDCA": true,
       "test_symbol": "",
-      "trailingSteps": "1.5:0.3, 2.5:0.2, 4:0.12, 6:0.07, 10:0.03"
+      "trailingSteps": "1.5:0.3, 2.5:0.2, 4:0.12, 6:0.07, 10:0.03",
+      "dcaMinDistancePct": 5.0,
+      "dcaMinTimeMin": 15
     },
     "HULL_SRP": {
       "enabled": false,
@@ -52,7 +54,9 @@
       "partialTPPercent": 50,
       "partialTPKeepDCA": true,
       "test_symbol": "",
-      "trailingSteps": "1.5:0.3, 2.5:0.2, 4:0.12, 6:0.07, 10:0.03"
+      "trailingSteps": "1.5:0.3, 2.5:0.2, 4:0.12, 6:0.07, 10:0.03",
+      "dcaMinDistancePct": 5.0,
+      "dcaMinTimeMin": 15
     },
     "DYNAMIC_GRID": {
       "enabled": false,
@@ -81,7 +85,9 @@
       "partialTPPercent": 50,
       "partialTPKeepDCA": true,
       "test_symbol": "",
-      "trailingSteps": "1.5:0.3, 2.5:0.2, 4:0.12, 6:0.07, 10:0.03"
+      "trailingSteps": "1.5:0.3, 2.5:0.2, 4:0.12, 6:0.07, 10:0.03",
+      "dcaMinDistancePct": 5.0,
+      "dcaMinTimeMin": 15
     },
     "DYNAMIC_GRID_REEL": {
       "enabled": true,
@@ -126,7 +132,52 @@
       "partialTPPercent": 50,
       "partialTPKeepDCA": true,
       "test_symbol": "",
-      "trailingSteps": "1.5:0.3, 2.5:0.2, 4:0.12, 6:0.07, 10:0.03"
+      "trailingSteps": "1.5:0.3, 2.5:0.2, 4:0.12, 6:0.07, 10:0.03",
+      "dcaMinDistancePct": 5.0,
+      "dcaMinTimeMin": 15
+    },
+    "FUNDING_ARBITRAGE": {
+      "enabled": false,
+      "interval": "1m",
+      "mode": "both",
+      "minFundingRate": 0.05,
+      "longEnabled": true,
+      "shortEnabled": true,
+      "baseOrder": 20,
+      "leverage": 3,
+      "takeProfit": 0.3,
+      "stopLoss": 1.5,
+      "useDCA": false,
+      "volMultiplier": 1.0,
+      "steps": "",
+      "partialTPEnabled": false,
+      "partialTPPercent": 50,
+      "partialTPKeepDCA": false,
+      "test_symbol": ""
+    },
+    "TREND_FOLLOW": {
+      "enabled": false,
+      "interval": "15m",
+      "donchianPeriod": 20,
+      "emaFast": 20,
+      "emaSlow": 50,
+      "longTrade": true,
+      "shortTrade": true,
+      "confirmClose": true,
+      "minBreakoutPct": 0.0,
+      "baseOrder": 20,
+      "leverage": 3,
+      "takeProfit": 3.0,
+      "trailingSteps": "3:0.5, 5:0.3, 8:0.15, 12:0.08, 20:0.04",
+      "stopLoss": 2.5,
+      "useDCA": false,
+      "volMultiplier": 1.0,
+      "steps": "",
+      "partialTPEnabled": false,
+      "partialTPPercent": 50,
+      "partialTPKeepDCA": false,
+      "test_symbol": ""
     }
-  }
+  },
+  "max_margin_ratio": 60.0
 }

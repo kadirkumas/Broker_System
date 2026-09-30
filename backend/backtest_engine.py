@@ -5,7 +5,7 @@ Async task olarak calisir, progress raporlanir.
 import time
 import traceback
 from datetime import datetime
-from backend.strategies import RSIScalperStrategy, HullSRPStrategy, DynamicGridStrategy, DynamicGridReelStrategy, DeepHunterStrategy
+from backend.strategies import RSIScalperStrategy, HullSRPStrategy, DynamicGridStrategy, DynamicGridReelStrategy, DeepHunterStrategy, FundingArbitrageStrategy
 
 
 # ==========================================================
@@ -151,6 +151,8 @@ def get_strategy(name, params):
         return DynamicGridReelStrategy(params)
     elif name == "DEEP_HUNTER":
         return DeepHunterStrategy(params)
+    elif name == "FUNDING_ARBITRAGE":
+        return FundingArbitrageStrategy(params)
     return None
 
 
@@ -574,6 +576,13 @@ def run_backtest_sync(task_id, client, symbol, strategy_name, params, initial_ba
             interval, start_date, end_date, mode
         )
 
+    # ⚡ FUNDING ARBITRAGE icin ozel simulasyon
+    if strategy_name == "FUNDING_ARBITRAGE":
+        return run_funding_backtest(
+            task_id, client, symbol, params, initial_balance,
+            interval, start_date, end_date, mode
+        )
+
     try:
         base_order = float(params.get("baseOrder", 10))
         leverage = max(1, int(params.get("leverage", 1)))
@@ -882,6 +891,338 @@ def run_backtest_sync(task_id, client, symbol, strategy_name, params, initial_ba
 
     except Exception as e:
         print(f"[BT] Task {task_id} hata: {e}")
+        traceback.print_exc()
+        task["status"] = "error"
+        task["message"] = f"Hata: {str(e)}"
+
+
+# ==========================================================
+# FUNDING ARBITRAGE BACKTEST
+# ==========================================================
+def run_funding_backtest(task_id, client, symbol, params, initial_balance,
+                          interval="1m", start_date=None, end_date=None, mode="futures"):
+    """
+    Funding Arbitrage backtest.
+    Veri: Binance funding history (8 saatte 1 kayit).
+    Ek: TP/SL icin mumlar (funding event anindaki fiyat).
+
+    Basitlestirilmis mantik:
+    - Her funding event'inde pozisyon ac (eger firsat varsa)
+    - Sonraki funding event'ine kadar fiyat hareketi izle (TP/SL)
+    - Funding gelirini ekle
+    """
+    task = _BACKTEST_TASKS.get(task_id)
+    if not task:
+        return
+
+    try:
+        # --- Parametreler ---
+        min_funding = float(params.get("minFundingRate", 0.05)) / 100.0
+        base_order = float(params.get("baseOrder", 20))
+        leverage = max(1, int(params.get("leverage", 3)))
+        tp_pct = float(params.get("takeProfit", 0.3)) / 100.0
+        sl_pct = float(params.get("stopLoss", 1.5)) / 100.0
+        long_enabled = bool(params.get("longEnabled", True))
+        short_enabled = bool(params.get("shortEnabled", True))
+        mode_val = str(params.get("mode", "both")).lower()
+
+        if mode_val == "long":
+            short_enabled = False
+        elif mode_val == "short":
+            long_enabled = False
+
+        task["status"] = "running"
+        task["progress"] = 5
+        task["message"] = "Funding gecmisi cekiliyor..."
+
+        # --- Tarih araligi ---
+        end_ms = int(time.time() * 1000) if end_date is None else int(end_date)
+        if start_date is None:
+            # Varsayilan: 30 gun
+            start_ms = end_ms - (30 * 24 * 3600 * 1000)
+        else:
+            start_ms = int(start_date)
+
+        # --- Funding history cek (paginated) ---
+        fetch_fn = client.futures_funding_rate if mode == "futures" else None
+        if fetch_fn is None:
+            task["status"] = "error"
+            task["message"] = "Funding verisi sadece vadeli icin"
+            return
+
+        task["progress"] = 15
+        task["message"] = "Funding verileri yukleniyor..."
+
+        all_fundings = []
+        cur = start_ms
+        iters = 0
+        while cur < end_ms and iters < 10:
+            iters += 1
+            try:
+                chunk = fetch_fn(
+                    symbol=symbol,
+                    startTime=cur,
+                    endTime=end_ms,
+                    limit=1000
+                )
+            except Exception as e:
+                print(f"[BT-FUNDING] Fetch hata: {e}")
+                break
+
+            if not chunk:
+                break
+
+            all_fundings.extend(chunk)
+
+            if len(chunk) < 1000:
+                break
+
+            last_ts = int(chunk[-1].get("fundingTime", 0))
+            if last_ts <= cur:
+                break
+            cur = last_ts + 1
+            time.sleep(0.1)
+
+        if not all_fundings:
+            task["status"] = "error"
+            task["message"] = "Funding verisi bulunamadi (bu aralikta)"
+            return
+
+        # Sort by time
+        all_fundings.sort(key=lambda x: int(x.get("fundingTime", 0)))
+        total_events = len(all_fundings)
+
+        task["progress"] = 30
+        task["message"] = f"{total_events} funding event yuklendi"
+
+        # --- Mumlari cek (TP/SL icin) ---
+        task["progress"] = 40
+        task["message"] = "Fiyat verileri yukleniyor..."
+
+        # 1m veya 5m mum (funding event anlarini yakalamak icin)
+        bt_interval = "5m" if interval in ("1m", "3m") else interval
+        try:
+            klines = _fetch_all_klines(client, symbol, bt_interval, start_ms, end_ms, mode)
+        except Exception as e:
+            print(f"[BT-FUNDING] Klines hata: {e}")
+            klines = []
+
+        candles = _klines_to_candles(klines) if klines else []
+        candle_map = {int(c["time"]): c for c in candles}
+        candle_times = sorted(candle_map.keys())
+
+        # --- Simulasyon ---
+        task["progress"] = 55
+        task["message"] = "Simulasyon calisiyor..."
+
+        balance = float(initial_balance)
+        equity_curve = []
+        closed_trades = []
+
+        position = None  # {side, entry_price, entry_time, total_vol, margin, funding_income}
+
+        def _find_price_at(t_sec):
+            """Verilen saniyeye en yakin mum kapanis."""
+            if not candle_times:
+                return None
+            # binary-ish find
+            lo, hi = 0, len(candle_times) - 1
+            target = t_sec
+            while lo < hi:
+                mid = (lo + hi) // 2
+                if candle_times[mid] < target:
+                    lo = mid + 1
+                else:
+                    hi = mid
+            # En yakin
+            best = candle_times[lo]
+            if lo > 0 and abs(candle_times[lo - 1] - target) < abs(best - target):
+                best = candle_times[lo - 1]
+            c = candle_map.get(best)
+            return c["close"] if c else None
+
+        def _check_tp_sl(pos, current_price, current_time):
+            """True -> kapatildi."""
+            if pos["side"] == "BUY":
+                pnl_pct = (current_price - pos["entry_price"]) / pos["entry_price"]
+            else:
+                pnl_pct = (pos["entry_price"] - current_price) / pos["entry_price"]
+
+            is_tp = pnl_pct >= tp_pct
+            is_sl = pnl_pct <= -sl_pct
+
+            if not (is_tp or is_sl):
+                return None
+
+            # Kapat
+            reason = "FUNDING_TP" if is_tp else "FUNDING_SL"
+            gross = pos["total_vol"] * pnl_pct
+            # Komisyon: giris (taker) + cikis (taker)
+            comm = pos["total_vol"] * 0.0004 * 2
+            net = gross - comm + pos["funding_income"]
+
+            nonlocal_balance = pos["margin"] + net
+
+            closed_trades.append({
+                "entry_time": pos["entry_time"],
+                "exit_time": current_time,
+                "side": pos["side"],
+                "entry_price": round(pos["entry_price"], 8),
+                "exit_price": round(current_price, 8),
+                "total_vol": round(pos["total_vol"], 4),
+                "pnl_amount": round(net, 4),
+                "pnl_pct": round(pnl_pct * 100, 4),
+                "reason": reason,
+                "dca_count": 0,
+            })
+
+            return nonlocal_balance
+
+        # Funding event dongusu
+        step_size = max(1, total_events // 50)
+        last_price = None
+
+        for evt_idx, evt in enumerate(all_fundings):
+            evt_time_sec = int(evt.get("fundingTime", 0)) // 1000
+            try:
+                fr = float(evt.get("fundingRate", 0))
+            except Exception:
+                fr = 0.0
+
+            # Fiyat
+            price = _find_price_at(evt_time_sec)
+            if price is None:
+                price = last_price
+            if price is None:
+                continue
+            last_price = price
+
+            # --- Acik pozisyon: TP/SL + funding geliri ---
+            if position:
+                # Funding geliri hesapla
+                # SHORT + pozitif funding -> para ALIR (pozitif)
+                # LONG + negatif funding -> para ALIR
+                # LONG + pozitif funding -> para ODETIR (negatif)
+                if position["side"] == "SELL":
+                    funding_income = position["total_vol"] * fr
+                else:  # BUY
+                    funding_income = -position["total_vol"] * fr
+
+                position["funding_income"] += funding_income
+
+                # TP/SL kontrol
+                close_balance = _check_tp_sl(position, price, evt_time_sec)
+                if close_balance is not None:
+                    balance = close_balance
+                    position = None
+                    continue
+
+            # --- Yeni pozisyon ac (eger yoksa ve firsat varsa) ---
+            if not position and abs(fr) >= min_funding:
+                side = None
+                if fr > 0 and short_enabled:
+                    side = "SELL"
+                elif fr < 0 and long_enabled:
+                    side = "BUY"
+
+                if side:
+                    margin = base_order / leverage
+                    entry_comm = base_order * 0.0004
+
+                    if balance >= margin + entry_comm:
+                        balance -= (margin + entry_comm)
+                        position = {
+                            "side": side,
+                            "entry_price": price,
+                            "entry_time": evt_time_sec,
+                            "total_vol": base_order,
+                            "margin": margin,
+                            "funding_income": 0.0,
+                        }
+
+            # --- Equity ---
+            if position:
+                if position["side"] == "BUY":
+                    upnl_pct = (price - position["entry_price"]) / position["entry_price"]
+                else:
+                    upnl_pct = (position["entry_price"] - price) / position["entry_price"]
+                upnl = position["total_vol"] * upnl_pct
+                eq = balance + position["margin"] + upnl + position["funding_income"]
+            else:
+                eq = balance
+
+            equity_curve.append({"time": evt_time_sec, "value": eq})
+
+            if evt_idx % step_size == 0:
+                pct = 55 + int(40 * evt_idx / max(1, total_events))
+                task["progress"] = min(pct, 95)
+                task["message"] = f"Simulasyon  ·  Event: {evt_idx}/{total_events}"
+
+        # --- Bitis: acik pozisyonu kapatma (sayma) ---
+
+        # --- Metrikler ---
+        task["progress"] = 96
+        task["message"] = "Metrikler hesaplaniyor..."
+
+        total_trades = len(closed_trades)
+        wins = sum(1 for t in closed_trades if t["pnl_amount"] > 0)
+        losses = total_trades - wins
+        total_pnl = sum(t["pnl_amount"] for t in closed_trades)
+        wr = (wins / total_trades * 100) if total_trades > 0 else 0
+
+        max_dd = 0
+        peak = initial_balance
+        for p in equity_curve:
+            if p["value"] > peak:
+                peak = p["value"]
+            dd = (peak - p["value"]) / peak * 100 if peak > 0 else 0
+            if dd > max_dd:
+                max_dd = dd
+
+        final = initial_balance + total_pnl
+
+        # Downsample
+        step = max(1, len(equity_curve) // 500)
+        eq_sampled = equity_curve[::step] if equity_curve else []
+        if eq_sampled:
+            eq_sampled[-1] = {"time": eq_sampled[-1]["time"], "value": final}
+
+        task["result"] = {
+            "symbol": symbol,
+            "strategy": "FUNDING_ARBITRAGE",
+            "interval": bt_interval,
+            "start_time": all_fundings[0].get("fundingTime", 0) // 1000 if all_fundings else 0,
+            "end_time": all_fundings[-1].get("fundingTime", 0) // 1000 if all_fundings else 0,
+            "total_candles": total_events,
+            "initial_balance": initial_balance,
+            "final_balance": round(final, 4),
+            "total_pnl": round(total_pnl, 4),
+            "total_pnl_pct": round((final - initial_balance) / initial_balance * 100, 2),
+            "total_trades": total_trades,
+            "wins": wins,
+            "losses": losses,
+            "win_rate": round(wr, 2),
+            "max_drawdown": round(max_dd, 2),
+            "equity_curve": eq_sampled,
+            "trades": closed_trades[:500],
+            "trades_total": total_trades,
+            "funding_stats": {
+                "total_events": total_events,
+                "min_funding_pct": round(min_funding * 100, 4),
+                "avg_funding_pct": round(
+                    sum(abs(float(f.get("fundingRate", 0))) for f in all_fundings) / total_events * 100, 4
+                ) if total_events else 0,
+            },
+        }
+        task["progress"] = 100
+        task["status"] = "done"
+        task["message"] = "Tamamlandi"
+        task["completed_at"] = time.time()
+
+        print(f"[BT-FUNDING] Tamamlandi: {total_trades} trade, {total_pnl:+.4f} USDT")
+
+    except Exception as e:
+        print(f"[BT-FUNDING] Task {task_id} hata: {e}")
         traceback.print_exc()
         task["status"] = "error"
         task["message"] = f"Hata: {str(e)}"

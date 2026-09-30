@@ -905,3 +905,340 @@ html, body {
 /* Scrollbar */
 .mo-symbol-list::-webkit-scrollbar { width: 5px; }
 .mo-symbol-list::-webkit-scrollbar-thumb { background: #363c4e; border-radius: 3px; }
+
+
+/* ============================================================
+   F50 - MOBILE TAKVIM
+   ============================================================ */
+
+.cal-icon-btn {
+    width: 42px;
+    height: 42px;
+    border-radius: 50%;
+    background: linear-gradient(135deg, rgba(252,213,53,0.15), rgba(255,152,0,0.08));
+    border: 1px solid rgba(252,213,53,0.4);
+    color: #fcd535;
+    font-size: 20px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.15s;
+    padding: 0;
+    font-family: inherit;
+}
+.cal-icon-btn:active {
+    transform: scale(0.92);
+    background: rgba(252,213,53,0.3);
+}
+
+.mobile-modal {
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,0.8);
+    z-index: 9999;
+    display: flex;
+    align-items: flex-end;
+    justify-content: center;
+    animation: calFade 0.2s ease;
+}
+@keyframes calFade {
+    from { opacity: 0; }
+    to { opacity: 1; }
+}
+
+.mobile-modal-content {
+    background: #131722;
+    border-top: 1px solid #2a2e39;
+    border-radius: 16px 16px 0 0;
+    width: 100%;
+    max-width: 500px;
+    display: flex;
+    flex-direction: column;
+    animation: calSlide 0.25s ease;
+    overflow: hidden;
+}
+@keyframes calSlide {
+    from { transform: translateY(100%); }
+    to { transform: translateY(0); }
+}
+
+.mobile-modal-hdr {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 14px 16px;
+    border-bottom: 1px solid #2a2e39;
+    flex-shrink: 0;
+}
+.mobile-modal-hdr h3 {
+    font-size: 15px;
+    color: #EAECEF;
+    margin: 0;
+}
+.mobile-modal-close {
+    background: transparent;
+    color: #848e9c;
+    border: none;
+    font-size: 20px;
+    cursor: pointer;
+    padding: 4px 8px;
+    font-family: inherit;
+}
+
+.cal-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 12px 16px;
+    gap: 8px;
+    background: #0b0e14;
+    border-bottom: 1px solid #2a2e39;
+}
+
+.cal-nav {
+    width: 36px;
+    height: 36px;
+    background: #1e222d;
+    border: 1px solid #2a2e39;
+    color: #d1d4dc;
+    border-radius: 6px;
+    font-size: 14px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-family: inherit;
+    transition: all 0.15s;
+}
+.cal-nav:active {
+    background: #2962ff;
+    color: #fff;
+    transform: scale(0.92);
+}
+
+.cal-title {
+    font-size: 15px;
+    font-weight: 700;
+    color: #EAECEF;
+    flex: 1;
+    text-align: center;
+    letter-spacing: 0.5px;
+}
+
+.cal-month-total {
+    text-align: center;
+    font-size: 16px;
+    font-weight: 800;
+    font-family: monospace;
+    color: #848e9c;
+    padding: 6px 0;
+    font-variant-numeric: tabular-nums;
+}
+
+.cal-body {
+    padding: 6px 12px 12px;
+    overflow-y: auto;
+    max-height: 45vh;
+}
+
+.cal-weekdays {
+    display: grid;
+    grid-template-columns: repeat(7, 1fr);
+    gap: 4px;
+    margin-bottom: 6px;
+}
+
+.cal-weekdays > div {
+    text-align: center;
+    font-size: 10px;
+    font-weight: 700;
+    color: #848e9c;
+    padding: 4px 0;
+    text-transform: uppercase;
+    letter-spacing: 0.3px;
+}
+
+.cal-grid {
+    display: grid;
+    grid-template-columns: repeat(7, 1fr);
+    gap: 4px;
+}
+
+.cal-day {
+    background: #181a20;
+    border: 1px solid #2a2e39;
+    border-radius: 6px;
+    padding: 5px 3px;
+    min-height: 58px;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    position: relative;
+    box-sizing: border-box;
+}
+
+.cal-day.cal-empty {
+    background: transparent;
+    border-color: transparent;
+    pointer-events: none;
+}
+
+.cal-day.cal-profit {
+    background: rgba(14,203,129,0.12);
+    border-color: rgba(14,203,129,0.4);
+}
+
+.cal-day.cal-loss {
+    background: rgba(246,70,93,0.12);
+    border-color: rgba(246,70,93,0.4);
+}
+
+.cal-day.cal-today {
+    border: 2px solid #2962ff;
+    box-shadow: 0 0 10px rgba(41,98,255,0.5);
+}
+
+.cal-num {
+    font-size: 10px;
+    font-weight: 700;
+    color: #848e9c;
+}
+
+.cal-pnl {
+    font-size: 10px;
+    font-weight: 800;
+    text-align: right;
+    font-family: monospace;
+    font-variant-numeric: tabular-nums;
+    line-height: 1.1;
+}
+.cal-pnl.profit { color: #0ECB81; }
+.cal-pnl.loss { color: #F6465D; }
+.cal-pnl.empty { color: #5d6471; font-weight: 400; font-size: 9px; }
+
+.cal-count {
+    font-size: 8px;
+    color: #5d6471;
+    text-align: right;
+    font-weight: 600;
+}
+
+.cal-footer {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 12px 16px;
+    border-top: 1px solid #2a2e39;
+    background: #0b0e14;
+    flex-shrink: 0;
+    gap: 10px;
+}
+
+.cal-summary {
+    display: flex;
+    gap: 12px;
+    font-size: 11px;
+    color: #848e9c;
+}
+.cal-summary b {
+    font-size: 12px;
+    font-weight: 700;
+}
+
+.cal-today-btn {
+    padding: 8px 14px;
+    background: rgba(41,98,255,0.15);
+    border: 1px solid rgba(41,98,255,0.4);
+    color: #79a0ff;
+    border-radius: 6px;
+    font-size: 11px;
+    font-weight: 700;
+    cursor: pointer;
+    font-family: inherit;
+}
+.cal-today-btn:active {
+    background: #2962ff;
+    color: #fff;
+}
+
+
+/* F51 - Takvim ikonu (baslik yaninda, kompakt) */
+.cal-icon-btn-sm {
+    width: 30px;
+    height: 30px;
+    border-radius: 6px;
+    background: rgba(252,213,53,0.1);
+    border: 1px solid rgba(252,213,53,0.35);
+    color: #fcd535;
+    font-size: 15px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.15s;
+    padding: 0;
+    font-family: inherit;
+    line-height: 1;
+    flex-shrink: 0;
+}
+.cal-icon-btn-sm:active {
+    transform: scale(0.9);
+    background: rgba(252,213,53,0.3);
+}
+
+
+/* F61 - Risk Siren (Mobile) */
+.risk-siren-overlay {
+    position: fixed; inset: 0; z-index: 999999;
+    display: flex; align-items: center; justify-content: center;
+    background: rgba(40, 0, 0, 0.92); padding: 20px;
+    animation: sirenFadeIn 0.3s ease;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Arial, sans-serif;
+}
+@keyframes sirenFadeIn { from { opacity: 0; } to { opacity: 1; } }
+.risk-siren-overlay.ambulance { animation: sirenPulse 0.7s infinite; }
+@keyframes sirenPulse {
+    0%, 100% { background: rgba(40, 0, 0, 0.92); box-shadow: inset 0 0 100px rgba(246, 70, 93, 0.3); }
+    50% { background: rgba(180, 20, 40, 0.95); box-shadow: inset 0 0 250px rgba(255, 0, 60, 0.8); }
+}
+.siren-box {
+    width: 100%; max-width: 380px;
+    background: linear-gradient(180deg, #2a0a0f 0%, #1a0608 100%);
+    border: 3px solid #f23645; border-radius: 20px;
+    padding: 28px 22px; text-align: center;
+    box-shadow: 0 0 60px rgba(242, 54, 69, 0.7);
+    animation: sirenBoxPulse 1.2s ease-in-out infinite;
+}
+@keyframes sirenBoxPulse { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.02); } }
+.siren-emoji {
+    font-size: 64px; line-height: 1; margin-bottom: 12px;
+    animation: sirenShake 0.8s infinite; display: inline-block;
+}
+@keyframes sirenShake { 0%, 100% { transform: rotate(-10deg); } 50% { transform: rotate(10deg); } }
+.siren-h1 {
+    font-size: 22px; font-weight: 900; color: #f23645;
+    letter-spacing: 2px; margin-bottom: 8px;
+    text-shadow: 0 0 20px rgba(242, 54, 69, 0.9); line-height: 1.2;
+}
+.siren-h2 { font-size: 12px; color: #ffb3bd; margin-bottom: 20px; line-height: 1.4; }
+.siren-metrics {
+    display: grid; grid-template-columns: 1fr 1fr; gap: 10px;
+    margin-bottom: 20px; padding: 14px 0;
+    border-top: 1px solid rgba(242, 54, 69, 0.4);
+    border-bottom: 1px solid rgba(242, 54, 69, 0.4);
+}
+.siren-metric { display: flex; flex-direction: column; gap: 3px; }
+.siren-metric-lbl { font-size: 9px; color: #848e9c; font-weight: 700; letter-spacing: 1px; text-transform: uppercase; }
+.siren-metric-val { font-size: 18px; font-weight: 800; font-family: "Courier New", monospace; color: #EAECEF; }
+.siren-metric-val.danger { color: #f23645; text-shadow: 0 0 10px rgba(242, 54, 69, 0.7); }
+.siren-btn {
+    width: 100%; padding: 14px; border-radius: 10px;
+    border: 2px solid #f23645; background: rgba(242, 54, 69, 0.15);
+    color: #f23645; font-size: 13px; font-weight: 800;
+    letter-spacing: 1px; cursor: pointer; transition: all 0.15s;
+    font-family: inherit; text-transform: uppercase;
+    -webkit-tap-highlight-color: transparent;
+}
+.siren-btn:active { background: #f23645; color: #fff; transform: scale(0.97); }
+.siren-note { font-size: 10px; color: #848e9c; margin-top: 10px; font-style: italic; line-height: 1.3; }

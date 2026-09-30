@@ -87,7 +87,8 @@ class PositionManager:
         defaults = {"takeProfit": 1.5, "trailing": 0.3,
                     "trailingSteps": "1.5:0.3, 2.5:0.2, 4:0.12, 6:0.07, 10:0.03",
                     "stopLoss": 3.0,
-                    "useDCA": False, "baseOrder": 10, "volMultiplier": 1.2, "steps": "1.5, 3, 5"}
+                    "useDCA": False, "baseOrder": 10, "volMultiplier": 1.2, "steps": "1.5, 3, 5",
+                    "dcaMinDistancePct": 5.0, "dcaMinTimeMin": 15}
         if strategy_name and strategy_name in strategies_config:
             cfg = strategies_config[strategy_name]
             return {
@@ -99,6 +100,8 @@ class PositionManager:
                 "baseOrder": float(cfg.get("baseOrder", defaults["baseOrder"])),
                 "volMultiplier": float(cfg.get("volMultiplier", defaults["volMultiplier"])),
                 "steps": cfg.get("steps", defaults["steps"]),
+                "dcaMinDistancePct": float(cfg.get("dcaMinDistancePct", defaults["dcaMinDistancePct"])),
+                "dcaMinTimeMin": int(cfg.get("dcaMinTimeMin", defaults["dcaMinTimeMin"])),
             }
         return defaults
 
@@ -166,21 +169,28 @@ class PositionManager:
                     else:
                         _diff_pct = (current_price - _last_dca_price) / _last_dca_price * 100
 
-                    # 3) MESAFE < %2 -> ATLA
-                    if _diff_pct < 2.0:
-                        print(f"[DCA-SKIP] {symbol} mesafe yetersiz: %{_diff_pct:.3f} < %2")
+                    # F59: config'den parametreler
+                    _min_dist = float(sCfg.get("dcaMinDistancePct", 5.0))
+                    _min_time_min = int(sCfg.get("dcaMinTimeMin", 15))
+                    _min_time = _min_time_min * 60
+
+                    # 3) MESAFE KONTROLU
+                    if _diff_pct < _min_dist:
+                        print(f"[DCA-SKIP] {symbol} mesafe yetersiz: %{_diff_pct:.3f} < %{_min_dist}")
                         return False
 
-                    # 4) MESAFE %2-%5 VE SURE <5DK -> ATLA
-                    if _diff_pct < 5.0 and _last_dca_time > 0:
+                    # 4) SURE KONTROLU
+                    if _last_dca_time > 0:
                         _age = int(_time.time()) - _last_dca_time
-                        if _age < 300:
-                            print(f"[DCA-SKIP] {symbol} sure yetersiz: {_age}sn < 300sn (mesafe %{_diff_pct:.2f})")
+                        if _age < _min_time:
+                            _rem = _min_time - _age
+                            print(f"[DCA-SKIP] {symbol} sure yetersiz: {_age}sn < {_min_time}sn "
+                                  f"(kalan: {_rem}sn, mesafe %{_diff_pct:.2f})")
                             return False
-                    # >%5 -> HIZLI PUMP/DUMP, sure kontrolunu ATLA
 
-                    # Log basarili
-                    print(f"[DCA-OK] {symbol} mesafe %{_diff_pct:.2f} kabul edildi")
+                    _age_disp = _age if _last_dca_time > 0 else 0
+                    print(f"[DCA-OK] {symbol} mesafe %{_diff_pct:.2f} sure {_age_disp}sn "
+                          f"(min mesafe %{_min_dist}, min sure {_min_time_min}dk)")
         except Exception as _e:
             print(f"[DCA-ORDER] history parse hatasi: {_e}")
 
@@ -206,6 +216,14 @@ class PositionManager:
             "avg_after": float(new_avg),
         })
 
+        # F41: DCA runtime debug (initial_price korunuyor mu?)
+        try:
+            print(f"[DCA-DEBUG-BEFORE] {symbol} DCA#{new_count}")
+            print(f"  input   : initial_price={initial_price:.8f} avg_before={old_avg:.8f} current={current_price:.8f}")
+            print(f"  output  : new_avg={new_avg:.8f} new_total_vol={new_total_vol:.2f} dca_count={new_count}")
+        except Exception:
+            pass
+
         conn = get_db_connection()
         conn.execute(
             "UPDATE active_trades SET total_vol = ?, avg_price = ?, dca_count = ?, dca_history = ? WHERE symbol = ?",
@@ -213,6 +231,22 @@ class PositionManager:
         )
         conn.commit()
         conn.close()
+
+        # F41: SQL sonrasi DB'den oku (initial_price korunuyor mu?)
+        try:
+            _chk = get_db_connection()
+            _r = _chk.execute(
+                "SELECT initial_price, avg_price, total_vol, dca_count FROM active_trades WHERE symbol = ?",
+                (symbol,)
+            ).fetchone()
+            _chk.close()
+            if _r:
+                print(f"[DCA-DEBUG-AFTER] {symbol}")
+                print(f"  db_after: initial_price={_r[0]:.8f} avg_price={_r[1]:.8f} total_vol={_r[2]:.2f} dca_count={_r[3]}")
+                if abs(_r[0] - _r[1]) < 1e-8:
+                    print(f"  !!! UYARI: initial_price == avg_price (bug gostergesi)")
+        except Exception as _e:
+            print(f"[DCA-DEBUG-AFTER] hata: {_e}")
 
         print(f"[DCA-LOG] {symbol} kademe {new_count} -> dca_history: {len(old_history)} kayit")
 

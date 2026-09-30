@@ -305,15 +305,127 @@ async def favicon():
 # ----------------------------------------------------------------------
 # CÜZDAN
 # ----------------------------------------------------------------------
+# F18: Global ticker cache (paylasilan)
+_TICKER_CACHE = {"ts": 0, "data": None}
+_TICKER_CACHE_TTL = 10  # saniye
+
+_WALLET_RATE_LOG = {"ts": 0}
+
+
+async def _get_futures_tickers_cached():
+    """futures_ticker sonucu 10 sn cache."""
+    import time as _t
+    _now = _t.time()
+    if _TICKER_CACHE["data"] and (_now - _TICKER_CACHE["ts"]) < _TICKER_CACHE_TTL:
+        return _TICKER_CACHE["data"]
+    try:
+        tickers = await asyncio.to_thread(client.futures_ticker)
+        _TICKER_CACHE["ts"] = _now
+        _TICKER_CACHE["data"] = tickers
+        return tickers
+    except Exception as e:
+        _err = str(e)
+        if "-1003" in _err or "Too many" in _err:
+            print(f"[TICKER] Rate limit - eski cache donduruluyor")
+            return _TICKER_CACHE["data"] or []
+        raise
+
+
+# F9: Wallet cache (30 sn)
+_WALLET_CACHE = {"ts": 0, "data": None}
+_WALLET_CACHE_TTL = 30  # saniye
+
+
+# F60a: Risk metrikleri
+def _calc_risk_metrics_sync():
+    """
+    Kullanilan marjin / guncel bakiye * 100
+    Guncel bakiye = wallet + unrealized PnL
+    """
+    try:
+        used_margin = 0.0
+        unrealized = 0.0
+        trade_count = 0
+
+        conn = get_db_connection()
+        rows = conn.execute("""
+            SELECT symbol, total_vol, leverage, trade_type, avg_price
+            FROM active_trades
+        """).fetchall()
+        conn.close()
+
+        for r in rows:
+            r = dict(r)
+            vol = float(r.get("total_vol") or 0)
+            lev = max(1, int(r.get("leverage") or 1))
+            used_margin += vol / lev
+            trade_count += 1
+
+        # Bakiye
+        try:
+            balances = client.futures_account_balance()
+            balance = 0.0
+            for b in balances:
+                if b.get("asset") == "USDT":
+                    balance = float(b.get("balance", 0))
+                    break
+        except Exception:
+            balance = 0.0
+
+        equity = max(balance, 0.01)
+        risk_pct = (used_margin / equity) * 100 if equity > 0 else 0
+
+        return {
+            "used_margin": round(used_margin, 4),
+            "equity": round(equity, 4),
+            "balance": round(balance, 4),
+            "unrealized": round(unrealized, 4),
+            "risk_pct": round(risk_pct, 2),
+            "trade_count": trade_count,
+        }
+    except Exception as e:
+        print(f"[RISK] Hesap hatasi: {e}")
+        return {
+            "used_margin": 0, "equity": 0, "balance": 0,
+            "unrealized": 0, "risk_pct": 0, "trade_count": 0,
+        }
+
+
+@app.get("/api/risk/status")
+async def risk_status():
+    """Anlik risk seviyesi."""
+    m = await asyncio.to_thread(_calc_risk_metrics_sync)
+
+    # Config'den esik
+    try:
+        cfg = load_config()
+        max_ratio = float(cfg.get("max_margin_ratio", 60.0))
+    except Exception:
+        max_ratio = 60.0
+
+    m["max_ratio"] = max_ratio
+    m["is_over_limit"] = m["risk_pct"] >= max_ratio
+    m["status"] = "critical" if m["is_over_limit"] else "ok"
+
+    return m
+
+
 @app.get("/api/wallet")
 async def get_wallet():
+    # Cache kontrolu
+    import time as _t
+    _now = _t.time()
+    if _WALLET_CACHE["data"] and (_now - _WALLET_CACHE["ts"]) < _WALLET_CACHE_TTL:
+        return _WALLET_CACHE["data"]
+
     try:
         assets = []
         total_usdt = 0.0
         available_usdt = 0.0
 
+        # --- FUTURES BAKIYE ---
         try:
-            futures_balances = client.futures_account_balance()
+            futures_balances = await asyncio.to_thread(client.futures_account_balance)
             for b in futures_balances:
                 bal = float(b.get('balance', 0))
                 avail = float(b.get('withdrawAvailable', b.get('availableBalance', 0)))
@@ -329,30 +441,48 @@ async def get_wallet():
                         "available": f"{avail:.4f}" if avail < 1 else f"{avail:.2f}"
                     })
         except Exception as e:
-            print(f"[!] Futures bakiye okuma hatası: {e}")
+            _err = str(e)
+            if "-1003" in _err or "Too many requests" in _err:
+                import time as _t2
+                _n = _t2.time()
+                if _n - _WALLET_RATE_LOG["ts"] >= 180:
+                    _WALLET_RATE_LOG["ts"] = _n
+                    print(f"[WALLET] Rate limit (futures) - 3dk susturuldu")
+            else:
+                print(f"[!] Futures bakiye okuma hatasi: {_err[:120]}")
 
-        try:
-            spot_account = client.get_account()
-            for b in spot_account.get('balances', []):
-                free = float(b.get('free', 0))
-                locked = float(b.get('locked', 0))
-                total = free + locked
-                if total > 0.0001:
-                    assets.append({
-                        "coin": b.get('asset', ''),
-                        "wallet_type": "Spot",
-                        "balance": f"{total:.4f}" if total < 1 else f"{total:.2f}",
-                        "available": f"{free:.4f}" if free < 1 else f"{free:.2f}"
-                    })
-        except Exception as e:
-            print(f"[!] Spot bakiye okuma hatası: {e}")
+        # --- SPOT BAKIYE (sadece mainnet) ---
+        # Testnet'te spot API izni yok (-2015 hatasi normal)
+        if not USE_TESTNET:
+            try:
+                spot_account = await asyncio.to_thread(client.get_account)
+                for b in spot_account.get('balances', []):
+                    free = float(b.get('free', 0))
+                    locked = float(b.get('locked', 0))
+                    total = free + locked
+                    if total > 0.0001:
+                        assets.append({
+                            "coin": b.get('asset', ''),
+                            "wallet_type": "Spot",
+                            "balance": f"{total:.4f}" if total < 1 else f"{total:.2f}",
+                            "available": f"{free:.4f}" if free < 1 else f"{free:.2f}"
+                        })
+            except Exception as e:
+                print(f"[!] Spot bakiye okuma hatasi: {str(e)[:120]}")
 
-        return {
+        result = {
             "status": "success",
             "balance": round(total_usdt, 2),
             "available": round(available_usdt, 2),
-            "assets": assets
+            "assets": assets,
+            "cached_at": int(_now),
         }
+
+        # Cache'e yaz
+        _WALLET_CACHE["ts"] = _now
+        _WALLET_CACHE["data"] = result
+
+        return result
     except Exception as e:
         return {"status": "error", "message": str(e)}
 
@@ -400,28 +530,44 @@ async def get_engine_config():
 # ============================================================
 # CHART SETTINGS ENDPOINTS (Kalici Grafik Ayarlari)
 # ============================================================
+# F36: Chart settings ayri dosyada (race condition fix)
+_CHART_SETTINGS_PATH = Path(__file__).resolve().parent / "chart_settings.json"
+
+
+def _load_chart_settings():
+    if not _CHART_SETTINGS_PATH.exists():
+        return {}
+    try:
+        with open(_CHART_SETTINGS_PATH, "r", encoding="utf-8") as f:
+            return json.load(f)
+    except Exception as e:
+        print(f"[CHART-SETTINGS] load hata: {e}")
+        return {}
+
+
+def _save_chart_settings(data):
+    try:
+        with open(_CHART_SETTINGS_PATH, "w", encoding="utf-8") as f:
+            json.dump(data, f, indent=2, ensure_ascii=False)
+        return True
+    except Exception as e:
+        print(f"[CHART-SETTINGS] save hata: {e}")
+        return False
+
+
 @app.get("/api/chart-settings")
 def get_chart_settings():
-    """Grafik ayarlarini bot_config.json'dan dondurur."""
-    try:
-        cfg = load_config()
-        return cfg.get("chart_settings", {})
-    except Exception as e:
-        print(f"[CHART-SETTINGS] GET hata: {e}")
-        return {}
+    """Grafik ayarlarini chart_settings.json'dan dondurur (ayri dosya)."""
+    return _load_chart_settings()
 
 
 @app.post("/api/chart-settings")
 def update_chart_settings(settings: dict):
-    """Grafik ayarlarini bot_config.json'a kaydeder."""
-    try:
-        cfg = load_config()
-        cfg["chart_settings"] = settings
-        save_config(cfg)
+    """Grafik ayarlarini chart_settings.json'a kaydeder (ayri dosya)."""
+    ok = _save_chart_settings(settings)
+    if ok:
         return {"status": "ok", "saved": True}
-    except Exception as e:
-        print(f"[CHART-SETTINGS] POST hata: {e}")
-        return {"status": "error", "message": str(e)}
+    return {"status": "error", "message": "Kaydetme basarisiz"}
 
 
 @app.post("/api/engine/config")
@@ -698,7 +844,7 @@ async def get_active_trades_with_pnl():
     if not trades:
         return []
     try:
-        tickers = await asyncio.to_thread(client.futures_ticker)
+        tickers = await _get_futures_tickers_cached()
         price_map = {}
         for t in tickers:
             sym = t.get("symbol")
@@ -706,7 +852,7 @@ async def get_active_trades_with_pnl():
             if sym and p is not None:
                 price_map[sym] = float(p)
     except Exception as e:
-        print(f"[!] PnL fiyat cekme hatasi: {e}")
+        print(f"[!] PnL fiyat cekme hatasi: {str(e)[:80]}")
         for t in trades:
             t["unrealized_pnl"] = 0.0
             t["unrealized_pnl_pct"] = 0.0
@@ -846,6 +992,155 @@ async def get_signal_stats():
     }
 
 
+@app.get("/api/stats/funding")
+async def get_funding_stats():
+    """
+    FUNDING_ARBITRAGE stratejisi icin ozet istatistik.
+    trade_history'de strategy_name='FUNDING_ARBITRAGE' olan kayitlari analiz eder.
+    """
+    conn = get_db_connection()
+
+    try:
+        rows = conn.execute("""
+            SELECT
+                symbol,
+                trade_type,
+                total_vol,
+                entry_price,
+                exit_price,
+                pnl_amount,
+                pnl_pct,
+                funding_fee,
+                commission,
+                close_reason,
+                entry_time,
+                exit_time,
+                leverage
+            FROM trade_history
+            WHERE strategy_name = 'FUNDING_ARBITRAGE'
+            ORDER BY exit_time DESC
+        """).fetchall()
+    except Exception as e:
+        conn.close()
+        return {"status": "error", "message": str(e)}
+
+    conn.close()
+
+    if not rows:
+        return {
+            "status": "no_data",
+            "message": "Henuz funding arbitrage islemi yok"
+        }
+
+    total_trades = len(rows)
+    total_pnl = 0.0
+    total_funding = 0.0
+    total_commission = 0.0
+    wins = 0
+    long_trades = 0
+    short_trades = 0
+    funding_pos_count = 0
+    funding_neg_count = 0
+
+    by_symbol = {}
+    reasons = {}
+
+    for r in rows:
+        r = dict(r)
+        pnl = float(r.get('pnl_amount') or 0)
+        fund = float(r.get('funding_fee') or 0)
+        comm = float(r.get('commission') or 0)
+        vol = float(r.get('total_vol') or 0)
+        sym = r.get('symbol') or 'UNKNOWN'
+        ttype = r.get('trade_type') or 'BUY'
+        reason = (r.get('close_reason') or 'UNKNOWN').upper()
+
+        total_pnl += pnl
+        total_funding += fund
+        total_commission += comm
+        if pnl > 0:
+            wins += 1
+        if ttype == 'BUY':
+            long_trades += 1
+        else:
+            short_trades += 1
+        if fund > 0:
+            funding_pos_count += 1
+        elif fund < 0:
+            funding_neg_count += 1
+
+        # Sembol bazli
+        if sym not in by_symbol:
+            by_symbol[sym] = {
+                'trades': 0, 'wins': 0,
+                'pnl': 0.0, 'funding': 0.0, 'commission': 0.0,
+                'long': 0, 'short': 0,
+            }
+        s = by_symbol[sym]
+        s['trades'] += 1
+        s['pnl'] += pnl
+        s['funding'] += fund
+        s['commission'] += comm
+        if pnl > 0:
+            s['wins'] += 1
+        if ttype == 'BUY':
+            s['long'] += 1
+        else:
+            s['short'] += 1
+
+        # Kapanis sebebi normalize
+        if 'FUNDING_TP' in reason or ('TP' in reason and 'SL' not in reason):
+            key = 'TP'
+        elif 'FUNDING_SL' in reason or 'SL' in reason or 'STOP' in reason:
+            key = 'SL'
+        elif 'MANUAL' in reason:
+            key = 'MANUAL'
+        else:
+            key = 'DIGER'
+        reasons[key] = reasons.get(key, 0) + 1
+
+    avg_pnl = total_pnl / total_trades if total_trades else 0
+    avg_funding = total_funding / total_trades if total_trades else 0
+    win_rate = (wins / total_trades * 100) if total_trades else 0
+
+    # Sembol listesi (PnL DESC)
+    by_symbol_list = []
+    for k, v in by_symbol.items():
+        by_symbol_list.append({
+            'symbol': k,
+            'trades': v['trades'],
+            'wins': v['wins'],
+            'win_rate': round(v['wins'] / v['trades'] * 100, 2) if v['trades'] > 0 else 0,
+            'total_pnl': round(v['pnl'], 4),
+            'total_funding': round(v['funding'], 4),
+            'total_commission': round(v['commission'], 4),
+            'long': v['long'],
+            'short': v['short'],
+        })
+    by_symbol_list.sort(key=lambda x: x['total_pnl'], reverse=True)
+
+    return {
+        "status": "success",
+        "summary": {
+            "total_trades": total_trades,
+            "total_pnl": round(total_pnl, 4),
+            "total_funding": round(total_funding, 4),
+            "total_commission": round(total_commission, 4),
+            "avg_pnl_per_trade": round(avg_pnl, 4),
+            "avg_funding_per_trade": round(avg_funding, 4),
+            "wins": wins,
+            "losses": total_trades - wins,
+            "win_rate": round(win_rate, 2),
+            "long_trades": long_trades,
+            "short_trades": short_trades,
+            "funding_income_count": funding_pos_count,
+            "funding_cost_count": funding_neg_count,
+        },
+        "by_symbol": by_symbol_list[:50],
+        "reasons": reasons,
+    }
+
+
 @app.post("/api/stats/reset")
 async def reset_stats():
     """Tüm istatistik verilerini sıfırlar (test için)."""
@@ -859,6 +1154,74 @@ async def reset_stats():
 # ----------------------------------------------------------------------
 # ADMIN - TÜM VERİYİ SIFIRLA (test için)
 # ----------------------------------------------------------------------
+@app.get("/api/health/dca")
+async def dca_health():
+    """
+    DCA saglik kontrolu:
+    - initial_price == avg_price olanlar (bug gostergesi)
+    - dca_count > 0 olup initial_price = avg_price olanlar
+    """
+    import json as _json
+    conn = get_db_connection()
+    rows = conn.execute("""
+        SELECT id, symbol, strategy_name, initial_price, avg_price,
+               total_vol, dca_count, dca_history
+        FROM active_trades
+        WHERE dca_count > 0
+    """).fetchall()
+    conn.close()
+
+    issues = []
+    for r in rows:
+        r = dict(r)
+        ini = float(r.get("initial_price") or 0)
+        avg = float(r.get("avg_price") or 0)
+        cnt = int(r.get("dca_count") or 0)
+
+        if ini <= 0 or avg <= 0:
+            continue
+
+        # initial_price == avg_price (DCA yapildiysa anormal)
+        if abs(ini - avg) < 1e-9:
+            issues.append({
+                "id": r["id"],
+                "symbol": r["symbol"],
+                "strategy": r.get("strategy_name"),
+                "issue": "initial_price == avg_price",
+                "initial_price": ini,
+                "avg_price": avg,
+                "dca_count": cnt,
+            })
+            continue
+
+        # DCA history tetik fiyat kontrolu
+        try:
+            dh = _json.loads(r.get("dca_history") or "[]")
+            if dh and cnt > 0:
+                # Ilk DCA tetiginde initial_price'a gore beklenen
+                first_trigger = float(dh[0].get("price", 0) or 0)
+                # Bu tetik fiyat initial'dan asagi mi?
+                if first_trigger > ini:
+                    issues.append({
+                        "id": r["id"],
+                        "symbol": r["symbol"],
+                        "strategy": r.get("strategy_name"),
+                        "issue": "DCA1 fiyati initial_price'tan yukarida",
+                        "initial_price": ini,
+                        "first_dca": first_trigger,
+                        "dca_count": cnt,
+                    })
+        except Exception:
+            pass
+
+    return {
+        "status": "ok",
+        "total_dca_positions": len(rows),
+        "issues_found": len(issues),
+        "issues": issues,
+    }
+
+
 @app.post("/api/admin/reset-all")
 async def admin_reset_all():
     """

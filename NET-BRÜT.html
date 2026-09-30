@@ -1,0 +1,1556 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="UTF-8">
+<title>Netten Brüte — Adım Adım Hesaplayıcı</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { height: 100%; }
+  body {
+    font-family: "Segoe UI", Tahoma, Arial, sans-serif;
+    font-size: 13px; background: #1e1e1e; color: #e0e0e0;
+    overflow: hidden;
+  }
+  .container { display: flex; height: 100vh; }
+
+  .left {
+    width: 45%; min-width: 600px; max-width: 720px;
+    background: #252526; border-right: 2px solid #00acc1;
+    display: flex; flex-direction: column; overflow: hidden;
+  }
+  .right { flex: 1; background: #1a1a1a; display: flex; flex-direction: column; overflow: hidden; }
+
+  .header {
+    padding: 10px 12px; background: #212121;
+    border-bottom: 1px solid #333;
+    display: flex; justify-content: space-between; align-items: center;
+    flex-wrap: wrap; gap: 6px;
+  }
+  .header h1 { font-size: 13px; color: #00acc1; font-weight: bold; }
+  .header .controls { display: flex; gap: 8px; align-items: center; font-size: 11px; }
+  .header .controls label { display: flex; gap: 4px; align-items: center; }
+  .header select {
+    background: #3a3a3a; border: 1px solid #555; color: #fff;
+    padding: 3px 6px; border-radius: 3px; font-size: 11px;
+  }
+
+  .left-body { flex: 1; overflow-y: auto; padding: 10px; }
+
+  .section {
+    background: #2d2d30; border-radius: 6px;
+    padding: 10px; margin-bottom: 10px;
+    border: 1px solid #3e3e42;
+  }
+  .section h2 {
+    font-size: 11px; color: #4ec9b0; font-weight: bold;
+    text-transform: uppercase; letter-spacing: 0.5px;
+    margin-bottom: 8px; padding-bottom: 5px;
+    border-bottom: 1px solid #3e3e42;
+    display: flex; justify-content: space-between; align-items: center;
+  }
+  .section h2 .hint {
+    font-size: 9px; color: #888; font-weight: normal;
+    text-transform: none; letter-spacing: 0;
+  }
+
+  .row { display: grid; gap: 6px; margin-bottom: 6px; align-items: end; }
+  .row.params1 { grid-template-columns: 110px 1fr; }
+  .row.params2 { grid-template-columns: 110px 1fr; }
+  .row.params3 { grid-template-columns: 1fr; }
+
+  label.field {
+    display: flex; flex-direction: column; gap: 2px;
+    font-size: 9px; color: #969696; text-transform: uppercase;
+  }
+  input[type="text"], input[type="number"] {
+    background: #1e1e1e; border: 1px solid #3e3e42; color: #e0e0e0;
+    padding: 5px 7px; border-radius: 3px; font-size: 11px;
+    font-family: inherit; width: 100%;
+  }
+  input:focus { outline: none; border-color: #00acc1; background: #1a2830; }
+  input.num { text-align: right; font-variant-numeric: tabular-nums; }
+  input:disabled { color: #666; background: #181818; cursor: not-allowed; }
+  input::placeholder { color: #555; font-size: 9px; }
+
+  select.plain {
+    background: #1e1e1e; border: 1px solid #3e3e42; color: #fff;
+    padding: 5px 7px; border-radius: 3px; font-size: 11px;
+    font-family: inherit; width: 100%; cursor: pointer;
+  }
+  select.plain:focus { outline: none; border-color: #00acc1; }
+  select.plain option { background: #1e1e1e; color: #fff; }
+
+  .pct-input {
+    display: flex; align-items: stretch;
+    background: #1e1e1e; border: 1px solid #3e3e42;
+    border-radius: 3px; overflow: hidden;
+    transition: border-color 0.15s;
+  }
+  .pct-input:focus-within { border-color: #00acc1; background: #1a2830; }
+  .pct-input .prefix {
+    display: flex; align-items: center; justify-content: center;
+    padding: 0 6px; background: #2d2d30; color: #00acc1;
+    font-weight: bold; font-size: 11px;
+    border-right: 1px solid #3e3e42;
+    user-select: none;
+  }
+  .pct-input input {
+    border: none !important; background: transparent !important;
+    border-radius: 0 !important; padding: 5px 7px;
+    font-size: 11px; text-align: right;
+    font-variant-numeric: tabular-nums;
+    outline: none !important;
+  }
+
+  .grid-wrap {
+    background: #1a1a1a; border: 1px solid #3e3e42;
+    border-radius: 4px; overflow: hidden;
+  }
+  table.kalem-grid { width: 100%; border-collapse: collapse; font-size: 11px; table-layout: fixed; }
+  table.kalem-grid thead th {
+    background: #212121; color: #9cdcfe;
+    padding: 4px 4px; font-weight: 600;
+    font-size: 9px; text-transform: uppercase; letter-spacing: 0.3px;
+    text-align: left; border-bottom: 1px solid #3e3e42;
+    position: sticky; top: 0; z-index: 2;
+    white-space: nowrap;
+  }
+  /* ⭐ Ad sütunu — min genişlik garanti */
+  table.kalem-grid thead th:first-child {
+    width: auto;
+    min-width: 130px;
+  }
+  table.kalem-grid thead th.center { text-align: center; width: 24px; }
+  /* ⭐ TUTAR SÜTUNU GENİŞLETİLDİ: 100 → 155 */
+  table.kalem-grid thead th.num-h { text-align: right; width: 155px; }
+  table.kalem-grid thead th.tur-h { width: 60px; }
+  table.kalem-grid thead th.del-h { width: 24px; }
+
+  table.kalem-grid tbody tr { border-bottom: 1px solid #2a2a2a; }
+  table.kalem-grid tbody tr:hover { background: #262626; }
+  table.kalem-grid tbody tr.focused { background: #1a2830; box-shadow: inset 3px 0 0 #00acc1; }
+  table.kalem-grid tbody td { padding: 0; vertical-align: middle; }
+  table.kalem-grid tbody td.tutar-cell { padding: 0; }
+  .tutar-wrap { display: flex; align-items: center; gap: 4px; padding-right: 4px; }
+  .tutar-wrap input.cell { flex: 1; min-width: 0; }
+  .brut-badge {
+    display: none; background: #1e4a1e; color: #7cb342;
+    border: 1px solid #3e5a3e;
+    font-size: 8px; padding: 2px 5px; border-radius: 3px;
+    font-family: Consolas, monospace; white-space: nowrap;
+    font-weight: bold; line-height: 1;
+    cursor: help; flex-shrink: 0;
+  }
+  .brut-badge.visible { display: inline-block; }
+
+  table.kalem-grid tbody td input.cell,
+  table.kalem-grid tbody td select.cell {
+    width: 100%; background: transparent; border: none;
+    color: #e0e0e0; font-family: inherit; font-size: 11px;
+    padding: 5px 5px; outline: none;
+  }
+  table.kalem-grid tbody td input.cell:focus,
+  table.kalem-grid tbody td select.cell:focus { background: #0d3a4d; }
+  table.kalem-grid tbody td input.num { text-align: right; font-variant-numeric: tabular-nums; }
+  table.kalem-grid tbody td select.cell { cursor: pointer; background: transparent; }
+  table.kalem-grid tbody td select.cell option { background: #1e1e1e; color: #fff; }
+  table.kalem-grid tbody td.chk { text-align: center; width: 24px; }
+  table.kalem-grid tbody td.chk input[type="checkbox"] {
+    width: 13px; height: 13px; cursor: pointer; accent-color: #00acc1;
+  }
+  table.kalem-grid tbody td.del { text-align: center; width: 24px; }
+  .del-btn {
+    background: transparent; border: none;
+    color: #666; font-size: 11px; cursor: pointer;
+    padding: 3px 4px; border-radius: 3px;
+    font-family: inherit; line-height: 1;
+  }
+  .del-btn:hover { background: #5a1d1d; color: #f48771; }
+
+  .grid-footer {
+    padding: 5px 8px; background: #212121;
+    border-top: 1px solid #3e3e42;
+    display: flex; justify-content: space-between; align-items: center;
+    font-size: 9px; color: #888;
+    flex-wrap: wrap; gap: 4px;
+  }
+  .grid-footer .kbd {
+    display: inline-block; padding: 1px 4px;
+    background: #333; border: 1px solid #555; border-radius: 3px;
+    font-family: Consolas, monospace; font-size: 9px;
+    color: #ccc;
+  }
+  .grid-footer .total { font-weight: bold; color: #4ec9b0; font-size: 11px; }
+
+  .btn {
+    padding: 8px 12px; border: none; border-radius: 4px;
+    font-weight: bold; cursor: pointer; font-size: 12px;
+    font-family: inherit; transition: 0.15s;
+  }
+  .btn.primary { background: #00acc1; color: #fff; width: 100%; font-size: 13px; padding: 10px; }
+  .btn.primary:hover { background: #008ba3; }
+  .btn.secondary { background: #3e3e42; color: #e0e0e0; width: 100%; margin-top: 5px; font-size: 11px; padding: 7px; }
+  .btn.secondary:hover { background: #4a4a4e; }
+
+  .right-header {
+    padding: 8px 14px; background: #212121;
+    border-bottom: 1px solid #333;
+    display: flex; justify-content: space-between; align-items: center;
+  }
+  .right-header h1 { font-size: 13px; color: #ffa726; font-weight: bold; }
+  .right-body { flex: 1; overflow-y: auto; padding: 10px; }
+
+  .result-hero {
+    background: linear-gradient(135deg, #0d3a4d 0%, #1a5a3a 100%);
+    border: 2px solid #00acc1;
+    border-radius: 6px; padding: 10px 14px;
+    margin-bottom: 10px;
+    display: flex; justify-content: space-between;
+    align-items: center; gap: 16px;
+  }
+  .hero-label {
+    font-size: 9px; color: #7dd3d3;
+    text-transform: uppercase; letter-spacing: 1.2px;
+    font-weight: bold; margin-bottom: 3px;
+  }
+  .hero-value {
+    font-size: 24px; font-weight: bold;
+    color: #ffd700; font-family: Consolas, monospace;
+    line-height: 1;
+  }
+  .hero-unit { font-size: 13px; color: #7dd3d3; margin-left: 4px; font-weight: normal; }
+  .hero-side {
+    display: flex; flex-direction: column; gap: 4px;
+    padding-left: 16px; border-left: 1px solid rgba(255,255,255,0.15);
+  }
+  .hs-label { font-size: 9px; color: #aaa; text-transform: uppercase; letter-spacing: 0.5px; }
+  .hs-value { font-size: 12px; font-weight: bold; color: #e0e0e0; font-family: Consolas, monospace; }
+  .hs-value.red { color: #f48771; }
+
+  .group-title {
+    display: flex; align-items: center; gap: 8px;
+    padding: 6px 10px; margin: 12px 0 6px;
+    background: #2a2d30; border-radius: 4px;
+    border-left: 3px solid #00acc1;
+  }
+  .group-title:first-of-type { margin-top: 0; }
+  .gt-icon { font-size: 13px; }
+  .gt-text { font-size: 11px; font-weight: bold; color: #00acc1; text-transform: uppercase; letter-spacing: 0.5px; }
+  .gt-desc { font-size: 9px; color: #777; margin-left: auto; font-style: italic; }
+
+  .combined-block {
+    background: #252526;
+    border: 1px solid #3e3e42;
+    border-radius: 6px;
+    padding: 0;
+    margin-bottom: 6px;
+    overflow: hidden;
+  }
+  .combined-block-header {
+    display: flex; align-items: center; gap: 8px;
+    padding: 7px 12px;
+    background: #2a2d30;
+    border-bottom: 1px solid #3e3e42;
+    border-left: 4px solid #00acc1;
+  }
+  .combined-block-header .cb-icon { font-size: 13px; }
+  .combined-block-header .cb-text {
+    font-size: 11px; font-weight: bold;
+    color: #00acc1; text-transform: uppercase; letter-spacing: 0.5px;
+  }
+  .combined-block-header .cb-desc {
+    font-size: 9px; color: #777;
+    margin-left: auto; font-style: italic;
+  }
+  .combined-inner {
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr 1fr;
+  }
+  .combined-inner .inner-step {
+    padding: 8px 10px;
+    border-right: 1px solid #2f2f32;
+    min-width: 0;
+    overflow: hidden;
+  }
+  .combined-inner .inner-step:last-child { border-right: none; }
+
+  @media (max-width: 1400px) {
+    .combined-inner { grid-template-columns: 1fr 1fr; }
+    .combined-inner .inner-step:nth-child(2n) { border-right: none; }
+    .combined-inner .inner-step:nth-child(1),
+    .combined-inner .inner-step:nth-child(2) {
+      border-bottom: 1px solid #2f2f32;
+    }
+  }
+
+  .combined-block.grup2 .combined-block-header { border-left-color: #ffa726; }
+  .combined-block.grup2 .combined-block-header .cb-text { color: #ffa726; }
+
+  .combined-block.grup3 .combined-block-header { border-left-color: #f48771; }
+  .combined-block.grup3 .combined-block-header .cb-text { color: #f48771; }
+
+  .steps-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 6px;
+    margin-bottom: 6px;
+  }
+  .steps-grid .step-card { margin-bottom: 0; }
+  .steps-grid.full { grid-template-columns: 1fr; }
+
+  .step-card {
+    background: #252526; border-radius: 5px;
+    padding: 7px 9px; margin-bottom: 6px;
+    border-left: 3px solid #4ec9b0;
+  }
+  .step-card.blue { border-left-color: #569cd6; }
+  .step-card.orange { border-left-color: #ffa726; }
+  .step-card.purple { border-left-color: #c586c0; }
+  .step-card.cyan { border-left-color: #4ec9b0; }
+  .step-card.green { border-left-color: #7cb342; }
+  .step-card.red { border-left-color: #f48771; }
+  .step-card.gold { border-left-color: #ffd700; background: #2a2417; }
+  .step-card.pink { border-left-color: #ff79c6; }
+  .step-card.muted-card { opacity: 0.55; }
+  .step-card.indirim { border-left-color: #d4a017; background: #2a2517; }
+
+  .step-head { display: flex; align-items: center; gap: 5px; margin-bottom: 4px; flex-wrap: wrap; }
+
+  .step-num {
+    display: inline-flex; align-items: center; justify-content: center;
+    min-width: 18px; height: 18px;
+    padding: 0 4px;
+    background: #00acc1; color: #1a1a1a;
+    font-size: 10px; font-weight: bold;
+    border-radius: 4px;
+    font-family: Consolas, monospace;
+    flex-shrink: 0;
+  }
+  .step-card.blue .step-num { background: #569cd6; }
+  .step-card.orange .step-num { background: #ffa726; }
+  .step-card.purple .step-num { background: #c586c0; }
+  .step-card.cyan .step-num { background: #4ec9b0; }
+  .step-card.green .step-num { background: #7cb342; }
+  .step-card.red .step-num { background: #f48771; }
+  .step-card.gold .step-num { background: #ffd700; }
+  .step-card.pink .step-num { background: #ff79c6; }
+  .step-card.indirim .step-num { background: #d4a017; }
+  .step-card.muted-card .step-num { background: #555; color: #aaa; }
+
+  .inner-step .step-num { background: #569cd6; color: #1a1a1a; }
+  .inner-step.indirim-inner .step-num { background: #d4a017; }
+  .inner-step.gv-inner .step-num { background: #ffa726; }
+  .inner-step.dv-inner .step-num { background: #c586c0; }
+  .inner-step.sgk-inner .step-num { background: #4ec9b0; }
+  .inner-step.istisna-inner .step-num { background: #7cb342; }
+  .inner-step.muted-inner .step-num { background: #555; color: #aaa; }
+  .inner-step.tax-inner .step-num { background: #ffa726; }
+  .inner-step.red-inner .step-num { background: #f48771; }
+  .inner-step.gold-inner .step-num { background: #ffd700; }
+  .inner-step.pink-inner .step-num { background: #ff79c6; }
+
+  .step-icon { font-size: 12px; }
+  .step-name { font-size: 11px; font-weight: bold; color: #fff; }
+  .step-badge {
+    font-size: 8px;
+    padding: 1px 5px; background: #3e3e42;
+    color: #9cdcfe; border-radius: 8px;
+    font-weight: bold; text-transform: uppercase; letter-spacing: 0.3px;
+    margin-left: auto;
+  }
+  .step-desc { font-size: 9px; color: #888; margin-bottom: 4px; line-height: 1.35; }
+  .step-desc.small { font-size: 8.5px; margin-bottom: 0; margin-top: 4px; }
+
+  .step-formula {
+    background: #1a1a1a; border-radius: 3px;
+    padding: 5px 7px; font-family: Consolas, monospace;
+    font-size: 10px; color: #ce9178;
+    white-space: pre-wrap; word-break: break-word;
+    line-height: 1.45; margin: 4px 0;
+  }
+
+  .step-result {
+    background: #1a1a1a; border-radius: 3px;
+    padding: 4px 8px;
+    display: flex; justify-content: space-between;
+    align-items: center; margin: 4px 0 0;
+    border-left: 3px solid #4ec9b0;
+  }
+  .sr-label { font-size: 9px; color: #969696; text-transform: uppercase; }
+  .sr-value { font-size: 12px; font-weight: bold; color: #ffd700; font-family: Consolas, monospace; }
+  .step-result.big { padding: 8px 10px; background: #1a2417; border-left: 4px solid #ffd700; }
+  .step-result.big .sr-value { font-size: 18px; }
+
+  .step-result-mini {
+    font-size: 10px; color: #e0e0e0;
+    padding: 4px 7px; background: #1a1a1a;
+    border-radius: 3px; margin-top: 4px;
+  }
+  .orange { color: #ffa726; }
+  .green { color: #7cb342; }
+  .gold-text { color: #ffd700; }
+
+  .step-table {
+    width: 100%; border-collapse: collapse;
+    font-size: 10px; margin: 3px 0;
+    font-family: Consolas, monospace;
+  }
+  .step-table th {
+    text-align: left; color: #9cdcfe;
+    padding: 2px 5px; font-weight: normal;
+    background: #1a1a1a; font-size: 8.5px;
+    text-transform: uppercase; letter-spacing: 0.3px;
+  }
+  .step-table td { padding: 2px 5px; border-top: 1px solid #232323; color: #ce9178; }
+  .step-table td.num { text-align: right; color: #b5cea8; }
+  .step-table td.src { text-align: right; font-size: 8px; color: #666; letter-spacing: 0.3px; }
+  .step-table td.green { color: #7cb342; font-weight: bold; }
+  .step-table td.gold-text { color: #ffd700; font-weight: bold; }
+  .step-table td.minus { color: #f48771; font-weight: bold; }
+
+  .empty-state { text-align: center; color: #555; padding: 60px 20px; font-size: 14px; }
+
+  ::-webkit-scrollbar { width: 10px; height: 10px; }
+  ::-webkit-scrollbar-track { background: #1e1e1e; }
+  ::-webkit-scrollbar-thumb { background: #3e3e42; border-radius: 5px; }
+  ::-webkit-scrollbar-thumb:hover { background: #555; }
+
+  .toast {
+    position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%);
+    background: #0e639c; color: #fff; padding: 10px 18px;
+    border-radius: 5px; font-size: 12px; font-weight: bold;
+    opacity: 0; pointer-events: none; transition: opacity 0.2s;
+    z-index: 1000;
+  }
+  .toast.show { opacity: 1; }
+</style>
+</head>
+<body>
+
+<div class="container">
+
+  <div class="left">
+    <div class="header">
+      <h1>🧮 Netten Brüte</h1>
+      <div class="controls">
+        <label>Yıl:
+          <select id="yil">
+            <option value="2026" selected>2026</option>
+            <option value="2025">2025</option>
+            <option value="2024">2024</option>
+          </select>
+        </label>
+        <label>Ay:
+          <select id="ay">
+            <option value="1">Ocak</option>
+            <option value="2">Şubat</option>
+            <option value="3">Mart</option>
+            <option value="4">Nisan</option>
+            <option value="5">Mayıs</option>
+            <option value="6">Haziran</option>
+            <option value="7">Temmuz</option>
+            <option value="8">Ağustos</option>
+            <option value="9">Eylül</option>
+            <option value="10">Ekim</option>
+            <option value="11">Kasım</option>
+            <option value="12">Aralık</option>
+          </select>
+        </label>
+      </div>
+    </div>
+
+    <div class="left-body">
+
+      <div class="section">
+        <h2>Başlangıç Parametreleri</h2>
+        <div class="row params1">
+          <label class="field">Personel Türü
+            <select id="personelTuru" class="plain">
+              <option value="memur" selected>Memur</option>
+              <option value="isci">İşçi</option>
+              <option value="sozlesmeli">Sözleşmeli</option>
+            </select>
+          </label>
+          <label class="field">SGK Şahıs Oranı (%)
+            <div class="pct-input">
+              <span class="prefix">%</span>
+              <input type="text" id="sgkOran" value="15" inputmode="decimal" spellcheck="false">
+            </div>
+          </label>
+        </div>
+
+        <div class="row params2">
+          <label class="field">Kümülatif GV Matrahı (önceki aylar)
+            <input type="text" id="kumulatif" class="num" value="150.000,00">
+          </label>
+          <label class="field">Uygulama
+            <select id="istisnaUygula" class="plain" onchange="istisnaAktifDegisti()">
+              <option value="1" selected>İstisna Uygula</option>
+              <option value="0">İstisna Uygulama</option>
+            </select>
+          </label>
+        </div>
+
+        <div class="row params3">
+          <label class="field">GV İstisna Tutarı (boşsa oto)
+            <input type="text" id="gvIstisna" class="num" placeholder="oto: 4.211,33">
+          </label>
+        </div>
+
+        <div class="row params3">
+          <label class="field">DV İstisna Tutarı (boşsa oto)
+            <input type="text" id="dvIstisna" class="num" placeholder="oto: 250,70">
+          </label>
+        </div>
+
+        <div class="row params3">
+          <label class="field">Özel Sigorta İndirimi (GV Matrahından)
+            <input type="text" id="ozelSigorta" class="num" placeholder="0,00" value="0,00">
+          </label>
+        </div>
+
+        <div class="row params3">
+          <label class="field">Diğer GV Matrah İndirimi
+            <input type="text" id="digerGVIndirim" class="num" placeholder="0,00" value="0,00">
+          </label>
+        </div>
+
+        <div class="row params3">
+          <label class="field">Diğer Vergi İndirimi (GV'den)
+            <input type="text" id="digerVergiIndirim" class="num" placeholder="0,00" value="0,00">
+          </label>
+        </div>
+      </div>
+
+      <div class="section">
+        <h2>
+          <span>Gelir Kalemleri</span>
+          <span class="hint">↓ yeni · Tab ileri · Ctrl+V</span>
+        </h2>
+
+        <div class="grid-wrap">
+          <table class="kalem-grid" id="kalemGrid">
+            <thead>
+              <tr>
+                <th>Ad</th>
+                <th class="num-h">Tutar</th>
+                <th class="tur-h">Tür</th>
+                <th class="center" title="Gelir Vergisi matrahına dahil">G</th>
+                <th class="center" title="Damga Vergisi matrahına dahil">D</th>
+                <th class="center" title="SGK matrahına dahil">S</th>
+                <th class="del-h"></th>
+              </tr>
+            </thead>
+            <tbody id="kalemBody"></tbody>
+          </table>
+          <div class="grid-footer">
+            <span>
+              <span class="kbd">↓</span> yeni · <span class="kbd">Tab</span> ileri ·
+              <span class="kbd">Ctrl+V</span> yapıştır
+            </span>
+            <span class="total">Toplam: <b id="gridTotal">0,00</b></span>
+          </div>
+        </div>
+      </div>
+
+      <button class="btn primary" onclick="hesapla()">🧮 HESAPLA</button>
+      <button class="btn secondary" onclick="ornekYukle()">📥 Örnek Yükle (SOSYAL DENGE)</button>
+      <button class="btn secondary" onclick="temizle()">🧹 Temizle</button>
+
+    </div>
+  </div>
+
+  <div class="right">
+    <div class="right-header">
+      <h1>📊 Hesaplama Sonucu ve Akışı</h1>
+    </div>
+    <div class="right-body" id="akis">
+      <div class="empty-state">
+        ⬅️ Soldaki panelden kalemleri girip<br>
+        <b>HESAPLA</b> butonuna basın.
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+// ================================================================
+// İSTİSNA TABLOSU
+// ================================================================
+const ISTISNA_TABLOSU = {
+  "2026": {
+    1:  { gv: 4211.33, dv: 250.70 }, 2:  { gv: 4211.33, dv: 250.70 },
+    3:  { gv: 4211.33, dv: 250.70 }, 4:  { gv: 4211.33, dv: 250.70 },
+    5:  { gv: 4211.33, dv: 250.70 }, 6:  { gv: 4211.33, dv: 250.70 },
+    7:  { gv: 4537.75, dv: 250.70 },
+    8:  { gv: 5615.10, dv: 250.70 }, 9:  { gv: 5615.10, dv: 250.70 },
+    10: { gv: 5615.10, dv: 250.70 }, 11: { gv: 5615.10, dv: 250.70 },
+    12: { gv: 5615.10, dv: 250.70 }
+  },
+  "2025": {
+    1:  { gv: 3316.19, dv: 197.38 }, 2:  { gv: 3316.19, dv: 197.38 },
+    3:  { gv: 3316.19, dv: 197.38 }, 4:  { gv: 3316.19, dv: 197.38 },
+    5:  { gv: 3316.19, dv: 197.38 }, 6:  { gv: 3316.19, dv: 197.38 },
+    7:  { gv: 3316.19, dv: 197.38 }, 8:  { gv: 3316.19, dv: 197.38 },
+    9:  { gv: 3316.19, dv: 197.38 }, 10: { gv: 3316.19, dv: 197.38 },
+    11: { gv: 3316.19, dv: 197.38 }, 12: { gv: 3316.19, dv: 197.38 }
+  },
+  "2024": {
+    1:  { gv: 2550.32, dv: 151.82 }, 2:  { gv: 2550.32, dv: 151.82 },
+    3:  { gv: 2550.32, dv: 151.82 }, 4:  { gv: 2550.32, dv: 151.82 },
+    5:  { gv: 2550.32, dv: 151.82 }, 6:  { gv: 2550.32, dv: 151.82 },
+    7:  { gv: 2550.32, dv: 151.82 }, 8:  { gv: 2550.32, dv: 151.82 },
+    9:  { gv: 2550.32, dv: 151.82 }, 10: { gv: 2550.32, dv: 151.82 },
+    11: { gv: 2550.32, dv: 151.82 }, 12: { gv: 2550.32, dv: 151.82 }
+  }
+};
+
+const YILLAR = {
+  "2026": {
+    asgariBrut: 33030.00, damgaOrani: 0.00759,
+    gvDilimleri: [
+      { limit: 190000, oran: 0.15 }, { limit: 400000, oran: 0.20 },
+      { limit: 1000000, oran: 0.27 }, { limit: 3500000, oran: 0.35 },
+      { limit: Infinity, oran: 0.40 }
+    ]
+  },
+  "2025": {
+    asgariBrut: 26005.50, damgaOrani: 0.00759,
+    gvDilimleri: [
+      { limit: 158000, oran: 0.15 }, { limit: 330000, oran: 0.20 },
+      { limit: 800000, oran: 0.27 }, { limit: 4300000, oran: 0.35 },
+      { limit: Infinity, oran: 0.40 }
+    ]
+  },
+  "2024": {
+    asgariBrut: 20002.50, damgaOrani: 0.00759,
+    gvDilimleri: [
+      { limit: 110000, oran: 0.15 }, { limit: 230000, oran: 0.20 },
+      { limit: 870000, oran: 0.27 }, { limit: 3000000, oran: 0.35 },
+      { limit: Infinity, oran: 0.40 }
+    ]
+  }
+};
+
+const getYil = () => document.getElementById("yil").value;
+const getAy = () => parseInt(document.getElementById("ay").value);
+const params = () => YILLAR[getYil()];
+
+const fmt = (n) => new Intl.NumberFormat("tr-TR", {
+  minimumFractionDigits: 2, maximumFractionDigits: 2
+}).format(n || 0);
+
+function parseTr(s) {
+  if (typeof s === "number") return s;
+  if (s == null || s === "") return 0;
+  return parseFloat(String(s).replace(/\./g, "").replace(",", ".")) || 0;
+}
+const esc = (s) => String(s).replace(/[&<>"']/g,
+  c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+
+function T(matrah, dilimler) {
+  if (matrah <= 0) return 0;
+  let vergi = 0, oncekiLimit = 0;
+  for (const d of dilimler) {
+    if (matrah <= oncekiLimit) break;
+    const kisim = Math.min(matrah, d.limit) - oncekiLimit;
+    if (kisim > 0) vergi += kisim * d.oran;
+    oncekiLimit = d.limit;
+  }
+  return vergi;
+}
+function aktifDilim(kumSonrasi, dilimler) {
+  for (let i = 0; i < dilimler.length; i++) {
+    if (kumSonrasi <= dilimler[i].limit)
+      return { index: i + 1, oran: dilimler[i].oran };
+  }
+  return { index: dilimler.length, oran: dilimler[dilimler.length-1].oran };
+}
+
+function dilimKirilimi(kumulatifOnce, aylikMatrah, dilimler) {
+  const kirilim = [];
+  let konum = kumulatifOnce;
+  let kalan = aylikMatrah;
+  let oncekiLimit = 0;
+  let dilimIndex = 0;
+
+  for (const d of dilimler) {
+    if (kalan <= 0) break;
+    dilimIndex++;
+    const dilimBaslangic = oncekiLimit;
+    const dilimBitis = d.limit;
+    const dilimeGiris = Math.max(konum, dilimBaslangic);
+    const dilimeCikis = Math.min(konum + kalan, dilimBitis);
+    const kisim = Math.max(0, dilimeCikis - dilimeGiris);
+
+    if (kisim > 0) {
+      kirilim.push({
+        index: dilimIndex,
+        oran: d.oran,
+        tutar: kisim,
+        vergi: kisim * d.oran
+      });
+      kalan -= kisim;
+      konum += kisim;
+    }
+    oncekiLimit = d.limit;
+  }
+  return kirilim;
+}
+
+// ================================================================
+// PERSONEL TÜRÜ
+// ================================================================
+function getPersonelTuru() { return document.getElementById("personelTuru").value; }
+function isMemur() { return getPersonelTuru() === "memur"; }
+function defaultSgkDurumu() { return !isMemur(); }
+
+function personelTuruDegisti() {
+  const memur = isMemur();
+  const sgkInput = document.getElementById("sgkOran");
+  if (memur) {
+    sgkInput.value = ""; sgkInput.disabled = true;
+    sgkInput.parentElement.style.opacity = "0.5";
+  } else {
+    sgkInput.disabled = false;
+    sgkInput.parentElement.style.opacity = "1";
+    if (!sgkInput.value.trim()) sgkInput.value = "15";
+  }
+  document.querySelectorAll("#kalemBody tr").forEach(tr => {
+    const cb = tr.querySelector(".sgk");
+    if (cb) cb.checked = !memur;
+  });
+  updateIstisnaPlaceholders();
+  scheduleCalc();
+}
+
+function getSgkOran() {
+  if (isMemur()) return 0;
+  const raw = document.getElementById("sgkOran").value.trim();
+  if (!raw) return 0;
+  const temiz = raw.replace("%", "").replace(/\s/g, "");
+  const sayi = parseFloat(temiz.replace(",", "."));
+  if (isNaN(sayi) || sayi < 0) return 0;
+  if (sayi < 1) return sayi;
+  return sayi / 100;
+}
+
+function getOzelSigorta() { return parseTr(document.getElementById("ozelSigorta").value); }
+function getDigerGVIndirim() { return parseTr(document.getElementById("digerGVIndirim").value); }
+function getDigerVergiIndirim() { return parseTr(document.getElementById("digerVergiIndirim").value); }
+function getToplamMatrahIndirim() { return getOzelSigorta() + getDigerGVIndirim(); }
+
+function getAylikIstisna() {
+  const yil = getYil(), ay = getAy();
+  const tablo = ISTISNA_TABLOSU[yil];
+  if (tablo && tablo[ay]) return tablo[ay];
+  const p = params(); const sgk = getSgkOran();
+  return {
+    gv: p.asgariBrut * (1 - sgk) * p.gvDilimleri[0].oran,
+    dv: p.asgariBrut * p.damgaOrani
+  };
+}
+function getIstisnaGV() {
+  const raw = document.getElementById("gvIstisna").value.trim();
+  if (raw) return parseTr(raw);
+  return getAylikIstisna().gv;
+}
+function getIstisnaDV() {
+  const raw = document.getElementById("dvIstisna").value.trim();
+  if (raw) return parseTr(raw);
+  return getAylikIstisna().dv;
+}
+function isManuelGV() { return document.getElementById("gvIstisna").value.trim() !== ""; }
+function isManuelDV() { return document.getElementById("dvIstisna").value.trim() !== ""; }
+
+function updateIstisnaPlaceholders() {
+  const ist = getAylikIstisna();
+  document.getElementById("gvIstisna").placeholder = "oto: " + fmt(ist.gv);
+  document.getElementById("dvIstisna").placeholder = "oto: " + fmt(ist.dv);
+}
+function isIstisnaAktif() { return document.getElementById("istisnaUygula").value === "1"; }
+function istisnaAktifDegisti() {
+  const aktif = isIstisnaAktif();
+  const gv = document.getElementById("gvIstisna");
+  const dv = document.getElementById("dvIstisna");
+  gv.disabled = !aktif; dv.disabled = !aktif;
+  gv.parentElement.style.opacity = aktif ? "1" : "0.5";
+  dv.parentElement.style.opacity = aktif ? "1" : "0.5";
+  scheduleCalc();
+}
+
+// ================================================================
+// BATCH EDIT GRID
+// ================================================================
+const FOCUSABLE = ["ad", "tutar", "tur", "gv", "dv", "sgk"];
+
+function rowHtml(k = {}) {
+  const ad = esc(k.ad || "");
+  const tutar = k.tutar ? fmt(k.tutar) : "";
+  const tur = k.tur || "brut";
+  const gv = k.gv !== false, dv = k.dv !== false;
+  const sgk = (k.sgk !== undefined) ? k.sgk : defaultSgkDurumu();
+  return `
+    <td><input class="cell ad" type="text" value="${ad}" placeholder="Kalem adı" spellcheck="false"></td>
+    <td class="tutar-cell">
+      <div class="tutar-wrap">
+        <input class="cell num tutar" type="text" value="${tutar}" placeholder="0,00">
+        <span class="brut-badge" title="Bu net tutara karşılık gelen brüt ücret"></span>
+      </div>
+    </td>
+    <td>
+      <select class="cell tur">
+        <option value="brut"${tur==="brut"?" selected":""}>Brüt</option>
+        <option value="net"${tur==="net"?" selected":""}>Net</option>
+      </select>
+    </td>
+    <td class="chk"><input type="checkbox" class="gv"${gv?" checked":""}></td>
+    <td class="chk"><input type="checkbox" class="dv"${dv?" checked":""}></td>
+    <td class="chk"><input type="checkbox" class="sgk"${sgk?" checked":""}></td>
+    <td class="del"><button class="del-btn" tabindex="-1" title="Satırı sil">✕</button></td>
+  `;
+}
+
+function addRow(k = {}) {
+  const tbody = document.getElementById("kalemBody");
+  const tr = document.createElement("tr");
+  tr.innerHTML = rowHtml(k);
+  tbody.appendChild(tr);
+  return tr;
+}
+function isRowEmpty(tr) {
+  if (!tr) return true;
+  const ad = tr.querySelector(".ad").value.trim();
+  const tutar = parseTr(tr.querySelector(".tutar").value);
+  return !ad && tutar === 0;
+}
+function ensureSentinel() {
+  const tbody = document.getElementById("kalemBody");
+  let rows = [...tbody.querySelectorAll("tr")];
+  while (rows.length > 0 && isRowEmpty(rows[rows.length - 1])) {
+    rows[rows.length - 1].remove(); rows.pop();
+  }
+  addRow(); updateGridTotal();
+}
+function updateGridTotal() {
+  const rows = [...document.querySelectorAll("#kalemBody tr")];
+  let t = 0;
+  for (const tr of rows) t += parseTr(tr.querySelector(".tutar").value);
+  document.getElementById("gridTotal").textContent = fmt(t);
+}
+function kalemleriAl() {
+  const kalemler = [];
+  document.querySelectorAll("#kalemBody tr").forEach(tr => {
+    const ad = tr.querySelector(".ad").value.trim();
+    const tutar = parseTr(tr.querySelector(".tutar").value);
+    const tur = tr.querySelector(".tur").value;
+    if (!ad && tutar === 0) return;
+    kalemler.push({
+      ad: ad || "(isimsiz)", tutar, tur,
+      gv: tr.querySelector(".gv").checked,
+      dv: tr.querySelector(".dv").checked,
+      sgk: tr.querySelector(".sgk").checked
+    });
+  });
+  return kalemler;
+}
+function focusCell(tr, colIdx) {
+  if (!tr) return;
+  const col = FOCUSABLE[colIdx];
+  const el = tr.querySelector("." + col);
+  if (el) { el.focus(); if (el.select) el.select(); }
+}
+function highlightRow(tr) {
+  document.querySelectorAll("#kalemBody tr.focused").forEach(r => r.classList.remove("focused"));
+  if (tr) tr.classList.add("focused");
+}
+
+function brutBadgeleriniTemizle() {
+  document.querySelectorAll("#kalemBody .brut-badge").forEach(b => {
+    b.classList.remove("visible"); b.textContent = "";
+  });
+}
+function brutBadgeleriniGuncelle(netSonuclar) {
+  brutBadgeleriniTemizle();
+  const netRows = [...document.querySelectorAll("#kalemBody tr")]
+    .filter(tr => tr.querySelector(".tur")?.value === "net");
+  netRows.forEach((tr, i) => {
+    const nk = netSonuclar[i]; if (!nk) return;
+    const badge = tr.querySelector(".brut-badge");
+    if (badge) {
+      badge.textContent = "→ " + fmt(nk.brut);
+      badge.classList.add("visible");
+    }
+  });
+}
+
+function bindGrid() {
+  const tbody = document.getElementById("kalemBody");
+  tbody.addEventListener("focusin", (e) => {
+    const tr = e.target.closest("tr");
+    if (tr) highlightRow(tr);
+  });
+  tbody.addEventListener("input", (e) => {
+    const tr = e.target.closest("tr"); if (!tr) return;
+    const rows = [...tbody.querySelectorAll("tr")];
+    if (rows[rows.length - 1] === tr && !isRowEmpty(tr)) addRow();
+    updateGridTotal(); scheduleCalc();
+  });
+  tbody.addEventListener("change", () => { updateGridTotal(); scheduleCalc(); });
+  tbody.addEventListener("click", (e) => {
+    if (!e.target.classList.contains("del-btn")) return;
+    const tr = e.target.closest("tr"); if (!tr) return;
+    tr.remove(); ensureSentinel(); scheduleCalc();
+    const rows = [...tbody.querySelectorAll("tr")];
+    if (rows.length > 0) rows[rows.length - 1].querySelector(".ad").focus();
+  });
+  tbody.addEventListener("keydown", (e) => {
+    const tr = e.target.closest("tr"); if (!tr) return;
+    const rows = [...tbody.querySelectorAll("tr")];
+    const rowIdx = rows.indexOf(tr);
+    const colIdx = FOCUSABLE.findIndex(c => tr.querySelector("." + c) === e.target);
+    if (colIdx === -1) return;
+    const isSelect = e.target.tagName === "SELECT";
+    if (e.key === "ArrowDown" || (e.key === "Enter" && !isSelect)) {
+      e.preventDefault();
+      if (rowIdx === rows.length - 1) {
+        const newTr = addRow(); highlightRow(newTr); focusCell(newTr, colIdx);
+      } else focusCell(rows[rowIdx + 1], colIdx);
+      return;
+    }
+    if (e.key === "ArrowUp") {
+      e.preventDefault();
+      if (rowIdx > 0) focusCell(rows[rowIdx - 1], colIdx);
+      return;
+    }
+    if (e.key === "Tab" && !e.shiftKey) {
+      if (rowIdx === rows.length - 1 && colIdx === FOCUSABLE.length - 1) {
+        e.preventDefault();
+        const newTr = addRow(); highlightRow(newTr); focusCell(newTr, 0);
+      }
+      return;
+    }
+    if (isSelect && (e.key === "ArrowLeft" || e.key === "ArrowRight")) return;
+    if (e.key === "Escape") e.target.blur();
+  });
+  tbody.addEventListener("paste", (e) => {
+    const text = (e.clipboardData || window.clipboardData).getData("text");
+    if (!text) return;
+    if (!text.includes("\n") && !text.includes("\t")) return;
+    e.preventDefault();
+    const parsedRows = text.replace(/\r/g, "").split("\n").filter(r => r.trim().length > 0);
+    const startTr = e.target.closest("tr");
+    const startRowIdx = rows().indexOf(startTr);
+    const startColIdx = FOCUSABLE.findIndex(c => startTr.querySelector("." + c) === e.target);
+    if (startRowIdx === -1 || startColIdx === -1) return;
+    let currentRows = [...tbody.querySelectorAll("tr")];
+    parsedRows.forEach((line, rOff) => {
+      const cells = line.split("\t");
+      const rowIdx = startRowIdx + rOff;
+      while (currentRows.length <= rowIdx) currentRows.push(addRow());
+      const tr = currentRows[rowIdx];
+      cells.forEach((val, cOff) => {
+        const colIdx = startColIdx + cOff;
+        if (colIdx >= FOCUSABLE.length) return;
+        const col = FOCUSABLE[colIdx];
+        const el = tr.querySelector("." + col); if (!el) return;
+        const clean = val.trim();
+        if (col === "gv" || col === "dv" || col === "sgk") {
+          const trues = ["1","true","evet","e","x","✓"];
+          el.checked = trues.includes(clean.toLowerCase());
+        } else if (col === "tur") {
+          if (clean.toLowerCase().includes("net")) el.value = "net";
+          else if (clean.length) el.value = "brut";
+        } else if (col === "tutar") {
+          el.value = clean ? fmt(parseTr(clean)) : "";
+        } else el.value = clean;
+      });
+    });
+    ensureSentinel(); updateGridTotal(); scheduleCalc();
+    showToast(`${parsedRows.length} satır yapıştırıldı`);
+  });
+}
+function rows() { return [...document.querySelectorAll("#kalemBody tr")]; }
+
+// ================================================================
+// ÇEKİRDEK
+// ================================================================
+function hesaplaCore() {
+  const p = params();
+  const kumulatif = parseTr(document.getElementById("kumulatif").value);
+  const sgkOran = getSgkOran();
+  const istisnaAktif = isIstisnaAktif();
+  const matrahIndirim = getToplamMatrahIndirim();
+  const vergiIndirim = getDigerVergiIndirim();
+  const kalemler = kalemleriAl();
+  return {
+    p, kumulatif, sgkOran, istisnaAktif, matrahIndirim, vergiIndirim, kalemler,
+    brutKalemler: kalemler.filter(k => k.tur === "brut"),
+    netKalemler: kalemler.filter(k => k.tur === "net")
+  };
+}
+
+function netBruteBul(hedefNet, kumulatif, brutKalemler, buNetKalem, p, sgkOran, istisnaAktif, gvIstisna, dvIstisna, matrahIndirim, vergiIndirim) {
+  if (hedefNet <= 0) return 0;
+  const hesap = (EB) => {
+    let gvMatrahHam = 0, dvMatrah = 0, sgkMatrah = 0;
+    for (const k of brutKalemler) {
+      if (k.gv)  gvMatrahHam += k.tutar;
+      if (k.dv)  dvMatrah    += k.tutar;
+      if (k.sgk) sgkMatrah   += k.tutar;
+    }
+    const sgkBu = buNetKalem.sgk ? EB * sgkOran : 0;
+    if (buNetKalem.gv)  gvMatrahHam += buNetKalem.sgk ? (EB - sgkBu) : EB;
+    if (buNetKalem.dv)  dvMatrah    += EB;
+    if (buNetKalem.sgk) sgkMatrah   += EB;
+    const gvMatrah = Math.max(0, gvMatrahHam - matrahIndirim);
+    const gvBrut = T(kumulatif + gvMatrah, p.gvDilimleri) - T(kumulatif, p.gvDilimleri);
+    const dvBrut = dvMatrah * p.damgaOrani;
+    const gvI = istisnaAktif ? gvIstisna : 0;
+    const dvI = istisnaAktif ? dvIstisna : 0;
+    const gvOdenek = Math.max(0, gvBrut - gvI - vergiIndirim);
+    const dvOdenek = Math.max(0, dvBrut - dvI);
+    const gvPay = gvMatrahHam > 0 ? (buNetKalem.gv ? (buNetKalem.sgk ? EB - sgkBu : EB) : 0) / gvMatrahHam : 0;
+    const dvPay = dvMatrah > 0 ? (buNetKalem.dv ? EB : 0) / dvMatrah : 0;
+    return EB - sgkBu - gvOdenek * gvPay - dvOdenek * dvPay;
+  };
+  let alt = 0, ust = hedefNet * 3, iter = 0;
+  while (hesap(ust) < hedefNet && iter < 40) { ust *= 1.5; iter++; }
+  for (let i = 0; i < 80; i++) {
+    const orta = (alt + ust) / 2;
+    const n = hesap(orta);
+    if (Math.abs(n - hedefNet) < 0.005) return orta;
+    if (n < hedefNet) alt = orta; else ust = orta;
+  }
+  return (alt + ust) / 2;
+}
+
+function hesapla() {
+  const c = hesaplaCore();
+  const p = c.p;
+  const gvIstisnaHavuz = c.istisnaAktif ? getIstisnaGV() : 0;
+  const dvIstisnaHavuz = c.istisnaAktif ? getIstisnaDV() : 0;
+  const gvManual = isManuelGV();
+  const dvManual = isManuelDV();
+
+  const netSonuclar = [];
+  for (const nk of c.netKalemler) {
+    const EB = netBruteBul(nk.tutar, c.kumulatif, c.brutKalemler, nk,
+                            p, c.sgkOran, c.istisnaAktif,
+                            gvIstisnaHavuz, dvIstisnaHavuz,
+                            c.matrahIndirim, c.vergiIndirim);
+    netSonuclar.push({ ...nk, brut: EB, hedefNet: nk.tutar });
+  }
+  brutBadgeleriniGuncelle(netSonuclar);
+
+  let brut_toplam = 0, gvMatrahHam = 0, dvMatrah = 0, sgkMatrah = 0;
+  for (const k of c.brutKalemler) {
+    brut_toplam += k.tutar;
+    if (k.gv)  gvMatrahHam += k.tutar;
+    if (k.dv)  dvMatrah    += k.tutar;
+    if (k.sgk) sgkMatrah   += k.tutar;
+  }
+  for (const nk of netSonuclar) {
+    brut_toplam += nk.brut;
+    const sgkBu = nk.sgk ? nk.brut * c.sgkOran : 0;
+    if (nk.gv)  gvMatrahHam += nk.sgk ? (nk.brut - sgkBu) : nk.brut;
+    if (nk.dv)  dvMatrah    += nk.brut;
+    if (nk.sgk) sgkMatrah   += nk.brut;
+  }
+
+  const gvMatrah = Math.max(0, gvMatrahHam - c.matrahIndirim);
+  const gvBrut = T(c.kumulatif + gvMatrah, p.gvDilimleri) - T(c.kumulatif, p.gvDilimleri);
+  const dvBrut = dvMatrah * p.damgaOrani;
+  const sgkSahis = sgkMatrah * c.sgkOran;
+  const gvOdenek = Math.max(0, gvBrut - gvIstisnaHavuz - c.vergiIndirim);
+  const dvOdenek = Math.max(0, dvBrut - dvIstisnaHavuz);
+  const toplamKesinti = sgkSahis + gvOdenek + dvOdenek;
+  const net = brut_toplam - toplamKesinti;
+  const kumSonrasi = c.kumulatif + gvMatrah;
+  const dilim = aktifDilim(kumSonrasi, p.gvDilimleri);
+
+  renderAkis({
+    p, kumulatif: c.kumulatif, sgkOran: c.sgkOran, istisnaAktif: c.istisnaAktif,
+    personelTuru: getPersonelTuru(),
+    brutKalemler: c.brutKalemler, netSonuclar,
+    brut_toplam, gvMatrahHam_toplam: gvMatrahHam,
+    gvMatrah_toplam: gvMatrah,
+    dvMatrah_toplam: dvMatrah, sgkMatrah_toplam: sgkMatrah,
+    matrahIndirim: c.matrahIndirim,
+    ozelSigorta: getOzelSigorta(),
+    digerGVIndirim: getDigerGVIndirim(),
+    digerVergiIndirim: c.vergiIndirim,
+    gvBrut_toplam: gvBrut, dvBrut_toplam: dvBrut,
+    gvIstisnaHavuz, dvIstisnaHavuz, gvManual, dvManual,
+    gvIstisnaOto: getAylikIstisna().gv, dvIstisnaOto: getAylikIstisna().dv,
+    sgkSahis_toplam: sgkSahis,
+    gvOdenek, dvOdenek,
+    toplamKesinti, net,
+    kumSonrasi, dilim,
+    yil: getYil(), ay: getAy()
+  });
+}
+
+let calcTimer = null;
+function scheduleCalc() {
+  clearTimeout(calcTimer);
+  calcTimer = setTimeout(hesapla, 250);
+}
+
+// ================================================================
+// SAĞ PANEL RENDER
+// ================================================================
+const AY_ISIMLERI = ["", "Ocak", "Şubat", "Mart", "Nisan", "Mayıs", "Haziran",
+                     "Temmuz", "Ağustos", "Eylül", "Ekim", "Kasım", "Aralık"];
+
+function renderAkis(s) {
+  const p = s.p;
+  const kumOncesi = s.kumulatif;
+  const sgkYuzdeStr = (() => {
+    const v = s.sgkOran * 100;
+    return v % 1 === 0 ? v.toFixed(0) : v.toFixed(2).replace(/\.?0+$/, "");
+  })();
+  const personelEtiket = { "memur": "Memur", "isci": "İşçi", "sozlesmeli": "Sözleşmeli" }[s.personelTuru];
+  const indirimVar = s.matrahIndirim > 0 || s.digerVergiIndirim > 0;
+
+  const kirilim = dilimKirilimi(kumOncesi, s.gvMatrah_toplam, p.gvDilimleri);
+  const cokluDilim = kirilim.length > 1;
+  const kirilimTutarTop = kirilim.reduce((a,k) => a + k.tutar, 0);
+  const kirilimVergiTop = kirilim.reduce((a,k) => a + k.vergi, 0);
+
+  let html = "";
+
+  html += `
+    <div class="result-hero">
+      <div class="hero-main">
+        <div class="hero-label">💵 NET MAAŞ</div>
+        <div class="hero-value">${fmt(s.net)}<span class="hero-unit">TL</span></div>
+      </div>
+      <div class="hero-side">
+        <div class="hero-side-item">
+          <span class="hs-label">Toplam Brüt</span>
+          <span class="hs-value">${fmt(s.brut_toplam)}</span>
+        </div>
+        <div class="hero-side-item">
+          <span class="hs-label">Toplam Kesinti</span>
+          <span class="hs-value red">− ${fmt(s.toplamKesinti)}</span>
+        </div>
+      </div>
+    </div>
+  `;
+
+  // ============== GRUP 1 ==============
+  html += `
+    <div class="group-title">
+      <span class="gt-icon">📋</span>
+      <span class="gt-text">Grup 1 · Girdiler ve Matrahlar</span>
+      <span class="gt-desc">Ne girdik, hangi vergiye tabi?</span>
+    </div>
+
+    <div class="combined-block">
+      <div class="combined-block-header">
+        <span class="cb-icon">🗂️</span>
+        <span class="cb-text">Girdi Özeti (Adım 1-2-3-4)</span>
+        <span class="cb-desc">Yan yana · 4 sütun</span>
+      </div>
+      <div class="combined-inner">
+
+        <div class="inner-step">
+          <div class="step-head">
+            <span class="step-num">1</span>
+            <span class="step-icon">📊</span>
+            <span class="step-name">Girdiler</span>
+            <span class="step-badge">${AY_ISIMLERI[s.ay]} ${s.yil}</span>
+          </div>
+          <table class="step-table">
+            <tr><td>Personel Türü</td><td class="num">${personelEtiket}</td></tr>
+            <tr><td>Kümülatif (önceki)</td><td class="num">${fmt(kumOncesi)}</td></tr>
+            <tr><td>SGK Şahıs Oranı</td><td class="num">${s.sgkOran === 0 ? "—" : "%" + sgkYuzdeStr}</td></tr>
+            <tr><td>Asgari Brüt</td><td class="num">${fmt(p.asgariBrut)}</td></tr>
+            <tr><td>Damga Oranı</td><td class="num">${p.damgaOrani}</td></tr>
+          </table>
+        </div>
+
+        <div class="inner-step">
+          <div class="step-head">
+            <span class="step-num">2</span>
+            <span class="step-icon">🎯</span>
+            <span class="step-name">Matrah Ayrımı</span>
+            <span class="step-badge">G / S / D</span>
+          </div>
+          <table class="step-table">
+            <tr><td>Brüt Toplam</td><td class="num">${fmt(s.brut_toplam)}</td></tr>
+            <tr><td>GV Ham</td><td class="num orange">${fmt(s.gvMatrahHam_toplam)}</td></tr>
+            ${s.matrahIndirim > 0 ? `<tr><td>− Matrah İnd.</td><td class="num minus">${fmt(s.matrahIndirim)}</td></tr>` : ""}
+            <tr><td><b>GV Net</b></td><td class="num gold-text"><b>${fmt(s.gvMatrah_toplam)}</b></td></tr>
+            <tr><td>SGK Matrahı</td><td class="num cyan">${fmt(s.sgkMatrah_toplam)}</td></tr>
+            <tr><td>DV Matrahı</td><td class="num purple">${fmt(s.dvMatrah_toplam)}</td></tr>
+          </table>
+        </div>
+
+        <div class="inner-step">
+          <div class="step-head">
+            <span class="step-num">3</span>
+            <span class="step-icon">📍</span>
+            <span class="step-name">Vergi Dilimi</span>
+            <span class="step-badge">${cokluDilim ? 'KARMA' : 'TEK'}</span>
+          </div>
+          <div class="step-formula">
+Küm. önce = ${fmt(kumOncesi)}
++ Ay mat. = ${fmt(s.gvMatrah_toplam)}
+─────────────────
+Küm. sn.  = ${fmt(s.kumSonrasi)}
+          </div>
+          <table class="step-table">
+            <thead>
+              <tr>
+                <th>K.</th>
+                <th class="num">Tutar</th>
+                <th class="num">%</th>
+                <th class="num">Vergi</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${kirilim.map(k => `
+                <tr>
+                  <td>${k.index}.</td>
+                  <td class="num">${fmt(k.tutar)}</td>
+                  <td class="num orange">${(k.oran*100).toFixed(0)}</td>
+                  <td class="num gold-text">${fmt(k.vergi)}</td>
+                </tr>
+              `).join("")}
+              ${cokluDilim ? `
+                <tr style="border-top:2px solid #ffa726;">
+                  <td><b>TOP</b></td>
+                  <td class="num"><b>${fmt(kirilimTutarTop)}</b></td>
+                  <td class="num">—</td>
+                  <td class="num gold-text"><b>${fmt(kirilimVergiTop)}</b></td>
+                </tr>
+              ` : ""}
+            </tbody>
+          </table>
+        </div>
+
+        <div class="inner-step ${indirimVar ? 'indirim-inner' : ''}">
+          <div class="step-head">
+            <span class="step-num">4</span>
+            <span class="step-icon">🏷️</span>
+            <span class="step-name">İndirimler</span>
+            <span class="step-badge">${indirimVar ? 'AKTİF' : 'YOK'}</span>
+          </div>
+          ${indirimVar ? `
+            <table class="step-table">
+              ${s.ozelSigorta > 0 ? `<tr><td>Özel Sigorta</td><td class="num minus">${fmt(s.ozelSigorta)}</td><td class="src">MATRAH</td></tr>` : ""}
+              ${s.digerGVIndirim > 0 ? `<tr><td>Diğer Matrah</td><td class="num minus">${fmt(s.digerGVIndirim)}</td><td class="src">MATRAH</td></tr>` : ""}
+              ${s.digerVergiIndirim > 0 ? `<tr><td>Diğer Vergi</td><td class="num minus">${fmt(s.digerVergiIndirim)}</td><td class="src">VERGİ</td></tr>` : ""}
+            </table>
+          ` : `
+            <div class="step-desc" style="margin:0;">İndirim girilmedi.</div>
+          `}
+        </div>
+
+      </div>
+    </div>
+  `;
+
+  // ============== GRUP 2 ==============
+  html += `
+    <div class="group-title">
+      <span class="gt-icon">💰</span>
+      <span class="gt-text">Grup 2 · Vergi ve Kesinti Hesaplamaları</span>
+      <span class="gt-desc">Her matrahtan ne kesiliyor?</span>
+    </div>
+
+    <div class="combined-block grup2">
+      <div class="combined-block-header">
+        <span class="cb-icon">💰</span>
+        <span class="cb-text">Vergi ve Kesinti Özeti (Adım 5-6-7-8)</span>
+        <span class="cb-desc">Yan yana · 4 sütun</span>
+      </div>
+      <div class="combined-inner">
+
+        <div class="inner-step gv-inner">
+          <div class="step-head">
+            <span class="step-num">5</span>
+            <span class="step-icon">💰</span>
+            <span class="step-name">Gelir Vergisi</span>
+            <span class="step-badge">GV</span>
+          </div>
+          <div class="step-formula">
+T(${fmt(s.kumSonrasi)})
+ = ${fmt(T(s.kumSonrasi, p.gvDilimleri))}
+T(${fmt(kumOncesi)})
+ = ${fmt(T(kumOncesi, p.gvDilimleri))}
+──────────────────
+GV = ${fmt(s.gvBrut_toplam)}
+          </div>
+          <div class="step-result">
+            <span class="sr-label">Hes. GV</span>
+            <span class="sr-value">${fmt(s.gvBrut_toplam)}</span>
+          </div>
+        </div>
+
+        <div class="inner-step dv-inner">
+          <div class="step-head">
+            <span class="step-num">6</span>
+            <span class="step-icon">📄</span>
+            <span class="step-name">Damga Vergisi</span>
+            <span class="step-badge">DV</span>
+          </div>
+          <div class="step-formula">
+DV = ${fmt(s.dvMatrah_toplam)}
+   × ${p.damgaOrani}
+   = ${fmt(s.dvBrut_toplam)}
+          </div>
+          <div class="step-result">
+            <span class="sr-label">Hes. DV</span>
+            <span class="sr-value">${fmt(s.dvBrut_toplam)}</span>
+          </div>
+        </div>
+
+        <div class="inner-step ${s.sgkOran > 0 ? 'sgk-inner' : 'muted-inner'}">
+          <div class="step-head">
+            <span class="step-num">7</span>
+            <span class="step-icon">🏥</span>
+            <span class="step-name">SGK Şahıs</span>
+            <span class="step-badge">${s.sgkOran > 0 ? 'SGK' : 'YOK'}</span>
+          </div>
+          ${s.sgkOran > 0 ? `
+            <div class="step-formula">
+${fmt(s.sgkMatrah_toplam)}
+× %${sgkYuzdeStr}
+= ${fmt(s.sgkSahis_toplam)}
+            </div>
+            <div class="step-result">
+              <span class="sr-label">SGK</span>
+              <span class="sr-value">${fmt(s.sgkSahis_toplam)}</span>
+            </div>
+          ` : `
+            <div class="step-desc" style="margin:0;">
+              <b>${personelEtiket}</b> — kesinti yapılmaz.
+            </div>
+          `}
+        </div>
+
+        <div class="inner-step istisna-inner">
+          <div class="step-head">
+            <span class="step-num">8</span>
+            <span class="step-icon">🎁</span>
+            <span class="step-name">Asgari Ücret İstisnası</span>
+            <span class="step-badge">${s.istisnaAktif ? 'AKTİF' : 'KAPALI'}</span>
+          </div>
+          <table class="step-table">
+            <tr>
+              <td>GV İstisna</td>
+              <td class="num green">${fmt(s.gvIstisnaHavuz)}</td>
+              <td class="src">${s.gvManual ? "MANUEL" : "OTO"}</td>
+            </tr>
+            <tr>
+              <td>DV İstisna</td>
+              <td class="num green">${fmt(s.dvIstisnaHavuz)}</td>
+              <td class="src">${s.dvManual ? "MANUEL" : "OTO"}</td>
+            </tr>
+          </table>
+          <div class="step-desc small">
+            Oto: GV=${fmt(s.gvIstisnaOto)} · DV=${fmt(s.dvIstisnaOto)}
+          </div>
+        </div>
+
+      </div>
+    </div>
+  `;
+
+  // ============== GRUP 3 ==============
+  html += `
+    <div class="group-title">
+      <span class="gt-icon">✂️</span>
+      <span class="gt-text">Grup 3 · Kesinti ve Net Özet</span>
+      <span class="gt-desc">Elde kalan</span>
+    </div>
+
+    <div class="combined-block grup3">
+      <div class="combined-block-header">
+        <span class="cb-icon">✂️</span>
+        <span class="cb-text">Kesinti ve Net Özeti (Adım 9-10-11-12)</span>
+        <span class="cb-desc">Yan yana · 4 sütun</span>
+      </div>
+      <div class="combined-inner">
+
+        <div class="inner-step tax-inner">
+          <div class="step-head">
+            <span class="step-num">9</span>
+            <span class="step-icon">➖</span>
+            <span class="step-name">Ödenecek Vergiler</span>
+            <span class="step-badge">GV + DV</span>
+          </div>
+          <div class="step-formula">
+GV Öd. = max(0,
+ ${fmt(s.gvBrut_toplam)} − ${fmt(s.gvIstisnaHavuz)}
+ − ${fmt(s.digerVergiIndirim)})
+ = ${fmt(s.gvOdenek)}
+
+DV Öd. = max(0,
+ ${fmt(s.dvBrut_toplam)} − ${fmt(s.dvIstisnaHavuz)})
+ = ${fmt(s.dvOdenek)}
+          </div>
+          <div class="step-result">
+            <span class="sr-label">Top. Vergi</span>
+            <span class="sr-value">${fmt(s.gvOdenek + s.dvOdenek)}</span>
+          </div>
+        </div>
+
+        <div class="inner-step red-inner">
+          <div class="step-head">
+            <span class="step-num">10</span>
+            <span class="step-icon">✂️</span>
+            <span class="step-name">Toplam Kesinti</span>
+            <span class="step-badge">SGK+GV+DV</span>
+          </div>
+          <table class="step-table">
+            <tr><td>SGK</td><td class="num minus">${fmt(s.sgkSahis_toplam)}</td></tr>
+            <tr><td>GV</td><td class="num minus">${fmt(s.gvOdenek)}</td></tr>
+            <tr><td>DV</td><td class="num minus">${fmt(s.dvOdenek)}</td></tr>
+          </table>
+          <div class="step-result">
+            <span class="sr-label">TOPLAM</span>
+            <span class="sr-value">${fmt(s.toplamKesinti)}</span>
+          </div>
+        </div>
+
+        <div class="inner-step gold-inner">
+          <div class="step-head">
+            <span class="step-num">11</span>
+            <span class="step-icon">💵</span>
+            <span class="step-name">NET ÜCRET</span>
+            <span class="step-badge">SONUÇ</span>
+          </div>
+          <table class="step-table">
+            <tr><td>Brüt Toplam</td><td class="num">${fmt(s.brut_toplam)}</td></tr>
+            <tr><td>− Kesinti</td><td class="num minus">${fmt(s.toplamKesinti)}</td></tr>
+          </table>
+          <div class="step-result big">
+            <span class="sr-label">NET</span>
+            <span class="sr-value">${fmt(s.net)} TL</span>
+          </div>
+        </div>
+
+        <div class="inner-step pink-inner">
+          <div class="step-head">
+            <span class="step-num">12</span>
+            <span class="step-icon">🎯</span>
+            <span class="step-name">Net Kalem Brütleştirme</span>
+            <span class="step-badge">${s.netSonuclar.length} kalem</span>
+          </div>
+          ${s.netSonuclar.length > 0 ? `
+            <table class="step-table">
+              <thead>
+                <tr>
+                  <th>Kalem</th>
+                  <th class="num">Net</th>
+                  <th class="num">→ Brüt</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${s.netSonuclar.map(nk => `
+                  <tr>
+                    <td>${esc(nk.ad)}</td>
+                    <td class="num">${fmt(nk.hedefNet)}</td>
+                    <td class="num gold-text">${fmt(nk.brut)}</td>
+                  </tr>
+                `).join("")}
+              </tbody>
+            </table>
+          ` : `
+            <div class="step-desc" style="margin:0;">Net kalem yok.</div>
+          `}
+        </div>
+
+      </div>
+    </div>
+  `;
+
+  document.getElementById("akis").innerHTML = html;
+}
+
+// ================================================================
+// ÖRNEK / TEMİZLE / TOAST
+// ================================================================
+function ornekYukle() {
+  document.getElementById("kalemBody").innerHTML = "";
+  document.getElementById("kumulatif").value = "150.000,00";
+  const sgkInput = document.getElementById("sgkOran");
+  if (isMemur()) sgkInput.value = "";
+  else sgkInput.value = "15";
+  addRow({ ad:"SOSYAL DENGE", tutar:20000, tur:"net", gv:true, dv:true });
+  ensureSentinel();
+  updateIstisnaPlaceholders();
+  hesapla();
+}
+
+function temizle() {
+  document.getElementById("kalemBody").innerHTML = "";
+  document.getElementById("kumulatif").value = "0,00";
+  const sgkInput = document.getElementById("sgkOran");
+  if (isMemur()) sgkInput.value = "";
+  else sgkInput.value = "15";
+  document.getElementById("gvIstisna").value = "";
+  document.getElementById("dvIstisna").value = "";
+  document.getElementById("ozelSigorta").value = "0,00";
+  document.getElementById("digerGVIndirim").value = "0,00";
+  document.getElementById("digerVergiIndirim").value = "0,00";
+  addRow();
+  updateIstisnaPlaceholders();
+  document.getElementById("akis").innerHTML =
+    `<div class="empty-state">⬅️ Soldaki panelden kalemleri girip<br><b>HESAPLA</b> butonuna basın.</div>`;
+}
+
+function showToast(msg) {
+  const el = document.getElementById("toast");
+  el.textContent = msg;
+  el.classList.add("show");
+  setTimeout(() => el.classList.remove("show"), 1800);
+}
+
+function bugunuSec() {
+  const now = new Date();
+  const ay = now.getMonth() + 1;
+  const yil = now.getFullYear();
+  document.getElementById("ay").value = String(ay);
+  const yilSelect = document.getElementById("yil");
+  const yilVar = [...yilSelect.options].some(o => o.value === String(yil));
+  if (yilVar) yilSelect.value = String(yil);
+  else yilSelect.selectedIndex = 0;
+}
+
+window.addEventListener("load", () => {
+  bindGrid();
+  bugunuSec();
+
+  document.getElementById("sgkOran").addEventListener("input", () => {
+    updateIstisnaPlaceholders(); scheduleCalc();
+  });
+  document.getElementById("yil").addEventListener("change", () => {
+    updateIstisnaPlaceholders(); scheduleCalc();
+  });
+  document.getElementById("ay").addEventListener("change", () => {
+    updateIstisnaPlaceholders(); scheduleCalc();
+  });
+  document.getElementById("gvIstisna").addEventListener("input", scheduleCalc);
+  document.getElementById("dvIstisna").addEventListener("input", scheduleCalc);
+  document.getElementById("ozelSigorta").addEventListener("input", scheduleCalc);
+  document.getElementById("digerGVIndirim").addEventListener("input", scheduleCalc);
+  document.getElementById("digerVergiIndirim").addEventListener("input", scheduleCalc);
+  document.getElementById("personelTuru").addEventListener("change", personelTuruDegisti);
+
+  personelTuruDegisti();
+  istisnaAktifDegisti();
+  updateIstisnaPlaceholders();
+
+  ornekYukle();
+});
+</script>
+</body>
+</html>
