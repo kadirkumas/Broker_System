@@ -575,11 +575,11 @@
                             <label>Strateji</label>
                             <select id="bt-strategy" onchange="onBtStrategyChange()">
                                 <option value="RSI_SCALPER">RSI Scalper</option>
-                                <option value="HULL_SRP">HULL / SRP</option>
+                                
                                 <option value="DYNAMIC_GRID">Dynamic Grid (DCA)</option>
                                 <option value="DYNAMIC_GRID_REEL">Dynamic Grid REEL</option>
                                 <option value="DEEP_HUNTER">Deep Hunter</option>
-                                <option value="FUNDING_ARBITRAGE">Funding Arbitrage</option>
+                                
                             </select>
                         </div>
                         <div class="bt-form-item">
@@ -751,10 +751,6 @@
                             <span class="ind-name">Exponential Moving Average (EMA)</span>
                             <span class="ind-author">Yerleşik</span>
                         </li>
-                        <li class="ind-li" onclick="openIndConfig('HULL_SRP')">
-                            <span class="ind-name">HULL/Hl2 - SRP EXIT</span>
-                            <span class="ind-author">by_kadir</span>
-                        </li>
                         <li class="ind-li" onclick="openIndConfig('RSI_SCALPER')">
                             <span class="ind-name">RSI Scalper</span>
                             <span class="ind-author">Kullanıcı Stratejisi</span>
@@ -869,6 +865,20 @@
                             <span class="cfg-label" data-tip="Marjin kullanim orani (%). Kullanilan marjin / guncel bakiye * 100. Bu esik asilirsa bot YENI POZISYON ACMAZ ve PC+mobile'da KIRMIZI SIREN cikar. 0 = devre disi. Ornek: 60 = %60.">⚠️ Max Marjin Oranı (%)</span>
                             <input type="number" id="cfg-max-margin-ratio" class="search-input" min="0" max="100" step="1" value="60">
                         </div>
+                        <div class="bot-global-item">
+                            <span class="cfg-label" data-tip="Grafikte SL (Stop Loss) seviyesini kirmizi kesikli cizgi olarak goster/gizle.">📉 Grafikte SL</span>
+                            <label class="switch switch-small" style="margin-top: 6px;">
+                                <input type="checkbox" id="cfg-chart-show-sl" checked>
+                                <span class="slider round"></span>
+                            </label>
+                        </div>
+                        <div class="bot-global-item">
+                            <span class="cfg-label" data-tip="Grafikte LIQ (Likidasyon) seviyesini turuncu kesikli cizgi olarak goster/gizle.">💥 Grafikte LIQ</span>
+                            <label class="switch switch-small" style="margin-top: 6px;">
+                                <input type="checkbox" id="cfg-chart-show-liq" checked>
+                                <span class="slider round"></span>
+                            </label>
+                        </div>
                     </div>
                 </div>
 
@@ -982,122 +992,7 @@
                         </div>
                     </div>
 
-                    <div class="strategy-panel" data-strategy="HULL_SRP">
-                        <div class="strategy-header">
-                            <div class="strategy-title">
-                                <span class="strategy-dot" style="background:#2962ff;"></span>
-                                HULL / HL2 - SRP
-                            </div>
-                            <label class="switch">
-                                <input type="checkbox" class="strat-enabled" data-strategy="HULL_SRP">
-                                <span class="slider round"></span>
-                            </label>
-                        </div>
-                        <div class="strategy-body">
-                            <div class="cfg-row">
-                                <span class="cfg-label" data-tip="Stratejinin hangi mum periyodunda calisacagi (1m, 5m, 15m, 1h, 4h).">Zaman Dilimi</span>
-                                <select class="search-input strat-interval" data-strategy="HULL_SRP">
-                                    <option value="1m">1m</option>
-                                    <option value="5m">5m</option>
-                                    <option value="15m">15m</option>
-                                    <option value="1h">1h</option>
-                                    <option value="4h">4h</option>
-                                </select>
-                            </div>
-                            <div class="cfg-row">
-                                <span class="cfg-label" data-tip="Hull Hareketli Ortalama periyodu. Trend yonunu belirler.">HMA Length</span>
-                                <input type="number" class="search-input strat-param" data-strategy="HULL_SRP" data-param="period" value="20" min="2" max="100">
-                            </div>
-                            <div class="cfg-row">
-                                <span class="cfg-label" data-tip="HMA hesaplamasinda kullanilacak fiyat kaynagi (hl2, close, open).">Kaynak</span>
-                                <select class="search-input strat-param" data-strategy="HULL_SRP" data-param="source">
-                                    <option value="hl2">(Y+D)/2</option>
-                                    <option value="close">Kapanış</option>
-                                    <option value="open">Açılış</option>
-                                </select>
-                            </div>
-                            <div class="cfg-row">
-                                <span class="cfg-label" data-tip="Minimum ATR% volatilite. Bu degerin altindaki coinlerde sinyal uretilmez. 0 = filtre kapali.">Min Volatilite (ATR %)</span>
-                                <input type="number" class="search-input strat-param" data-strategy="HULL_SRP" data-param="minVolatility" value="2.0" min="0" max="20" step="0.1">
-                            </div>
-                            <div class="cfg-row">
-                                <span class="cfg-label" data-tip="Yukari yonlu (alis) sinyalleri acilsin mi?">Long Trade</span>
-                                <label class="switch switch-small">
-                                    <input type="checkbox" class="strat-param" data-strategy="HULL_SRP" data-param="longTrade" checked>
-                                    <span class="slider round"></span>
-                                </label>
-                            </div>
-                            <div class="cfg-row">
-                                <span class="cfg-label" data-tip="Asagi yonlu (satis) sinyalleri acilsin mi?">Short Trade</span>
-                                <label class="switch switch-small">
-                                    <input type="checkbox" class="strat-param" data-strategy="HULL_SRP" data-param="shortTrade" checked>
-                                    <span class="slider round"></span>
-                                </label>
-                            </div>
-                        </div>
-                        <div class="strategy-body strategy-trade-section">
-                            <div class="cfg-subtitle">💰 İşlem Ayarları</div>
-                            <div class="cfg-row">
-                                <span class="cfg-label" data-tip="Pozisyon acilisinda kullanilacak USDT miktari (kaldiracli degil, saf teminat).">İlk İşlem (USDT)</span>
-                                <input type="number" class="search-input strat-param" data-strategy="HULL_SRP" data-param="baseOrder" value="5" min="1" step="1" oninput="window.updateMarginPreview('HULL_SRP')">
-                            </div>
-                            <div class="cfg-row">
-                                <span class="cfg-label" data-tip="1 = kaldiracli degil. 5x = 5 kat. Kar/zarar kaldiracli oraninda buyur, tasfiye riski artar.">Kaldıraç <span class="lev-badge">X</span></span>
-                                <input type="number" class="search-input strat-param" data-strategy="HULL_SRP" data-param="leverage" value="5" min="1" max="125" step="1" oninput="window.updateMarginPreview('HULL_SRP')">
-                            </div>
-                            <div class="cfg-row margin-row">
-                                <span class="cfg-label" data-tip="Bu pozisyon icin hesabinizda kilitlenen gercek teminat = Ilk Islem / Kaldiracli.">💵 Marjin (Kilitlenen)</span>
-                                <span id="margin-preview-HULL_SRP" class="margin-preview">5.00 USDT</span>
-                            </div>
-                            <div class="cfg-row">
-                                <span class="cfg-label" data-tip="Pozisyon bu kar yuzdesine ulastiginda Izleyen Stop aktif olur. Ornek: 1.5 = %1.5 kar.">Hedef Kâr (%)</span>
-                                <input type="number" class="search-input strat-param" data-strategy="HULL_SRP" data-param="takeProfit" value="2.0" min="0.1" step="0.1">
-                            </div>
-                            <div class="cfg-row" style="grid-column: 1 / -1;">
-                                <span class="cfg-label" data-tip="Kademeli izleyen stop. Format: kar%:trail% &middot; Ornek: 1.5:0.3, 2.5:0.2, 4:0.12 &middot; Kar arttikca trail sikilasir. Bos = trailing yok.">🎯 AI TTP</span>
-                                <input type="text" class="search-input strat-param" data-strategy="HULL_SRP" data-param="trailingSteps" value="1.5:0.3, 2.5:0.2, 4:0.12, 6:0.07, 10:0.03" style="font-family: monospace; font-size: 10.5px; text-align: left; width: 100%;">
-                            </div>
-                            <div class="cfg-row">
-                                <span class="cfg-label" data-tip="Fiyat girise gore bu yuzde ters giderse pozisyon otomatik kapanir. Zarari sinirlar.">Stop Loss (%)</span>
-                                <input type="number" class="search-input strat-param" data-strategy="HULL_SRP" data-param="stopLoss" value="50" min="0.1" step="0.1">
-                            </div>
-                            <div class="cfg-subtitle">🔁 DCA (Kademeli Alım)</div>
-                            <div class="cfg-row">
-                                <span class="cfg-label" data-tip="Kademeli alim. Fiyat ters giderse ek alim yapar ve ortalama maliyeti dusurur.">DCA Aktif</span>
-                                <label class="switch switch-small">
-                                    <input type="checkbox" class="strat-param" data-strategy="HULL_SRP" data-param="useDCA">
-                                    <span class="slider round"></span>
-                                </label>
-                            </div>
-                            <div class="cfg-row">
-                                <span class="cfg-label" data-tip="Her DCA kademesinde eklenecek hacim carpani. 1.2 = her kademe 1.2x onceki hacim.">Hacim Çarpanı</span>
-                                <input type="number" class="search-input strat-param" data-strategy="HULL_SRP" data-param="volMultiplier" value="1.0" min="1" step="0.1">
-                            </div>
-                            <div class="cfg-row">
-                                <span class="cfg-label" data-tip="Her DCA kademesinin hangi yuzde dususte tetiklenecegi. Ornek: 5,10,15,20.">Düşüş Adımları (%)</span>
-                                <input type="text" class="search-input strat-param" data-strategy="HULL_SRP" data-param="steps" value="5, 13, 25, 40, 60">
-                            </div>
-                            <div class="cfg-subtitle">🎯 Kısmi TP (Partial Take Profit)</div>
-                            <div class="cfg-row">
-                                <span class="cfg-label" data-tip="Pozisyon kara gectiginde tamamini kapatmak yerine bir kismini kapatir, kalani trendde tutar.">Kısmi TP Aktif</span>
-                                <label class="switch switch-small">
-                                    <input type="checkbox" class="strat-param" data-strategy="HULL_SRP" data-param="partialTPEnabled">
-                                    <span class="slider round"></span>
-                                </label>
-                            </div>
-                            <div class="cfg-row">
-                                <span class="cfg-label" data-tip="Kismi TP'de kapatilacak pozisyon yuzdesi. 50 = pozisyonun yarisi kapatilir.">Kapatma Oranı (%)</span>
-                                <input type="number" class="search-input strat-param" data-strategy="HULL_SRP" data-param="partialTPPercent" value="50" min="1" max="99" step="1">
-                            </div>
-                            <div class="cfg-row">
-                                <span class="cfg-label" data-tip="Kismi TP sonrasi kalan pozisyon icin DCA kademeleri aktif kalsin mi?">PT Sonrası DCA</span>
-                                <label class="switch switch-small">
-                                    <input type="checkbox" class="strat-param" data-strategy="HULL_SRP" data-param="partialTPKeepDCA" checked>
-                                    <span class="slider round"></span>
-                                </label>
-                            </div>
-                        </div>
-                    </div>
+                    
 
                     <div class="strategy-panel" data-strategy="DYNAMIC_GRID">
                         <div class="strategy-header">
@@ -1247,113 +1142,6 @@
                         </div>
                     </div>
                     <!-- ========== DYNAMIC GRID REEL PANEL ========== -->
-                    <div class="strategy-panel" data-strategy="DYNAMIC_GRID_REEL">
-                        <div class="strategy-header">
-                            <div class="strategy-title">
-                                <span class="strategy-dot" style="background:#f6465d;"></span>
-                                Dynamic Grid REEL
-                            </div>
-                            <label class="switch">
-                                <input type="checkbox" class="strat-enabled" data-strategy="DYNAMIC_GRID_REEL">
-                                <span class="slider round"></span>
-                            </label>
-                        </div>
-                        <div class="strategy-body">
-                            <div class="cfg-row">
-                                <span class="cfg-label" data-tip="Grid REEL: her seviye bagimsiz pozisyon acar. Klasik DCA yoktur.">Zaman Dilimi</span>
-                                <select class="search-input strat-interval" data-strategy="DYNAMIC_GRID_REEL">
-                                    <option value="1m">1m</option>
-                                    <option value="5m">5m</option>
-                                    <option value="15m">15m</option>
-                                    <option value="1h">1h</option>
-                                    <option value="4h">4h</option>
-                                </select>
-                            </div>
-                            <div class="cfg-row">
-                                <span class="cfg-label" data-tip="Long/Short/Neutral mod">Mod</span>
-                                <select class="search-input strat-param" data-strategy="DYNAMIC_GRID_REEL" data-param="mode">
-                                    <option value="neutral">Neutral (L+S)</option>
-                                    <option value="long">Long only</option>
-                                    <option value="short">Short only</option>
-                                </select>
-                            </div>
-                            <div class="cfg-row">
-                                <span class="cfg-label" data-tip="Grid dagilim tipi">Dağılım</span>
-                                <select class="search-input strat-param" data-strategy="DYNAMIC_GRID_REEL" data-param="distributionType">
-                                    <option value="arithmetic">Aritmetik</option>
-                                    <option value="geometric">Geometrik</option>
-                                </select>
-                            </div>
-                            <div class="cfg-row">
-                                <span class="cfg-label" data-tip="Toplam seviye sayisi (merkez alti + ustu)">Izgara Sayısı</span>
-                                <input type="number" class="search-input strat-param" data-strategy="DYNAMIC_GRID_REEL" data-param="gridCount" value="20" min="4" max="100" step="2">
-                            </div>
-                        </div>
-                        <div class="strategy-body">
-                            <div class="cfg-subtitle">📊 Referans &amp; Genişlik</div>
-                            <div class="cfg-row">
-                                <span class="cfg-label">SMA Period</span>
-                                <input type="number" class="search-input strat-param" data-strategy="DYNAMIC_GRID_REEL" data-param="smaPeriod" value="100" min="20" max="500" step="10">
-                            </div>
-                            <div class="cfg-row">
-                                <span class="cfg-label">Pivot Lookback</span>
-                                <input type="number" class="search-input strat-param" data-strategy="DYNAMIC_GRID_REEL" data-param="pivotLookback" value="100" min="20" max="500" step="10">
-                            </div>
-                            <div class="cfg-row">
-                                <span class="cfg-label">ATR Period</span>
-                                <input type="number" class="search-input strat-param" data-strategy="DYNAMIC_GRID_REEL" data-param="atrPeriod" value="14" min="2" max="100">
-                            </div>
-                            <div class="cfg-row">
-                                <span class="cfg-label">ATR Çarpan</span>
-                                <input type="number" class="search-input strat-param" data-strategy="DYNAMIC_GRID_REEL" data-param="atrMultiplier" value="8" min="1" max="20" step="0.5">
-                            </div>
-                            <div class="cfg-row">
-                                <span class="cfg-label">Min Genişlik (oran)</span>
-                                <input type="number" class="search-input strat-param" data-strategy="DYNAMIC_GRID_REEL" data-param="minWidthRatio" value="0.4" min="0.1" max="1" step="0.05">
-                            </div>
-                            <div class="cfg-row">
-                                <span class="cfg-label">Max Genişlik (oran)</span>
-                                <input type="number" class="search-input strat-param" data-strategy="DYNAMIC_GRID_REEL" data-param="maxWidthRatio" value="0.8" min="0.2" max="1" step="0.05">
-                            </div>
-                            <div class="cfg-row">
-                                <span class="cfg-label">Asimetri (1.0 = simetrik)</span>
-                                <input type="number" class="search-input strat-param" data-strategy="DYNAMIC_GRID_REEL" data-param="asymmetryRatio" value="1.3" min="0.5" max="1.5" step="0.05">
-                            </div>
-                        </div>
-                        <div class="strategy-body">
-                            <div class="cfg-subtitle">🔄 Recenter</div>
-                            <div class="cfg-row">
-                                <span class="cfg-label">Recenter (saat)</span>
-                                <input type="number" class="search-input strat-param" data-strategy="DYNAMIC_GRID_REEL" data-param="recenterHours" value="24" min="1" max="168" step="1">
-                            </div>
-                            <div class="cfg-row">
-                                <span class="cfg-label">Recenter Buffer (%)</span>
-                                <input type="number" class="search-input strat-param" data-strategy="DYNAMIC_GRID_REEL" data-param="recenterBuffer" value="3" min="0" max="20" step="0.5">
-                            </div>
-                        </div>
-                        <div class="strategy-body strategy-trade-section">
-                            <div class="cfg-subtitle">💰 İşlem Ayarları (DCA YOK)</div>
-                            <div class="cfg-row">
-                                <span class="cfg-label" data-tip="Her grid seviyesi icin kullanilacak USDT miktari">İlk İşlem (USDT)</span>
-                                <input type="number" class="search-input strat-param" data-strategy="DYNAMIC_GRID_REEL" data-param="baseOrder" value="5" min="1" step="1" oninput="window.updateMarginPreview('DYNAMIC_GRID_REEL')">
-                            </div>
-                            <div class="cfg-row">
-                                <span class="cfg-label">Kaldıraç <span class="lev-badge">X</span></span>
-                                <input type="number" class="search-input strat-param" data-strategy="DYNAMIC_GRID_REEL" data-param="leverage" value="5" min="1" max="125" step="1" oninput="window.updateMarginPreview('DYNAMIC_GRID_REEL')">
-                            </div>
-                            <div class="cfg-row margin-row">
-                                <span class="cfg-label" data-tip="Seviye basina kilitlenen teminat">💵 Marjin (Seviye başı)</span>
-                                <span id="margin-preview-DYNAMIC_GRID_REEL" class="margin-preview">1.00 USDT</span>
-                            </div>
-                            <div style="margin-top:6px; padding:6px 8px; background:rgba(236,72,153,0.08); border:1px solid rgba(236,72,153,0.25); border-radius:4px; font-size:10px; color:#d1d4dc; line-height:1.4;">
-                                ⚡ <b>Gerçek Grid:</b> Her seviye ayrı pozisyon açar. TP = komşu seviye. DCA / Trailing / SL yoktur.
-                            </div>
-                        </div>
-                    </div>
-                    <!-- ========== /DYNAMIC GRID REEL PANEL ========== -->
-
-                    <!-- [DH-REPOSITION] DEEP_HUNTER panel -->
-
                     <div class="strategy-panel" data-strategy="DEEP_HUNTER">
                     <div class="strategy-header">
                     <div class="strategy-title">
@@ -1481,22 +1269,25 @@
                     </div>
                     </div>
 
-                    <!-- ========== FUNDING ARBITRAGE PANEL ========== -->
-                    <div class="strategy-panel" data-strategy="FUNDING_ARBITRAGE">
+                    
+                    <!-- ========== /FUNDING ARBITRAGE PANEL ========== -->
+
+                                        
+                <div class="strategy-panel" data-strategy="DYNAMIC_GRID_REEL">
                         <div class="strategy-header">
                             <div class="strategy-title">
-                                <span class="strategy-dot" style="background:#26a17b;"></span>
-                                Funding Arbitrage
+                                <span class="strategy-dot" style="background:#f6465d;"></span>
+                                Dynamic Grid REEL
                             </div>
                             <label class="switch">
-                                <input type="checkbox" class="strat-enabled" data-strategy="FUNDING_ARBITRAGE">
+                                <input type="checkbox" class="strat-enabled" data-strategy="DYNAMIC_GRID_REEL">
                                 <span class="slider round"></span>
                             </label>
                         </div>
                         <div class="strategy-body">
                             <div class="cfg-row">
-                                <span class="cfg-label" data-tip="Funding taramasi periyodu. Kucuk = daha sik kontrol, ancak API kullanimi artar.">Zaman Dilimi</span>
-                                <select class="search-input strat-interval" data-strategy="FUNDING_ARBITRAGE">
+                                <span class="cfg-label" data-tip="Grid REEL: her seviye bagimsiz pozisyon acar. Klasik DCA yoktur.">Zaman Dilimi</span>
+                                <select class="search-input strat-interval" data-strategy="DYNAMIC_GRID_REEL">
                                     <option value="1m">1m</option>
                                     <option value="5m">5m</option>
                                     <option value="15m">15m</option>
@@ -1505,161 +1296,91 @@
                                 </select>
                             </div>
                             <div class="cfg-row">
-                                <span class="cfg-label" data-tip="Yon secimi: both=her ikisi, long=sadece negatif funding, short=sadece pozitif funding.">Mod</span>
-                                <select class="search-input strat-param" data-strategy="FUNDING_ARBITRAGE" data-param="mode">
-                                    <option value="both">Neutral (L+S)</option>
+                                <span class="cfg-label" data-tip="Long/Short/Neutral mod">Mod</span>
+                                <select class="search-input strat-param" data-strategy="DYNAMIC_GRID_REEL" data-param="mode">
+                                    <option value="neutral">Neutral (L+S)</option>
                                     <option value="long">Long only</option>
                                     <option value="short">Short only</option>
                                 </select>
                             </div>
                             <div class="cfg-row">
-                                <span class="cfg-label" data-tip="Minimum funding orani (%). Bu esigin altindaki firsatlar atlanir. Ornek: 0.05 = %0.05.">Min Funding (%)</span>
-                                <input type="number" class="search-input strat-param" data-strategy="FUNDING_ARBITRAGE" data-param="minFundingRate" value="0.05" min="0.001" step="0.01">
-                            </div>
-                            <div class="cfg-row">
-                                <span class="cfg-label" data-tip="Maksimum funding orani (%). Bu esigin ustundeki firsatlar suphelidir (testnet data hatasi, likidite sifir). Ornek: 0.5 = %0.5.">Max Funding (%)</span>
-                                <input type="number" class="search-input strat-param" data-strategy="FUNDING_ARBITRAGE" data-param="maxFundingRate" value="0.5" min="0.01" step="0.1">
-                            </div>
-                        </div>
-                        <div class="strategy-body">
-                            <div class="cfg-subtitle">📈 YON AKTIFLIK</div>
-                            <div class="cfg-row">
-                                <span class="cfg-label" data-tip="Negatif funding (short'lar long'lara odeme yapar) firsatlarini al.">Long Aktif</span>
-                                <label class="switch switch-small">
-                                    <input type="checkbox" class="strat-param" data-strategy="FUNDING_ARBITRAGE" data-param="longEnabled" checked>
-                                    <span class="slider round"></span>
-                                </label>
-                            </div>
-                            <div class="cfg-row">
-                                <span class="cfg-label" data-tip="Pozitif funding (long'lar short'lara odeme yapar) firsatlarini al.">Short Aktif</span>
-                                <label class="switch switch-small">
-                                    <input type="checkbox" class="strat-param" data-strategy="FUNDING_ARBITRAGE" data-param="shortEnabled" checked>
-                                    <span class="slider round"></span>
-                                </label>
-                            </div>
-                        </div>
-                        <div class="strategy-body strategy-trade-section">
-                            <div class="cfg-subtitle">💰 ISLEM AYARLARI <span class="funding-info-icon" title="">ℹ️</span></div>
-                            <div class="cfg-row">
-                                <span class="cfg-label" data-tip="Her funding firsatinda kullanilacak USDT miktari.">Ilk Islem (USDT)</span>
-                                <input type="number" class="search-input strat-param" data-strategy="FUNDING_ARBITRAGE" data-param="baseOrder" value="20" min="1" step="1" oninput="window.updateMarginPreview('FUNDING_ARBITRAGE')">
-                            </div>
-                            <div class="cfg-row">
-                                <span class="cfg-label" data-tip="Kaldiracli orani. Arbitraj icin dusuk tutulmasi onerilir (3-5x).">Kaldıraç <span class="lev-badge">X</span></span>
-                                <input type="number" class="search-input strat-param" data-strategy="FUNDING_ARBITRAGE" data-param="leverage" value="3" min="1" max="20" step="1" oninput="window.updateMarginPreview('FUNDING_ARBITRAGE')">
-                            </div>
-                            <div class="cfg-row margin-row">
-                                <span class="cfg-label" data-tip="Kilitlenen gercek teminat.">💵 Marjin (Kilitlenen)</span>
-                                <span id="margin-preview-FUNDING_ARBITRAGE" class="margin-preview">6.67 USDT</span>
-                            </div>
-                            <div class="cfg-row">
-                                <span class="cfg-label" data-tip="Hedef kar yuzdesi. Arbitraj icin dusuk tutulur (0.3 = %0.3).">Hedef Kâr (%)</span>
-                                <input type="number" class="search-input strat-param" data-strategy="FUNDING_ARBITRAGE" data-param="takeProfit" value="0.3" min="0.05" step="0.05">
-                            </div>
-                            <div class="cfg-row">
-                                <span class="cfg-label" data-tip="Fiyat girise gore ters giderse kapat. Arbitraj icin sikica tutulur.">Stop Loss (%)</span>
-                                <input type="number" class="search-input strat-param" data-strategy="FUNDING_ARBITRAGE" data-param="stopLoss" value="1.5" min="0.1" step="0.1">
-                            </div>
-                            <div style="margin-top:6px; padding:6px 8px; background:rgba(38,161,123,0.08); border:1px solid rgba(38,161,123,0.25); border-radius:4px; font-size:10px; color:#d1d4dc; line-height:1.4;">
-                                ⚡ <b>Funding Arbitrage:</b> Pozitif funding = SHORT ac (odeme al), negatif funding = LONG ac. Piyasa yonunden bagimsiz, dusuk riskli gelir.
-                            </div>
-                        </div>
-                    </div>
-                    <!-- ========== /FUNDING ARBITRAGE PANEL ========== -->
-
-                    <!-- ========== TREND_FOLLOW PANEL ========== -->
-                    <div class="strategy-panel" data-strategy="TREND_FOLLOW">
-                        <div class="strategy-header">
-                            <div class="strategy-title">
-                                <span class="strategy-dot" style="background:#00bcd4;"></span>
-                                Trend Follow
-                            </div>
-                            <label class="switch">
-                                <input type="checkbox" class="strat-enabled" data-strategy="TREND_FOLLOW">
-                                <span class="slider round"></span>
-                            </label>
-                        </div>
-                        <div class="strategy-body">
-                            <div class="cfg-row">
-                                <span class="cfg-label" data-tip="Mum periyodu. 15m orta vade, 1h guclu trend. 5m cok gurultulu.">Zaman Dilimi</span>
-                                <select class="search-input strat-interval" data-strategy="TREND_FOLLOW">
-                                    <option value="5m">5m</option>
-                                    <option value="15m" selected>15m</option>
-                                    <option value="1h">1h</option>
-                                    <option value="4h">4h</option>
+                                <span class="cfg-label" data-tip="Grid dagilim tipi">Dağılım</span>
+                                <select class="search-input strat-param" data-strategy="DYNAMIC_GRID_REEL" data-param="distributionType">
+                                    <option value="arithmetic">Aritmetik</option>
+                                    <option value="geometric">Geometrik</option>
                                 </select>
                             </div>
                             <div class="cfg-row">
-                                <span class="cfg-label" data-tip="Donchian kanal periyodu. Son N mumun en yuksek/dusuk seviyesi. 20 klasik, 55 uzun trend.">Donchian Period</span>
-                                <input type="number" class="search-input strat-param" data-strategy="TREND_FOLLOW" data-param="donchianPeriod" value="20" min="5" max="200" step="1">
+                                <span class="cfg-label" data-tip="Toplam seviye sayisi (merkez alti + ustu)">Izgara Sayısı</span>
+                                <input type="number" class="search-input strat-param" data-strategy="DYNAMIC_GRID_REEL" data-param="gridCount" value="20" min="4" max="100" step="2">
+                            </div>
+                        </div>
+                        <div class="strategy-body">
+                            <div class="cfg-subtitle">📊 Referans &amp; Genişlik</div>
+                            <div class="cfg-row">
+                                <span class="cfg-label">SMA Period</span>
+                                <input type="number" class="search-input strat-param" data-strategy="DYNAMIC_GRID_REEL" data-param="smaPeriod" value="100" min="20" max="500" step="10">
                             </div>
                             <div class="cfg-row">
-                                <span class="cfg-label" data-tip="Hizli EMA periyodu. Kucuk = daha hassas, buyuk = daha gec ama guvenli.">EMA Fast</span>
-                                <input type="number" class="search-input strat-param" data-strategy="TREND_FOLLOW" data-param="emaFast" value="20" min="3" max="200" step="1">
+                                <span class="cfg-label">Pivot Lookback</span>
+                                <input type="number" class="search-input strat-param" data-strategy="DYNAMIC_GRID_REEL" data-param="pivotLookback" value="100" min="20" max="500" step="10">
                             </div>
                             <div class="cfg-row">
-                                <span class="cfg-label" data-tip="Yavas EMA periyodu. Trend yonu belirleyici.">EMA Slow</span>
-                                <input type="number" class="search-input strat-param" data-strategy="TREND_FOLLOW" data-param="emaSlow" value="50" min="10" max="500" step="1">
+                                <span class="cfg-label">ATR Period</span>
+                                <input type="number" class="search-input strat-param" data-strategy="DYNAMIC_GRID_REEL" data-param="atrPeriod" value="14" min="2" max="100">
                             </div>
                             <div class="cfg-row">
-                                <span class="cfg-label" data-tip="LONG (alis) sinyalleri acilsin mi?">Long Aktif</span>
-                                <label class="switch switch-small">
-                                    <input type="checkbox" class="strat-param" data-strategy="TREND_FOLLOW" data-param="longTrade" checked>
-                                    <span class="slider round"></span>
-                                </label>
+                                <span class="cfg-label">ATR Çarpan</span>
+                                <input type="number" class="search-input strat-param" data-strategy="DYNAMIC_GRID_REEL" data-param="atrMultiplier" value="8" min="1" max="20" step="0.5">
                             </div>
                             <div class="cfg-row">
-                                <span class="cfg-label" data-tip="SHORT (satis) sinyalleri acilsin mi?">Short Aktif</span>
-                                <label class="switch switch-small">
-                                    <input type="checkbox" class="strat-param" data-strategy="TREND_FOLLOW" data-param="shortTrade" checked>
-                                    <span class="slider round"></span>
-                                </label>
+                                <span class="cfg-label">Min Genişlik (oran)</span>
+                                <input type="number" class="search-input strat-param" data-strategy="DYNAMIC_GRID_REEL" data-param="minWidthRatio" value="0.4" min="0.1" max="1" step="0.05">
                             </div>
                             <div class="cfg-row">
-                                <span class="cfg-label" data-tip="Kapanis bazli breakout (daha guvenli). Kapaliysa anlik high/low bazli (daha hizli ama gurultulu).">Kapanis Bazli</span>
-                                <label class="switch switch-small">
-                                    <input type="checkbox" class="strat-param" data-strategy="TREND_FOLLOW" data-param="confirmClose" checked>
-                                    <span class="slider round"></span>
-                                </label>
+                                <span class="cfg-label">Max Genişlik (oran)</span>
+                                <input type="number" class="search-input strat-param" data-strategy="DYNAMIC_GRID_REEL" data-param="maxWidthRatio" value="0.8" min="0.2" max="1" step="0.05">
                             </div>
-                            <div class="cfg-row" style="grid-column: 1/-1;">
-                                <span class="cfg-label" data-tip="Breakout icin ekstra buffer (%). Ornek: 0.2 = fiyat Donchian'in %0.2 ustunde olmali.">Min Breakout (%)</span>
-                                <input type="number" class="search-input strat-param" data-strategy="TREND_FOLLOW" data-param="minBreakoutPct" value="0" min="0" max="5" step="0.05">
+                            <div class="cfg-row">
+                                <span class="cfg-label">Asimetri (1.0 = simetrik)</span>
+                                <input type="number" class="search-input strat-param" data-strategy="DYNAMIC_GRID_REEL" data-param="asymmetryRatio" value="1.3" min="0.5" max="1.5" step="0.05">
+                            </div>
+                        </div>
+                        <div class="strategy-body">
+                            <div class="cfg-subtitle">🔄 Recenter</div>
+                            <div class="cfg-row">
+                                <span class="cfg-label">Recenter (saat)</span>
+                                <input type="number" class="search-input strat-param" data-strategy="DYNAMIC_GRID_REEL" data-param="recenterHours" value="24" min="1" max="168" step="1">
+                            </div>
+                            <div class="cfg-row">
+                                <span class="cfg-label">Recenter Buffer (%)</span>
+                                <input type="number" class="search-input strat-param" data-strategy="DYNAMIC_GRID_REEL" data-param="recenterBuffer" value="3" min="0" max="20" step="0.5">
                             </div>
                         </div>
                         <div class="strategy-body strategy-trade-section">
-                            <div class="cfg-subtitle">💰 ISLEM AYARLARI (DCA YOK)</div>
+                            <div class="cfg-subtitle">💰 İşlem Ayarları (DCA YOK)</div>
                             <div class="cfg-row">
-                                <span class="cfg-label" data-tip="Her sinyalde kullanilacak USDT.">İlk İşlem (USDT)</span>
-                                <input type="number" class="search-input strat-param" data-strategy="TREND_FOLLOW" data-param="baseOrder" value="20" min="1" step="1" oninput="window.updateMarginPreview('TREND_FOLLOW')">
+                                <span class="cfg-label" data-tip="Her grid seviyesi icin kullanilacak USDT miktari">İlk İşlem (USDT)</span>
+                                <input type="number" class="search-input strat-param" data-strategy="DYNAMIC_GRID_REEL" data-param="baseOrder" value="5" min="1" step="1" oninput="window.updateMarginPreview('DYNAMIC_GRID_REEL')">
                             </div>
                             <div class="cfg-row">
-                                <span class="cfg-label" data-tip="Trend icin 3x onerilir. Yuksek kaldiric trend donusunde LIQ yapar.">Kaldıraç <span class="lev-badge">X</span></span>
-                                <input type="number" class="search-input strat-param" data-strategy="TREND_FOLLOW" data-param="leverage" value="3" min="1" max="10" step="1" oninput="window.updateMarginPreview('TREND_FOLLOW')">
+                                <span class="cfg-label">Kaldıraç <span class="lev-badge">X</span></span>
+                                <input type="number" class="search-input strat-param" data-strategy="DYNAMIC_GRID_REEL" data-param="leverage" value="5" min="1" max="125" step="1" oninput="window.updateMarginPreview('DYNAMIC_GRID_REEL')">
                             </div>
                             <div class="cfg-row margin-row">
-                                <span class="cfg-label" data-tip="Kilitlenen teminat.">💵 Marjin (Kilitlenen)</span>
-                                <span id="margin-preview-TREND_FOLLOW" class="margin-preview">6.67 USDT</span>
+                                <span class="cfg-label" data-tip="Seviye basina kilitlenen teminat">💵 Marjin (Seviye başı)</span>
+                                <span id="margin-preview-DYNAMIC_GRID_REEL" class="margin-preview">1.00 USDT</span>
                             </div>
-                            <div class="cfg-row">
-                                <span class="cfg-label" data-tip="Hedef kar yuzdesi. Trend icin yuksek tutulur (3+).">Hedef Kâr (%)</span>
-                                <input type="number" class="search-input strat-param" data-strategy="TREND_FOLLOW" data-param="takeProfit" value="3.0" min="0.5" step="0.5">
-                            </div>
-                            <div class="cfg-row" style="grid-column: 1/-1;">
-                                <span class="cfg-label" data-tip="Kademeli trailing stop. Trend boyunca kari buyutur. Format: kar%:trail%">🎯 AI TTP</span>
-                                <input type="text" class="search-input strat-param" data-strategy="TREND_FOLLOW" data-param="trailingSteps" value="3:0.5, 5:0.3, 8:0.15, 12:0.08, 20:0.04" style="font-family: monospace; font-size: 10.5px; width: 100%;">
-                            </div>
-                            <div class="cfg-row">
-                                <span class="cfg-label" data-tip="Fiyat ters giderse stop. Trend icin sikica tutulur.">Stop Loss (%)</span>
-                                <input type="number" class="search-input strat-param" data-strategy="TREND_FOLLOW" data-param="stopLoss" value="2.5" min="0.5" step="0.5">
-                            </div>
-                            <div style="margin-top:6px; padding:6px 8px; background:rgba(0,188,212,0.08); border:1px solid rgba(0,188,212,0.25); border-radius:4px; font-size:10px; color:#d1d4dc; line-height:1.4;">
-                                ⚡ <b>Trend Follow:</b> Donchian breakout + EMA filter. Trend baslarken girer, AI TTP ile kar realize eder. DCA YOK.
+                            <div style="margin-top:6px; padding:6px 8px; background:rgba(236,72,153,0.08); border:1px solid rgba(236,72,153,0.25); border-radius:4px; font-size:10px; color:#d1d4dc; line-height:1.4;">
+                                ⚡ <b>Gerçek Grid:</b> Her seviye ayrı pozisyon açar. TP = komşu seviye. DCA / Trailing / SL yoktur.
                             </div>
                         </div>
                     </div>
-                    <!-- ========== /TREND_FOLLOW PANEL ========== -->
-                </div>            </div>
+                    <!-- ========== /DYNAMIC GRID REEL PANEL ========== -->
+
+                    <!-- [DH-REPOSITION] DEEP_HUNTER panel -->
+
+                    </div>            </div>
 
             <div class="modal-footer bot-config-footer">
                 <div class="bot-footer-info">

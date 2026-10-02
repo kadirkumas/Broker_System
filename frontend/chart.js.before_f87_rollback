@@ -11229,15 +11229,15 @@ console.log('[F64] quickClosePosition hazir');
 
         var newSeries = [];
 
-        // 1) LIQ cizgisi (kirmizi, kesikli) - F88 toggle
-        if (data.liq && data.liq > 0 && window._chartShowLiq !== false) {
+        // 1) LIQ cizgisi (kirmizi, kesikli)
+        if (data.liq && data.liq > 0) {
             try {
                 var liqSeries = cObj.chart.addLineSeries({
                     color: 'rgba(246, 70, 93, 0.75)',
                     lineWidth: 1,
                     lineStyle: 2,  // dashed
                     crosshairMarkerVisible: false,
-                    lastValueVisible: true,
+                    lastValueVisible: false,
                     priceLineVisible: false,
                     title: 'LIQ',
                     autoscaleInfoProvider: function() { return null; },
@@ -11252,15 +11252,15 @@ console.log('[F64] quickClosePosition hazir');
             }
         }
 
-        // 2) SL cizgisi (turuncu, kesikli) - F88 toggle
-        if (data.sl && data.sl > 0 && window._chartShowSl !== false) {
+        // 2) SL cizgisi (turuncu, kesikli)
+        if (data.sl && data.sl > 0) {
             try {
                 var slSeries = cObj.chart.addLineSeries({
                     color: 'rgba(255, 152, 0, 0.85)',
                     lineWidth: 1,
                     lineStyle: 2,  // dashed
                     crosshairMarkerVisible: false,
-                    lastValueVisible: true,
+                    lastValueVisible: false,
                     priceLineVisible: false,
                     title: 'SL',
                     autoscaleInfoProvider: function() { return null; },
@@ -11276,6 +11276,61 @@ console.log('[F64] quickClosePosition hazir');
         }
 
         window._slLiqSeries[idx] = newSeries;
+
+        // F87: Custom etiketleri ciz
+        renderSlLiqLabels(idx, data);
+    }
+
+    // F87: Custom HTML etiketler (cizginin 3px alti)
+    function renderSlLiqLabels(idx, data) {
+        var cObj = (typeof chartsData !== 'undefined') ? chartsData[idx] : null;
+        if (!cObj || !cObj.chart || !cObj.series) return;
+        if (!cObj.rawCandles || cObj.rawCandles.length < 2) return;
+
+        var wrapper = document.getElementById('chart-wrapper-' + idx);
+        if (!wrapper) return;
+
+        // Container (bir kez olustur)
+        var containerId = 'sl-liq-labels-' + idx;
+        var container = document.getElementById(containerId);
+        if (!container) {
+            container = document.createElement('div');
+            container.id = containerId;
+            container.className = 'sl-liq-labels-container';
+            wrapper.appendChild(container);
+        }
+
+        // Simdilik HTML'i sifirla
+        container.innerHTML = '';
+
+        var w = wrapper.clientWidth || 600;
+        var rightOffset = 72;  // fiyat ekseninin genisligi
+
+        // LIQ etiketi
+        if (data.liq && data.liq > 0) {
+            var y = cObj.series.priceToCoordinate(data.liq);
+            if (y !== null && y >= 0 && y <= wrapper.clientHeight) {
+                var liqEl = document.createElement('div');
+                liqEl.className = 'sl-liq-label liq-label';
+                liqEl.style.top = (y + 3) + 'px';  // 3px asagi
+                liqEl.style.left = (w - rightOffset + 4) + 'px';
+                liqEl.textContent = 'LIQ ' + window.formatPrice(data.liq);
+                container.appendChild(liqEl);
+            }
+        }
+
+        // SL etiketi
+        if (data.sl && data.sl > 0) {
+            var y2 = cObj.series.priceToCoordinate(data.sl);
+            if (y2 !== null && y2 >= 0 && y2 <= wrapper.clientHeight) {
+                var slEl = document.createElement('div');
+                slEl.className = 'sl-liq-label sl-label';
+                slEl.style.top = (y2 + 3) + 'px';
+                slEl.style.left = (w - rightOffset + 4) + 'px';
+                slEl.textContent = 'SL ' + window.formatPrice(data.sl);
+                container.appendChild(slEl);
+            }
+        }
     }
 
     // Hook: changeSymbol / updateSingleChart sonrasi ciz
@@ -11325,90 +11380,46 @@ console.log('[F64] quickClosePosition hazir');
 })();
 
 
-/* ============================================================
-   F88 - Grafik SL/LIQ toggle UI
-   ============================================================ */
+/* F87 - SL/LIQ custom etiketleri */
 (function() {
-    'use strict';
-
-    var LS_SL = 'cryptoChartShowSl_v1';
-    var LS_LIQ = 'cryptoChartShowLiq_v1';
-
-    // Global flag'ler (F86 koduna bu flag'ler eklendi)
-    window._chartShowSl = localStorage.getItem(LS_SL) !== '0';
-    window._chartShowLiq = localStorage.getItem(LS_LIQ) !== '0';
-
-    function updateAllCharts() {
-        for (var i = 0; i < 4; i++) {
-            try {
-                if (typeof window._drawSlLiq === 'function') {
-                    window._drawSlLiq(i);
-                }
-            } catch(e) {}
-        }
-    }
-
-    function bindUI() {
-        var elSl = document.getElementById('cfg-chart-show-sl');
-        var elLiq = document.getElementById('cfg-chart-show-liq');
-
-        if (elSl) {
-            elSl.checked = window._chartShowSl;
-            if (!elSl.dataset.f88Bound) {
-                elSl.dataset.f88Bound = '1';
-                elSl.addEventListener('change', function() {
-                    window._chartShowSl = elSl.checked;
-                    localStorage.setItem(LS_SL, elSl.checked ? '1' : '0');
-                    updateAllCharts();
-                    console.log('[F88] SL toggle:', elSl.checked);
-                });
-            }
-        }
-
-        if (elLiq) {
-            elLiq.checked = window._chartShowLiq;
-            if (!elLiq.dataset.f88Bound) {
-                elLiq.dataset.f88Bound = '1';
-                elLiq.addEventListener('change', function() {
-                    window._chartShowLiq = elLiq.checked;
-                    localStorage.setItem(LS_LIQ, elLiq.checked ? '1' : '0');
-                    updateAllCharts();
-                    console.log('[F88] LIQ toggle:', elLiq.checked);
-                });
-            }
-        }
-    }
-
-    function hook() {
-        if (typeof window.openBotConfigModal !== 'function') {
-            setTimeout(hook, 300);
-            return;
-        }
-        if (window.openBotConfigModal._f88Hooked) return;
-
-        var orig = window.openBotConfigModal;
-        window.openBotConfigModal = function() {
-            orig.apply(this, arguments);
-            setTimeout(bindUI, 150);
-            setTimeout(bindUI, 400);
-        };
-        window.openBotConfigModal._f88Hooked = true;
-    }
-
-    hook();
-
-    // Manuel API
-    window._toggleChartSl = function(on) {
-        window._chartShowSl = !!on;
-        localStorage.setItem(LS_SL, on ? '1' : '0');
-        updateAllCharts();
-    };
-    window._toggleChartLiq = function(on) {
-        window._chartShowLiq = !!on;
-        localStorage.setItem(LS_LIQ, on ? '1' : '0');
-        updateAllCharts();
-    };
-
-    console.log('[F88] Grafik SL/LIQ toggle hazir | SL:', window._chartShowSl, 'LIQ:', window._chartShowLiq);
+    if (document.getElementById('f87-sl-liq-style')) return;
+    var st = document.createElement('style');
+    st.id = 'f87-sl-liq-style';
+    st.textContent = [
+        '.sl-liq-labels-container {',
+        '    position: absolute;',
+        '    top: 0;',
+        '    left: 0;',
+        '    right: 0;',
+        '    bottom: 0;',
+        '    pointer-events: none;',
+        '    z-index: 19;',
+        '    overflow: hidden;',
+        '}',
+        '.sl-liq-label {',
+        '    position: absolute;',
+        '    padding: 1px 6px;',
+        '    border-radius: 3px;',
+        '    font-size: 10px;',
+        '    font-weight: 700;',
+        '    font-family: "Courier New", monospace;',
+        '    white-space: nowrap;',
+        '    letter-spacing: 0.3px;',
+        '    line-height: 1.2;',
+        '    pointer-events: none;',
+        '    box-shadow: 0 1px 3px rgba(0,0,0,0.5);',
+        '}',
+        '.sl-liq-label.liq-label {',
+        '    background: rgba(246, 70, 93, 0.95);',
+        '    color: #fff;',
+        '    border: 1px solid rgba(246, 70, 93, 1);',
+        '}',
+        '.sl-liq-label.sl-label {',
+        '    background: rgba(255, 152, 0, 0.95);',
+        '    color: #0b0e14;',
+        '    border: 1px solid rgba(255, 152, 0, 1);',
+        '}',
+    ].join('\n');
+    document.head.appendChild(st);
 })();
 

@@ -66,6 +66,26 @@ class OrderManager:
                 return s['pricePrecision'], s['quantityPrecision']
         return 2, 3
 
+    def _set_margin_type(self, symbol: str, mode: str = None) -> bool:
+        """F90a: Pozisyon acmadan once margin type degistir. Hata olursa yut."""
+        target = mode or getattr(self, "margin_mode", "cross")
+        try:
+            margin_type = "CROSSED" if target == "cross" else "ISOLATED"
+            self.client.futures_change_margin_type(
+                symbol=symbol, marginType=margin_type
+            )
+            print(f"[MARGIN] {symbol} -> {target.upper()}")
+            return True
+        except Exception as e:
+            err = str(e).lower()
+            if "no need to change" in err or "already" in err:
+                return True
+            if "-4046" in err or "not supported" in err:
+                print(f"[MARGIN] {symbol} desteklemiyor, atlandi")
+                return False
+            print(f"[MARGIN] {symbol} hata: {str(e)[:100]}")
+            return False
+
     def open_dca_position(self, side: str, base_amount_usdt: float = 10.0, strategy_name: str = None,
                           leverage: int = 1, dca_levels: int = 3, step_pct: float = 1.0, tp_pct: float = 1.5, sl_pct: float = 3.0,
                           pt_enabled: int = 0, pt_percent: float = 50, pt_keep_dca: int = 1,
@@ -73,10 +93,8 @@ class OrderManager:
         """
         İlk pozisyonu açar. DCA kademeleri position_manager tarafından yönetilir.
         """
-        # FUNDING_ARBITRAGE: hizli giris zorunlu (limit emri funding firsatini kacirir)
-        if strategy_name == "FUNDING_ARBITRAGE":
-            use_limit_order = False
-            limit_timeout_sec = 0
+        # F90a: Margin mode uygula (pozisyon acmadan once)
+        self._set_margin_type(self.symbol, getattr(self, "margin_mode", "cross"))
 
         # ⚡ SON KONTROL: Aynı sembolde zaten pozisyon var mı? (race condition son savunma)
         conn = get_db_connection()

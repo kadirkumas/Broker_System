@@ -1,4 +1,5 @@
 @echo off
+chcp 65001 >nul
 title Broker Yonetim Paneli
 color 0A
 cd /d "%~dp0"
@@ -8,21 +9,41 @@ set SSH_USER=ubuntu
 set SSH_IP=92.5.133.137
 set SSH_CMD=ssh -i %SSH_KEY% %SSH_USER%@%SSH_IP%
 set LOCAL_DIR=C:\Users\kadir.kumas\Desktop\Broker_System
+set WIN_TITLE=LOCAL BROKER - Port 8000
+
+REM Cloud durum cache
+set CLOUD_CACHE_FILE=%TEMP%\broker_cloud_st_%RANDOM%_%RANDOM%.txt
+set CLOUD_CACHE_TIME=0
+set CLOUD_CACHED_ST=bilinmiyor
 
 :MENU
 cls
 
-%SSH_CMD% "sudo systemctl is-active broker-bot" > "%TEMP%\cloud_st.txt" 2>nul
-set /p CLOUD_ST=<"%TEMP%\cloud_st.txt"
-del "%TEMP%\cloud_st.txt" >nul 2>&1
-if "%CLOUD_ST%"=="" set CLOUD_ST=bilinmiyor
+REM ---- Cloud durum (20 sn cache) ----
+call :GET_CURRENT_TIME
+set NOW=%CURRENT_TIME%
+set /a DIFF=%NOW% - %CLOUD_CACHE_TIME%
+if %DIFF% LSS 0 set DIFF=999
+if %DIFF% GEQ 20 (
+    "%SSH_CMD%" "sudo systemctl is-active broker-bot" > "%CLOUD_CACHE_FILE%" 2>nul
+    if exist "%CLOUD_CACHE_FILE%" (
+        set /p CLOUD_CACHED_ST=<"%CLOUD_CACHE_FILE%"
+        del "%CLOUD_CACHE_FILE%" >nul 2>&1
+    )
+    if "%CLOUD_CACHED_ST%"=="" set CLOUD_CACHED_ST=bilinmiyor
+    set CLOUD_CACHE_TIME=%NOW%
+)
+set CLOUD_ST=%CLOUD_CACHED_ST%
 
+REM ---- Local durum (port kesin kontrol) ----
 set LOCAL_ST=KAPALI
-netstat -ano | findstr ":8000" | findstr "LISTENING" >nul
+netstat -ano | findstr /R /C:":8000 .*LISTENING" >nul
 if not errorlevel 1 set LOCAL_ST=AKTIF
 
 set MARK2=
+set WARN_BOTH=
 if /i "%CLOUD_ST%"=="active" if /i not "%LOCAL_ST%"=="AKTIF" set MARK2=   *** AKTIF ***
+if /i "%CLOUD_ST%"=="active" if /i "%LOCAL_ST%"=="AKTIF" set WARN_BOTH=  [!!] IKI ORTAM DA AKTIF - TEHLIKE !!
 
 echo.
 echo  =====================================================
@@ -30,7 +51,8 @@ echo    BROKER YONETIM PANELI
 echo  =====================================================
 echo.
 echo    CLOUD : %SSH_IP%   [durum: %CLOUD_ST%]
-echo    LOCAL : %LOCAL_DIR%
+echo    LOCAL : %LOCAL_DIR%   [durum: %LOCAL_ST%]
+if not "%WARN_BOTH%"=="" echo.%WARN_BOTH%
 echo.
 echo  -----------------------------------------------------
 echo    --- MOD DEGISTIR ---
@@ -62,16 +84,10 @@ echo    --- CIKIS ---
 echo    [0]  Cikis
 echo  -----------------------------------------------------
 echo.
-echo    +------------------------------------+  +------------------------------------+
-echo    ^| ASIL TEMIZLIK ICIN SIRA:           ^|  ^| LOCAL -> CLOUD GONDERIM:           ^|
-echo    ^|  1) [3]  TUM SUNUCULARI DURDUR     ^|  ^|  1) [31] Sync (dosyalari gonder)   ^|
-echo    ^|  2) [42] Cloud DB TEMIZLE          ^|  ^|  2) [14] Cloud Bot YENIDEN BASLAT  ^|
-echo    ^|  3) [41] Local DB TEMIZLE          ^|  ^|  3) [15] Son 50 Log (kontrol)      ^|
-echo    ^|  4) [1]  LOCAL Moduna Gec          ^|  ^|  4) [16] Cloud SSH (gerekirse)     ^|
-echo    ^|  5) [2]  CLOUD Moduna Gec          ^|  ^|  5) [13] Canli Log (izle)          ^|
-echo    +------------------------------------+  +------------------------------------+
-echo.
 set /p secim="  Secim: "
+
+REM Trim bosluk
+for /f "tokens=* delims= " %%a in ("%secim%") do set secim=%%a
 
 if "%secim%"=="1"  goto GEC_LOCAL
 if "%secim%"=="2"  goto GEC_CLOUD
@@ -97,6 +113,35 @@ goto MENU
 
 
 REM ================================================
+REM  YARDIMCI: ZAMAN AL (epoch benzeri)
+REM ================================================
+:GET_CURRENT_TIME
+for /f "tokens=1-4 delims=:., " %%a in ("%TIME%") do (
+    set /a CURRENT_TIME=%%a * 3600 + %%b * 60 + %%c
+)
+exit /b 0
+
+
+REM ================================================
+REM  YARDIMCI: LOCAL BACKEND DURDUR
+REM ================================================
+:KILL_LOCAL_BACKEND
+REM 1) Pencere basligi ile dene (tam eslesme)
+taskkill /F /FI "WINDOWTITLE eq %WIN_TITLE%" /T >nul 2>&1
+
+REM 2) Port 8000'deki process'leri oldur (sadece python.exe)
+set KILLED=0
+for /f "tokens=5" %%a in ('netstat -ano ^| findstr /R /C:":8000 .*LISTENING"') do (
+    tasklist /FI "PID eq %%a" 2>nul | findstr /i "python.exe" >nul
+    if not errorlevel 1 (
+        taskkill /F /T /PID %%a >nul 2>&1
+        set KILLED=1
+    )
+)
+exit /b %KILLED%
+
+
+REM ================================================
 REM  1 - LOCAL MODUNA GEC
 REM ================================================
 :GEC_LOCAL
@@ -111,13 +156,9 @@ echo.
 echo  [2/2] Local backend baslatiliyor...
 echo.
 
-taskkill /F /FI "WINDOWTITLE eq LOCAL BROKER*" /T >nul 2>&1
+call :KILL_LOCAL_BACKEND
 
-for /f "tokens=5" %%a in ('netstat -ano ^| findstr :8000 ^| findstr LISTENING') do (
-    taskkill /F /T /PID %%a >nul 2>&1
-)
-
-start "LOCAL BROKER - Port 8000" cmd /k "title LOCAL BROKER - Port 8000 && cd /d %LOCAL_DIR% && echo. && echo Local Broker Backend baslatiliyor... && echo. && py -m uvicorn backend.main:app --reload"
+start "%WIN_TITLE%" cmd /k "title %WIN_TITLE% && cd /d %LOCAL_DIR% && echo. && echo Local Broker Backend baslatiliyor... && echo. && py -m uvicorn backend.main:app --reload"
 
 echo.
 echo  [+] LOCAL MODU AKTIF
@@ -136,11 +177,7 @@ echo  CLOUD MODUNA GECILIYOR
 echo.
 echo  [1/2] Local backend durduruluyor...
 
-taskkill /F /FI "WINDOWTITLE eq LOCAL BROKER*" /T >nul 2>&1
-
-for /f "tokens=5" %%a in ('netstat -ano ^| findstr :8000 ^| findstr LISTENING') do (
-    taskkill /F /T /PID %%a >nul 2>&1
-)
+call :KILL_LOCAL_BACKEND
 echo        Local durduruldu.
 
 echo.
@@ -165,14 +202,8 @@ echo.
 echo        Cloud DURDURULDU.
 echo.
 
-taskkill /F /FI "WINDOWTITLE eq LOCAL BROKER*" /T >nul 2>&1
-
-set FOUND=0
-for /f "tokens=5" %%a in ('netstat -ano ^| findstr :8000 ^| findstr LISTENING') do (
-    taskkill /F /T /PID %%a >nul 2>&1
-    set FOUND=1
-)
-if "%FOUND%"=="0" (echo        Local zaten kapali.) else (echo        Local DURDURULDU.)
+call :KILL_LOCAL_BACKEND
+if errorlevel 1 (echo        Local DURDURULDU.) else (echo        Local zaten kapali.)
 echo.
 echo  [+] Her iki bot da durduruldu.
 echo.
@@ -185,6 +216,9 @@ REM  11 - CLOUD BOT DURDUR
 REM ================================================
 :CLOUD_DURDUR
 cls
+echo.
+echo  CLOUD BOT DURDURULUYOR
+echo.
 %SSH_CMD% "sudo systemctl stop broker-bot && sudo systemctl status broker-bot --no-pager | head -8"
 pause
 goto MENU
@@ -195,6 +229,9 @@ REM  12 - CLOUD BOT YENIDEN BASLAT
 REM ================================================
 :CLOUD_YENIDEN
 cls
+echo.
+echo  CLOUD BOT YENIDEN BASLATILIYOR
+echo.
 %SSH_CMD% "sudo systemctl restart broker-bot && sleep 2 && sudo systemctl status broker-bot --no-pager | head -8"
 pause
 goto MENU
@@ -217,6 +254,8 @@ REM  14 - CLOUD SON 50 LOG
 REM ================================================
 :CLOUD_LOG_50
 cls
+echo  CLOUD SON 50 LOG
+echo.
 %SSH_CMD% "sudo journalctl -u broker-bot -n 50 --no-pager"
 pause
 goto MENU
@@ -236,6 +275,7 @@ REM ================================================
 :CLOUD_SSH
 cls
 echo  SSH baglantisi (cikmak icin: exit)
+echo.
 %SSH_CMD%
 pause
 goto MENU
@@ -250,14 +290,8 @@ echo.
 echo  LOCAL BACKEND DURDURULUYOR
 echo.
 
-taskkill /F /FI "WINDOWTITLE eq LOCAL BROKER*" /T >nul 2>&1
-
-set FOUND=0
-for /f "tokens=5" %%a in ('netstat -ano ^| findstr :8000 ^| findstr LISTENING') do (
-    taskkill /F /T /PID %%a >nul 2>&1
-    set FOUND=1
-)
-if "%FOUND%"=="0" (echo  Local zaten kapali.) else (echo  Local durduruldu.)
+call :KILL_LOCAL_BACKEND
+if errorlevel 1 (echo  Local durduruldu.) else (echo  Local zaten kapali.)
 pause
 goto MENU
 
@@ -267,8 +301,11 @@ REM  22 - LOCAL BACKEND DURUM
 REM ================================================
 :LOCAL_DURUM
 cls
-netstat -ano | findstr :8000 | findstr LISTENING
-if errorlevel 1 (echo  [X] Local KAPALI) else (echo  [+] Local ACIK)
+echo.
+echo  LOCAL BACKEND DURUMU
+echo.
+netstat -ano | findstr /R /C:":8000 .*LISTENING"
+if errorlevel 1 (echo  [X] Local KAPALI) else (echo  [+] Local ACIK - Port 8000 dinleniyor)
 pause
 goto MENU
 
@@ -288,20 +325,30 @@ REM ================================================
 cls
 echo.
 echo  LOCAL -^> CLOUD DOSYA SENKRONIZASYONU
-echo  (Cloud bot RESTART EDILMEZ)
 echo.
-echo  Frontend dosyalari...
-scp -i %SSH_KEY% ^
+set SYNC_ERR=0
+
+echo  [1/4] Frontend dosyalari...
+scp -i "%SSH_KEY%" ^
     "%LOCAL_DIR%\frontend\index.html" ^
     "%LOCAL_DIR%\frontend\chart.js" ^
     "%LOCAL_DIR%\frontend\style.css" ^
-    "%LOCAL_DIR%\frontend\favicon.svg" ^
     "%LOCAL_DIR%\frontend\zoom_controls.js" ^
-    %SSH_USER%@%SSH_IP%:~/Broker_System/frontend/
+    "%SSH_USER%@%SSH_IP%:~/Broker_System/frontend/"
+if errorlevel 1 (echo     [X] Frontend scp HATA! & set SYNC_ERR=1)
 
 echo.
-echo  Backend dosyalari...
-scp -i %SSH_KEY% ^
+echo  [2/4] Mobile dosyalari...
+scp -i "%SSH_KEY%" ^
+    "%LOCAL_DIR%\frontend\mobile\index.html" ^
+    "%LOCAL_DIR%\frontend\mobile\mobile.css" ^
+    "%LOCAL_DIR%\frontend\mobile\mobile.js" ^
+    "%SSH_USER%@%SSH_IP%:~/Broker_System/frontend/mobile/"
+if errorlevel 1 (echo     [X] Mobile scp HATA! & set SYNC_ERR=1)
+
+echo.
+echo  [3/4] Backend dosyalari...
+scp -i "%SSH_KEY%" ^
     "%LOCAL_DIR%\backend\main.py" ^
     "%LOCAL_DIR%\backend\strategy_engine.py" ^
     "%LOCAL_DIR%\backend\position_manager.py" ^
@@ -312,26 +359,25 @@ scp -i %SSH_KEY% ^
     "%LOCAL_DIR%\backend\telegram_notifier.py" ^
     "%LOCAL_DIR%\backend\bot_config.json" ^
     "%LOCAL_DIR%\backend\bot_config.default.json" ^
-    %SSH_USER%@%SSH_IP%:~/Broker_System/backend/
+    "%SSH_USER%@%SSH_IP%:~/Broker_System/backend/"
+if errorlevel 1 (echo     [X] Backend scp HATA! & set SYNC_ERR=1)
 
 echo.
-echo  Strateji dosyalari...
-scp -i %SSH_KEY% ^
+echo  [4/4] Strateji dosyalari...
+scp -i "%SSH_KEY%" ^
     "%LOCAL_DIR%\backend\strategies\*.py" ^
-    %SSH_USER%@%SSH_IP%:~/Broker_System/backend/strategies/
+    "%SSH_USER%@%SSH_IP%:~/Broker_System/backend/strategies/"
+if errorlevel 1 (echo     [X] Strateji scp HATA! & set SYNC_ERR=1)
 
 echo.
-echo  Mobile dosyalari...
-scp -i %SSH_KEY% ^
-    "%LOCAL_DIR%\frontend\mobile\index.html" ^
-    "%LOCAL_DIR%\frontend\mobile\mobile.css" ^
-    "%LOCAL_DIR%\frontend\mobile\mobile.js" ^
-    %SSH_USER%@%SSH_IP%:~/Broker_System/frontend/mobile/
-
-echo.
-echo  [+] SENKRONIZASYON TAMAMLANDI
-echo.
-echo   Yeni dosyalari AKTIF ETMEK icin: [12] Cloud Bot Yeniden Baslat
+if %SYNC_ERR%==1 (
+    echo  [X] SENKRONIZASYON HATALARLA TAMAMLANDI!
+    echo      Yukaridaki [X] satirlarini kontrol et.
+) else (
+    echo  [+] SENKRONIZASYON TAMAMLANDI
+    echo.
+    echo   Yeni dosyalari AKTIF ETMEK icin: [12] Cloud Bot Yeniden Baslat
+)
 echo.
 pause
 goto MENU
@@ -351,8 +397,20 @@ echo.
 set /p onay="  Devam edilsin mi? (E/H): "
 if /i not "%onay%"=="E" goto MENU
 
+if not exist "%LOCAL_DIR%\Patch\yeni\db_check.py" (
+    echo.
+    echo [X] HATA: db_check.py bulunamadi!
+    echo     Beklenen: %LOCAL_DIR%\Patch\yeni\db_check.py
+    pause
+    goto MENU
+)
+
 cd /d %LOCAL_DIR%
 py Patch\yeni\db_check.py local reset
+if errorlevel 1 (
+    echo.
+    echo [X] db_check.py HATA ile cikti!
+)
 echo.
 pause
 goto MENU
@@ -372,8 +430,19 @@ echo.
 set /p onay="  Devam edilsin mi? (E/H): "
 if /i not "%onay%"=="E" goto MENU
 
+if not exist "%LOCAL_DIR%\Patch\yeni\db_check.py" (
+    echo.
+    echo [X] HATA: db_check.py bulunamadi!
+    pause
+    goto MENU
+)
+
 cd /d %LOCAL_DIR%
 py Patch\yeni\db_check.py cloud reset
+if errorlevel 1 (
+    echo.
+    echo [X] db_check.py HATA ile cikti!
+)
 echo.
 pause
 goto MENU

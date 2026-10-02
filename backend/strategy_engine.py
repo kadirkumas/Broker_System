@@ -5,7 +5,7 @@ import shutil
 import time
 import sqlite3
 from binance.client import Client
-from backend.strategies import RSIScalperStrategy, HullSRPStrategy, DynamicGridStrategy, DynamicGridReelStrategy, DeepHunterStrategy, FundingArbitrageStrategy, TrendFollowStrategy
+from backend.strategies import RSIScalperStrategy, DynamicGridStrategy, DynamicGridReelStrategy, DeepHunterStrategy
 from backend.database import get_db_connection
 from backend import telegram_notifier
 
@@ -29,18 +29,6 @@ DEFAULT_CONFIG = {
             "useDCA": True, "baseOrder": 10, "volMultiplier": 1.2,
             "steps": "1.5, 3, 5",
             "takeProfit": 1.5, "trailing": 0.3, "trailingSteps": "1.5:0.3, 2.5:0.2, 4:0.12, 6:0.07, 10:0.03", "stopLoss": 3.0,
-            "partialTPEnabled": False, "partialTPPercent": 50,
-            "partialTPKeepDCA": True
-        },
-        "HULL_SRP": {
-            "enabled": False,
-            "interval": "15m",
-            "period": 10,
-            "source": "hl2",
-            "longTrade": True,
-            "shortTrade": False,
-            "baseOrder": 10,
-            "takeProfit": 2.0, "trailing": 0.5, "trailingSteps": "1.5:0.3, 2.5:0.2, 4:0.12, 6:0.07, 10:0.03", "stopLoss": 3.0,
             "partialTPEnabled": False, "partialTPPercent": 50,
             "partialTPKeepDCA": True
         },
@@ -203,14 +191,60 @@ class StrategyEngine:
     # ------------------------------------------------------------------
     # A1/A2: RISK LIMIT KONTROLU
     # ------------------------------------------------------------------
-    def _check_risk_limits(self) -> str:
+    def _check_risk_limits(self, side: str = None) -> str:
         """
         A1: Gunluk max zarar limiti (TR saatine gore)
         A2: Max acik pozisyon sayisi
         A3: F60a - Marjin orani (%)
+        A4: F90a - Cross modda %50 long/short limiti
         Ihlal varsa sebep string'i, yoksa bos string doner.
+        side: "BUY" | "SELL" | None (yeni sinyal yonu)
         """
         cfg = self.config or {}
+
+        # --- A4: Cross modda yon dengesi ---
+        margin_mode = cfg.get("margin_mode", "cross")
+        if margin_mode == "cross" and side in ("BUY", "SELL"):
+            try:
+                max_long = float(cfg.get("max_long_ratio", 50))
+                max_short = float(cfg.get("max_short_ratio", 50))
+                max_pos = int(cfg.get("max_open_positions", 100) or 100)
+
+                if max_pos > 0 and (max_long < 100 or max_short < 100):
+                    conn = get_db_connection()
+                    rows = conn.execute("""
+                        SELECT trade_type, COUNT(*) as c FROM active_trades
+                        GROUP BY trade_type
+                    """).fetchall()
+                    conn.close()
+
+                    long_c = 0
+                    short_c = 0
+                    for r in rows:
+                        r = dict(r)
+                        if r["trade_type"] == "BUY":
+                            long_c = r["c"]
+                        elif r["trade_type"] == "SELL":
+                            short_c = r["c"]
+
+                    total = long_c + short_c
+                    # Yeni pozisyon acilirsa total +1 olacak
+                    projected_total = total + 1
+
+                    if side == "BUY":
+                        projected_long = long_c + 1
+                        pct = (projected_long / projected_total) * 100
+                        if pct > max_long:
+                            return f"Long orani %{pct:.1f} > %{max_long:.0f} (Cross mod)"
+                    elif side == "SELL":
+                        projected_short = short_c + 1
+                        pct = (projected_short / projected_total) * 100
+                        if pct > max_short:
+                            return f"Short orani %{pct:.1f} > %{max_short:.0f} (Cross mod)"
+            except Exception as e:
+                print(f"[RISK] A4 kontrol hatasi: {e}")
+
+        # --- A3: F60a Marjin orani ---
 
         # --- A3: F60a Marjin orani kontrolu ---
         try:
@@ -296,7 +330,7 @@ class StrategyEngine:
     # ------------------------------------------------------------------
     # Mum çekme
     # ------------------------------------------------------------------
-    async def fetch_candles(self, symbol: str, interval: str, limit: int = 200):
+    async def fetch_candles(self, symbol: str, interval: str, limit: int = 300):
         try:
             klines = await asyncio.to_thread(
                 self.client.futures_klines,
@@ -325,18 +359,12 @@ class StrategyEngine:
     def _create_strategy(self, strategy_name: str, strat_cfg: dict):
         if strategy_name == "RSI_SCALPER":
             return RSIScalperStrategy(strat_cfg)
-        elif strategy_name == "HULL_SRP":
-            return HullSRPStrategy(strat_cfg)
         elif strategy_name == "DYNAMIC_GRID":
             return DynamicGridStrategy(strat_cfg)
         elif strategy_name == "DYNAMIC_GRID_REEL":
             return DynamicGridReelStrategy(strat_cfg)
         elif strategy_name == "DEEP_HUNTER":
             return DeepHunterStrategy(strat_cfg)
-        elif strategy_name == "FUNDING_ARBITRAGE":
-            return FundingArbitrageStrategy(strat_cfg)
-        elif strategy_name == "TREND_FOLLOW":
-            return TrendFollowStrategy(strat_cfg)
         return None
 
     def _create_strategy_for_symbol(self, strategy_name: str, strat_cfg: dict, symbol: str):
@@ -459,158 +487,18 @@ class StrategyEngine:
 
         return result
 
-    async def _run_funding_arbitrage(self, strategy, strat_cfg):
-        """
-        FUNDING ARBITRAGE icin ozel tarama yolu.
-        Mum yerine bulk funding rate ceker, en yuksek |funding|'i bulur.
-        Rate limit: 60 saniyede 1 kez cagrilir.
-        """
-        try:
-            if not self.config.get("active", False):
-                return
-
-            # Rate limit: 60 sn min interval (API spamini onler)
-            _now = time.time()
-            if not hasattr(self, "_funding_last_fetch"):
-                self._funding_last_fetch = 0
-            if _now - self._funding_last_fetch < 60:
-                return
-            self._funding_last_fetch = _now
-
-            # Bulk mark price + funding
-            try:
-                premiums = await asyncio.to_thread(self.client.futures_mark_price)
-            except Exception as e:
-                _err = str(e)
-                if "-1003" in _err or "Too many" in _err:
-                    print(f"[FUNDING] Rate limit - 90 sn bekleniyor")
-                    self._funding_last_fetch = _now + 30  # ekstra bekleme
-                else:
-                    print(f"[FUNDING] Mark price hatasi: {_err[:100]}")
-                return
-
-            if not premiums:
-                return
-
-            # Sembol filtresi
-            scan_set = set(self.symbols or [])
-            funding_data = []
-            for p in premiums:
-                sym = p.get("symbol", "")
-                if scan_set and sym not in scan_set:
-                    continue
-                try:
-                    fr = float(p.get("lastFundingRate", 0) or 0)
-                except Exception:
-                    continue
-                funding_data.append({
-                    "symbol": sym,
-                    "funding": fr,
-                    "mark_price": float(p.get("markPrice", 0) or 0),
-                    "next_ts": int(p.get("nextFundingTime", 0) or 0),
-                })
-
-            if not funding_data:
-                return
-
-            # Strateji karari
-            result = strategy.evaluate(funding_data=funding_data)
-            sig = result.get("signal")
-            meta = result.get("meta", {}) or {}
-
-            if sig not in ("LONG", "SHORT"):
-                # Log spamini onleme (60 sn'de 1)
-                _now = int(time.time())
-                if not hasattr(self, "_funding_last_log") or _now - self._funding_last_log >= 60:
-                    self._funding_last_log = _now
-                    print(f"[FUNDING] {result.get('reason', '?')} | {len(funding_data)} sembol")
-                return
-
-            symbol = meta.get("funding_symbol")
-            fr_rate = float(meta.get("funding_rate", 0))
-            if not symbol:
-                return
-
-            print(f"\n[FUNDING] FIRSAT: {symbol} {sig} | Funding {fr_rate*100:+.4f}%")
-
-            if not self.config.get("active", False):
-                return
-
-            risk_reason = self._check_risk_limits()
-            if risk_reason:
-                print(f"[FUNDING] Risk limit: {risk_reason}")
-                return
-
-            existing = self.get_open_position(symbol)
-            if existing:
-                # Log spam koruma: ayni sembol icin 5 dk'da 1
-                _now2 = time.time()
-                if not hasattr(self, "_funding_skip_log"):
-                    self._funding_skip_log = {}
-                _last = self._funding_skip_log.get(symbol, 0)
-                if _now2 - _last >= 300:
-                    print(f"[FUNDING] {symbol} zaten acik, atlandi (5dk log)")
-                    self._funding_skip_log[symbol] = _now2
-                return
-
-            base_order = float(strat_cfg.get("baseOrder", 20))
-            leverage = int(strat_cfg.get("leverage", 3))
-            tp_pct = float(strat_cfg.get("takeProfit", 0.3))
-            sl_pct = float(strat_cfg.get("stopLoss", 1.5))
-
-            self.order_manager.symbol = symbol
-
-            try:
-                order_result = await asyncio.to_thread(
-                    self.order_manager.open_dca_position,
-                    side="BUY" if sig == "LONG" else "SELL",
-                    base_amount_usdt=base_order,
-                    strategy_name="FUNDING_ARBITRAGE",
-                    leverage=leverage,
-                    tp_pct=tp_pct,
-                    sl_pct=sl_pct,
-                    use_limit_order=False,
-                )
-            except Exception as e:
-                print(f"[FUNDING] Emir hatasi: {e}")
-                return
-
-            status = order_result.get("status")
-            _now_ms = int(time.time() * 1000)
-            _sig_id = f"{symbol}_FUNDING_{_now_ms}"
-
-            if status == "success":
-                print(f"[FUNDING] Emir ACILDI: {symbol} {sig}")
-                self._save_signal_to_db(
-                    _sig_id, symbol, "FUNDING_ARBITRAGE", sig,
-                    order_result.get("entry_price", 0), 0, base_order,
-                    int(time.time()), _now_ms,
-                    opened=1, skip_reason=None
-                )
-                self.stats["signals_found"] += 1
-            else:
-                print(f"[FUNDING] Emir BASARISIZ: {status}")
-                self._save_signal_to_db(
-                    _sig_id, symbol, "FUNDING_ARBITRAGE", sig,
-                    0, 0, base_order,
-                    int(time.time()), _now_ms,
-                    opened=0, skip_reason=str(order_result.get("message", "hata"))
-                )
-
-        except Exception as e:
-            self.stats["errors"] += 1
-            print(f"[FUNDING] Genel hata: {e}")
-
     async def run_strategy(self, strategy_name: str, strat_cfg: dict, candle_cache: dict):
         strategy = self._create_strategy(strategy_name, strat_cfg)
         if not strategy:
             print(f"[!] Bilinmeyen strateji: {strategy_name}")
             return
 
-        # FUNDING ARBITRAGE ozel yolu (mum taramaz)
-        if strategy_name == "FUNDING_ARBITRAGE":
-            await self._run_funding_arbitrage(strategy, strat_cfg)
-            return
+        # F90a-3: Margin mode'u order_manager'a aktar
+        try:
+            if self.order_manager:
+                self.order_manager.margin_mode = self.config.get("margin_mode", "cross")
+        except Exception as _me:
+            print(f"[MARGIN] engine set hatasi: {_me}")
 
         interval = strat_cfg.get("interval", "5m")
 
@@ -718,7 +606,7 @@ class StrategyEngine:
             if cache_key in candle_cache:
                 candles = candle_cache[cache_key]
             else:
-                candles = await self.fetch_candles(symbol, interval, 200)
+                candles = await self.fetch_candles(symbol, interval, 300)
                 candle_cache[cache_key] = candles
 
             if not candles:
@@ -800,7 +688,8 @@ class StrategyEngine:
                     return
 
                 # ⚡ A1/A2: Risk limit kontrolu
-                risk_reason = self._check_risk_limits()
+                _side_calc = "BUY" if result["signal"] == "LONG" else "SELL"
+                risk_reason = self._check_risk_limits(side=_side_calc)
                 if risk_reason:
                     print(f"[RISK] {symbol} sinyal atlandi: {risk_reason}")
                     self._save_signal_to_db(
@@ -828,6 +717,8 @@ class StrategyEngine:
 
                     leverage = int(strat_cfg.get("leverage", 1))
                     self.order_manager.symbol = symbol
+                    # F90a-3: Margin mode'u garanti et
+                    self.order_manager.margin_mode = self.config.get("margin_mode", "cross")
 
                     # ⚡ GRID REEL mi? -> open_grid_position
                     _meta = result.get("meta", {}) or {}

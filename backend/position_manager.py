@@ -106,6 +106,127 @@ class PositionManager:
         return defaults
 
     # ------------------------------------------------------------------
+    # F68: Dinamik DCA helpers (dcaDynamic flag kullanan stratejiler icin)
+    # ------------------------------------------------------------------
+    _atr_pct_cache = {}   # {symbol_interval: (atr_pct, ts)}
+    _mom_cache = {}       # {symbol_interval: (momentum, ts)}
+    _dip_cache = {}       # {symbol_interval: (dip_position, ts)}
+
+    async def _get_atr_pct_for_symbol(self, symbol: str, ttl_sec: int = 60, interval: str = "15m") -> float:
+        """Son 30 mumun ATR%'sini hesaplar. Cache 60 sn (interval bazli)."""
+        import time as _t
+        now = _t.time()
+        cache_key = "%s_%s" % (symbol, interval)
+        cached = self.__class__._atr_pct_cache.get(cache_key)
+        if cached and (now - cached[1]) < ttl_sec:
+            return cached[0]
+
+        try:
+            klines = await asyncio.to_thread(
+                self.client.futures_klines,
+                symbol=symbol, interval=interval, limit=30
+            )
+            if not klines or len(klines) < 15:
+                return 1.5
+
+            trs = []
+            prev_close = float(klines[0][4])
+            for k in klines[1:]:
+                h = float(k[2]); l = float(k[3]); c = float(k[4])
+                tr = max(h - l, abs(h - prev_close), abs(l - prev_close))
+                trs.append(tr)
+                prev_close = c
+
+            if len(trs) < 14:
+                return 1.5
+
+            atr = sum(trs[:14]) / 14
+            for i in range(14, len(trs)):
+                atr = (atr * 13 + trs[i]) / 14
+
+            current_price = float(klines[-1][4])
+            atr_pct = (atr / current_price * 100) if current_price > 0 else 1.5
+
+            self.__class__._atr_pct_cache[cache_key] = (atr_pct, now)
+            return atr_pct
+        except Exception as e:
+            print(f"[DCA-DYN] ATR hata {symbol}: {str(e)[:80]}")
+            return 1.5
+
+    async def _get_momentum_for_symbol(self, symbol: str, ttl_sec: int = 60, interval: str = "15m") -> float:
+        """Son 5 mumun ortalama dusus hizi (%/mum). Cache 60 sn (interval bazli)."""
+        import time as _t
+        now = _t.time()
+        cache_key = "%s_%s" % (symbol, interval)
+        cached = self.__class__._mom_cache.get(cache_key)
+        if cached and (now - cached[1]) < ttl_sec:
+            return cached[0]
+
+        try:
+            klines = await asyncio.to_thread(
+                self.client.futures_klines,
+                symbol=symbol, interval=interval, limit=10
+            )
+            if not klines or len(klines) < 6:
+                return 0.0
+
+            closes = [float(k[4]) for k in klines]
+            drops = []
+            for i in range(-5, 0):
+                change = (closes[i] - closes[i-1]) / closes[i-1] * 100
+                if change < 0:
+                    drops.append(abs(change))
+
+            momentum = sum(drops) / len(drops) if drops else 0.0
+            self.__class__._mom_cache[cache_key] = (momentum, now)
+            return momentum
+        except Exception as e:
+            print(f"[DCA-DYN] Mom hata {symbol}: {str(e)[:80]}")
+            return 0.0
+
+    # ------------------------------------------------------------------
+    # F83: Dip algilama
+    # ------------------------------------------------------------------
+    async def _get_dip_position(self, symbol: str, interval: str = "15m", ttl_sec: int = 60) -> float:
+        """
+        Fiyatin son 20 mumun range'indeki pozisyonu.
+        0.0 = dipte (en dusuk), 1.0 = tepede (en yuksek).
+        Cache 60 sn.
+        """
+        import time as _t
+        now = _t.time()
+        cache_key = "%s_%s" % (symbol, interval)
+        cached = self.__class__._dip_cache.get(cache_key)
+        if cached and (now - cached[1]) < ttl_sec:
+            return cached[0]
+
+        try:
+            klines = await asyncio.to_thread(
+                self.client.futures_klines,
+                symbol=symbol, interval=interval, limit=25
+            )
+            if not klines or len(klines) < 20:
+                return 0.5
+
+            highs = [float(k[2]) for k in klines[-20:]]
+            lows = [float(k[3]) for k in klines[-20:]]
+            cur = float(klines[-1][4])
+
+            hi = max(highs)
+            lo = min(lows)
+            rng = hi - lo
+            if rng <= 0:
+                return 0.5
+
+            pos = (cur - lo) / rng
+            pos = max(0.0, min(1.0, pos))
+            self.__class__._dip_cache[cache_key] = (pos, now)
+            return pos
+        except Exception as e:
+            print(f"[DCA-DIP] hata {symbol}: {str(e)[:80]}")
+            return 0.5
+
+    # ------------------------------------------------------------------
     # DCA: Kademeli alım
     # ------------------------------------------------------------------
     async def _check_dca(self, pos: dict, current_price: float, sCfg: dict) -> bool:
@@ -174,9 +295,92 @@ class PositionManager:
                     _min_time_min = int(sCfg.get("dcaMinTimeMin", 15))
                     _min_time = _min_time_min * 60
 
+                    # F83: dcaDynamic flag aktif olan stratejiler icin dinamik hesap
+                    _dyn = bool(sCfg.get("dcaDynamic", False))
+
+                    if _dyn:
+                        try:
+                            # --- 1) Strateji intervalinden ATR/momentum cek ---
+                            _strat_interval = str(sCfg.get("interval", "15m"))
+
+                            _atr_pct = await self._get_atr_pct_for_symbol(symbol, interval=_strat_interval)
+                            _momentum = await self._get_momentum_for_symbol(symbol, interval=_strat_interval)
+                            _dip = await self._get_dip_position(symbol, interval=_strat_interval)
+
+                            # --- 2) Parametreler ---
+                            _atr_mult = float(sCfg.get("dcaAtrMultiplier", 2.0))
+                            _dca_base = float(sCfg.get("dcaMinStep", 4))
+                            _max_steps = int(sCfg.get("dcaMaxSteps", 3))
+                            _step_idx = dca_count + 1
+
+                            # dcaMaxSteps limiti
+                            if _step_idx > _max_steps:
+                                print(f"[DCA-MAX] {symbol} kademe {_step_idx} > max {_max_steps}, atlandi")
+                                return False
+
+                            # --- 3) Baz adim: ATR x carpan x kademe ---
+                            _atr_step = _atr_pct * _atr_mult * _step_idx
+                            _dyn_step = _dca_base + (_step_idx - 1) * (_dca_base * 0.5)
+                            _final_step = max(_min_dist, _dyn_step, _atr_step)
+
+                            # --- 4) Dip algilama ---
+                            # Dip pozisyonu: 0=dip, 1=tepe
+                            # Dipteyse: adim kucul (yaklastir)
+                            # Tepedeyse: adim buyut (uzaklastir)
+                            if _dip < 0.25:
+                                _dip_mult = 0.75  # dipte -> %25 daha yakin
+                                _dip_label = "DIP"
+                            elif _dip > 0.75:
+                                _dip_mult = 1.30  # tepede -> %30 daha uzak
+                                _dip_label = "TEPE"
+                            else:
+                                _dip_mult = 1.0
+                                _dip_label = "ORTA"
+
+                            _final_step = _final_step * _dip_mult
+
+                            # --- 5) LIQ KORUMASI (KRITIK) ---
+                            _lev = max(1, int(pos.get("leverage") or 1))
+                            # 3x -> LIQ ~%33, 5x -> ~%20
+                            _liq_pct = (100.0 / _lev) - 1.0  # 1% emniyet payi
+                            _liq_safe = _liq_pct * 0.7  # %70 emniyetli kullanim
+
+                            # Kümülatif: DCA1 + DCA2 + DCA3 ... toplamı
+                            _cumulative = 0.0
+                            for k in range(1, _step_idx + 1):
+                                _k_step = max(_min_dist, _dca_base + (k - 1) * (_dca_base * 0.5),
+                                              _atr_pct * _atr_mult * k) * _dip_mult
+                                _cumulative += _k_step
+
+                            if _cumulative > _liq_safe:
+                                # Kırp
+                                _scale = _liq_safe / _cumulative
+                                _final_step = _final_step * _scale
+                                print(f"[DCA-LIQ-GUARD] {symbol} step kirpildi x{_scale:.2f} "
+                                      f"(cum %{_cumulative:.1f} > safe %{_liq_safe:.1f})")
+
+                            # --- 6) Dinamik zaman ---
+                            _mom_factor = float(sCfg.get("dcaMomentumFactor", 2.0))
+                            _dyn_time_min = max(_min_time_min,
+                                                _min_time_min + int(_momentum * _mom_factor))
+                            # Dipteyse daha kisa bekle, tepedeyse daha uzun
+                            _dyn_time_min = int(_dyn_time_min * (0.5 if _dip < 0.25 else (1.5 if _dip > 0.75 else 1.0)))
+                            _dyn_time = _dyn_time_min * 60
+
+                            print(f"[DCA-DYN] {symbol} kademe {_step_idx}/{_max_steps} | "
+                                  f"atr%={_atr_pct:.2f} mom={_momentum:.2f} dip={_dip:.2f}({_dip_label}) | "
+                                  f"step=%{_final_step:.2f} time={_dyn_time_min}dk "
+                                  f"(min=%{_min_dist:.1f} statik)")
+
+                            _min_dist = _final_step
+                            _min_time = _dyn_time
+                            _min_time_min = _dyn_time_min
+                        except Exception as _de:
+                            print(f"[DCA-DYN] {symbol} hata, statik kullaniyor: {_de}")
+
                     # 3) MESAFE KONTROLU
                     if _diff_pct < _min_dist:
-                        print(f"[DCA-SKIP] {symbol} mesafe yetersiz: %{_diff_pct:.3f} < %{_min_dist}")
+                        print(f"[DCA-SKIP] {symbol} mesafe yetersiz: %{_diff_pct:.3f} < %{_min_dist:.2f}")
                         return False
 
                     # 4) SURE KONTROLU
@@ -190,7 +394,7 @@ class PositionManager:
 
                     _age_disp = _age if _last_dca_time > 0 else 0
                     print(f"[DCA-OK] {symbol} mesafe %{_diff_pct:.2f} sure {_age_disp}sn "
-                          f"(min mesafe %{_min_dist}, min sure {_min_time_min}dk)")
+                          f"(min mesafe %{_min_dist:.2f}, min sure {_min_time_min}dk)")
         except Exception as _e:
             print(f"[DCA-ORDER] history parse hatasi: {_e}")
 
@@ -334,7 +538,18 @@ class PositionManager:
         
         ratio = exit_price / avg_price
         if ratio > 10 or ratio < 0.1:
-            print(f"[PARTIAL-TP] Supheli oran {symbol}: {ratio:.4f}")
+            # F91: BIR KEZ reddet ve PT'yi iptal et (spam engelle)
+            print(f"[PARTIAL-TP] Supheli oran {symbol}: {ratio:.4f} -> PT IPTAL")
+            try:
+                conn = get_db_connection()
+                conn.execute(
+                    "UPDATE active_trades SET pt_done = 1, pt_enabled = 0 WHERE symbol = ?",
+                    (symbol,)
+                )
+                conn.commit()
+                conn.close()
+            except Exception as _e:
+                print(f"[PARTIAL-TP] PT iptal DB hatasi: {_e}")
             return None
         
         if close_vol_usdt <= 0 or close_vol_usdt >= trade["total_vol"]:
@@ -470,6 +685,18 @@ class PositionManager:
             ratio = exit_price / avg_price
             if ratio > 10 or ratio < 0.1:
                 print(f"[!] Şüpheli fiyat oranı {symbol}: exit={exit_price:.8f} / avg={avg_price:.8f} = {ratio:.2f}x - kapatma iptal")
+                # F94: Bu pozisyonu bir daha denemesin (spike magduru)
+                try:
+                    _c = get_db_connection()
+                    _c.execute(
+                        "UPDATE active_trades SET pt_enabled = 0, pt_done = 1 WHERE symbol = ?",
+                        (symbol,)
+                    )
+                    _c.commit()
+                    _c.close()
+                    print(f"[F94] {symbol} PT deaktive edildi (spike magduru)")
+                except Exception as _e:
+                    print(f"[F94] DB hata: {_e}")
                 return None
         else:
             if not exit_price or exit_price <= 0:
@@ -830,6 +1057,26 @@ class PositionManager:
             tp_pct = params["takeProfit"] / 100
             sl_pct = params["stopLoss"] / 100
 
+            # F84: LIQ-safe SL (SL > LIQ olmamali)
+            try:
+                _lev_sl = max(1, int(pos.get("leverage") or 1))
+                # LIQ mesafe = (100 / lev) - emniyet
+                _liq_pct_sl = (100.0 / _lev_sl) - 1.0
+                # SL = LIQ'in %85'i (emniyet payi)
+                _auto_sl_pct = (_liq_pct_sl * 0.85) / 100.0
+                if sl_pct > _auto_sl_pct:
+                    _old_sl = sl_pct * 100
+                    sl_pct = _auto_sl_pct
+                    # Ayni pozisyon icin 1 kez log
+                    if not hasattr(self, "_sl_auto_logged"):
+                        self._sl_auto_logged = set()
+                    if position_key not in self._sl_auto_logged:
+                        self._sl_auto_logged.add(position_key)
+                        print(f"[SL-AUTO] {symbol} lev={_lev_sl}x LIQ=%{_liq_pct_sl:.1f} "
+                              f"config=%{_old_sl:.1f} -> SL=%{sl_pct*100:.1f} (LIQ-safe)")
+            except Exception as _e_sl_auto:
+                print(f"[SL-AUTO] hata {symbol}: {_e_sl_auto}")
+
             # ⚡ AI TTP - kademeli trailing
             _steps_str = params.get("trailingSteps") or ""
             _trail_steps = self._parse_trailing_steps(_steps_str)
@@ -910,11 +1157,18 @@ class PositionManager:
             
             if pt_enabled and not pt_done_flag and not state["active"] and profit_pct >= tp_pct:
                 pt_close_vol = pos["total_vol"] * (pt_percent_val / 100.0)
-                # ⚡ DEBUG: Tum girdi degerlerini logla
-                print(f"[PT-DEBUG] {symbol} | pos_total_vol={pos['total_vol']} | "
-                      f"pt_percent={pt_percent_val} | pt_close_vol={pt_close_vol} | "
-                      f"pt_enabled={pt_enabled} | pt_done={pt_done_flag} | "
-                      f"profit_pct={profit_pct*100:.2f}%")
+                # F93: PT-DEBUG logunu 10 dk'da 1 bas
+                import time as _t_pt
+                _now_pt = _t_pt.time()
+                if not hasattr(self, "_pt_debug_last"):
+                    self._pt_debug_last = {}
+                _last_pt = self._pt_debug_last.get(symbol, 0)
+                if _now_pt - _last_pt >= 600:
+                    self._pt_debug_last[symbol] = _now_pt
+                    print(f"[PT-DEBUG] {symbol} | pos_total_vol={pos['total_vol']} | "
+                          f"pt_percent={pt_percent_val} | pt_close_vol={pt_close_vol} | "
+                          f"pt_enabled={pt_enabled} | pt_done={pt_done_flag} | "
+                          f"profit_pct={profit_pct*100:.2f}%")
                 # ⚡ Test modunda min notional uygulanmaz (gercek emir yok)
                 _is_test = bool(getattr(self.order_manager, 'test_mode', False)) if self.order_manager else False
                 MIN_ORDER_USDT = 0.5 if _is_test else 5.0
@@ -931,8 +1185,16 @@ class PositionManager:
                         print(f"[PARTIAL-TP] pt_done guncelleme hatasi: {_e}")
                 else:
                     reason = f"PARTIAL TP ({profit_pct*100:.2f}%)"
-                    print(f"[PARTIAL-TP] {symbol} tetiklendi: %{pt_percent_val:.0f} "
-                          f"({pt_close_vol:.2f} USDT) | Kar: {profit_pct*100:.2f}%")
+                    # F93b: ayni mesaji 10 dk'da 1 bas
+                    import time as _t_pt2
+                    _now_pt2 = _t_pt2.time()
+                    if not hasattr(self, "_pt_trig_last"):
+                        self._pt_trig_last = {}
+                    _last_trig = self._pt_trig_last.get(symbol, 0)
+                    if _now_pt2 - _last_trig >= 600:
+                        self._pt_trig_last[symbol] = _now_pt2
+                        print(f"[PARTIAL-TP] {symbol} tetiklendi: %{pt_percent_val:.0f} "
+                              f"({pt_close_vol:.2f} USDT) | Kar: {profit_pct*100:.2f}%")
                     
                     pt_result = await self._execute_partial_close(
                         symbol, current_price, pt_close_vol, pt_percent_val, reason
@@ -957,7 +1219,15 @@ class PositionManager:
                 state["hwm"] = current_price
                 # Ilk kademeyi hesapla
                 _t0 = self._get_ai_ttp_pct(_trail_steps, profit_pct, state)
-                print(f"[AI-TTP] {symbol} AKTIF | Kâr: {profit_pct*100:.2f}% | Trail: %{_t0*100:.2f} | HWM: {current_price:.6f}")
+                # F94b: AI-TTP logunu 10 dk'da 1 bas
+                import time as _t_ai
+                _now_ai = _t_ai.time()
+                if not hasattr(self, "_ai_ttp_log_last"):
+                    self._ai_ttp_log_last = {}
+                _last_ai = self._ai_ttp_log_last.get(symbol, 0)
+                if _now_ai - _last_ai >= 600:
+                    self._ai_ttp_log_last[symbol] = _now_ai
+                    print(f"[AI-TTP] {symbol} AKTIF | Kâr: {profit_pct*100:.2f}% | Trail: %{_t0*100:.2f} | HWM: {current_price:.6f}")
 
             # 4. Trailing aktifse kapanış kontrolü (kademeli)
             if state["active"]:

@@ -572,6 +572,40 @@ def update_chart_settings(settings: dict):
 
 @app.post("/api/engine/config")
 async def update_engine_config(new_cfg: dict):
+    # F90a: Margin mode degisti mi?
+    try:
+        old_cfg = load_config()
+        old_mode = old_cfg.get("margin_mode", "cross")
+        new_mode = new_cfg.get("margin_mode", old_mode)
+
+        if old_mode != new_mode:
+            presets = new_cfg.get("margin_presets", {}) or {}
+            preset = presets.get(new_mode, {}) or {}
+
+            # Aktif pozisyon var mi kontrol
+            try:
+                conn = get_db_connection()
+                cnt = conn.execute("SELECT COUNT(*) FROM active_trades").fetchone()[0]
+                conn.close()
+            except Exception:
+                cnt = 0
+
+            if cnt > 0:
+                print(f"[MARGIN] Mod degisikligi var ama {cnt} acik pozisyon! "
+                      f"Sadece YENI pozisyonlar etkilenecek.")
+
+            applied = 0
+            for sname, scfg in (new_cfg.get("strategies", {}) or {}).items():
+                if isinstance(scfg, dict):
+                    for k, v in preset.items():
+                        scfg[k] = v
+                    applied += 1
+
+            print(f"[MARGIN] Mod degisti: {old_mode} -> {new_mode}")
+            print(f"[MARGIN] Preset uygulandi: {preset} ({applied} strateji)")
+    except Exception as e:
+        print(f"[MARGIN] Preset uygulama hatasi: {e}")
+
     save_config(new_cfg)
     bot.config = new_cfg
     return {"status": "success", "config": new_cfg}
@@ -858,9 +892,50 @@ async def get_active_trades_with_pnl():
             t["unrealized_pnl_pct"] = 0.0
             t["current_price"] = 0.0
         return trades
+    # F85: config'ten SL degerlerini al (strateji bazli)
+    try:
+        _cfg_all = load_config()
+        _strats_cfg = _cfg_all.get("strategies", {}) or {}
+    except Exception:
+        _strats_cfg = {}
+
     for t in trades:
         sym = t.get("symbol", "")
         cur = price_map.get(sym)
+
+        # F85: SL + LIQ hesabi (cur olmasa da yapilabilir)
+        try:
+            _avg = float(t.get("avg_price") or 0)
+            _lev = max(1, int(t.get("leverage") or 1))
+            _ttype = t.get("trade_type", "BUY")
+            _strat_name = t.get("strategy_name") or ""
+
+            if _avg > 0:
+                # LIQ hesabi (maintenance margin ~%0.5)
+                _maint = 0.005
+                if _ttype == "BUY":  # LONG
+                    _liq = _avg * (1 - 1.0/_lev + _maint)
+                else:  # SHORT
+                    _liq = _avg * (1 + 1.0/_lev - _maint)
+                t["liq_price"] = round(max(0, _liq), 10)
+
+                # SL hesabi: config'ten, LIQ-safe cap'li
+                _s_cfg = _strats_cfg.get(_strat_name, {}) or {}
+                _sl_cfg_pct = float(_s_cfg.get("stopLoss", 65))
+                # LIQ-safe cap (F84 mantigi)
+                _liq_pct = (100.0 / _lev) - 1.0
+                _max_sl_pct = _liq_pct * 0.85
+                _sl_pct = min(_sl_cfg_pct, _max_sl_pct)
+
+                if _ttype == "BUY":
+                    _sl_price = _avg * (1 - _sl_pct / 100.0)
+                else:
+                    _sl_price = _avg * (1 + _sl_pct / 100.0)
+                t["sl_price"] = round(_sl_price, 10)
+                t["sl_pct_effective"] = round(_sl_pct, 2)
+        except Exception as _e:
+            print(f"[F85] SL/LIQ hesap hatasi {sym}: {_e}")
+
         if cur is None:
             t["unrealized_pnl"] = 0.0
             t["unrealized_pnl_pct"] = 0.0

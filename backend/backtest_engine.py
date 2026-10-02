@@ -5,7 +5,7 @@ Async task olarak calisir, progress raporlanir.
 import time
 import traceback
 from datetime import datetime
-from backend.strategies import RSIScalperStrategy, HullSRPStrategy, DynamicGridStrategy, DynamicGridReelStrategy, DeepHunterStrategy, FundingArbitrageStrategy
+from backend.strategies import RSIScalperStrategy, DynamicGridStrategy, DynamicGridReelStrategy, DeepHunterStrategy
 
 
 # ==========================================================
@@ -143,16 +143,12 @@ def get_task(task_id):
 def get_strategy(name, params):
     if name == "RSI_SCALPER":
         return RSIScalperStrategy(params)
-    elif name == "HULL_SRP":
-        return HullSRPStrategy(params)
     elif name == "DYNAMIC_GRID":
         return DynamicGridStrategy(params)
     elif name == "DYNAMIC_GRID_REEL":
         return DynamicGridReelStrategy(params)
     elif name == "DEEP_HUNTER":
         return DeepHunterStrategy(params)
-    elif name == "FUNDING_ARBITRAGE":
-        return FundingArbitrageStrategy(params)
     return None
 
 
@@ -572,13 +568,6 @@ def run_backtest_sync(task_id, client, symbol, strategy_name, params, initial_ba
     # ⚡ GRID REEL icin ayri simulasyon motoru
     if strategy_name == "DYNAMIC_GRID_REEL":
         return run_grid_reel_backtest(
-            task_id, client, symbol, params, initial_balance,
-            interval, start_date, end_date, mode
-        )
-
-    # ⚡ FUNDING ARBITRAGE icin ozel simulasyon
-    if strategy_name == "FUNDING_ARBITRAGE":
-        return run_funding_backtest(
             task_id, client, symbol, params, initial_balance,
             interval, start_date, end_date, mode
         )
@@ -1189,7 +1178,7 @@ def run_funding_backtest(task_id, client, symbol, params, initial_balance,
 
         task["result"] = {
             "symbol": symbol,
-            "strategy": "FUNDING_ARBITRAGE",
+            "strategy": "UNKNOWN",
             "interval": bt_interval,
             "start_time": all_fundings[0].get("fundingTime", 0) // 1000 if all_fundings else 0,
             "end_time": all_fundings[-1].get("fundingTime", 0) // 1000 if all_fundings else 0,
