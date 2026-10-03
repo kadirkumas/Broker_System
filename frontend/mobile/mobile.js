@@ -346,10 +346,8 @@ window.closePosition = async function() {
     btn.disabled = true;
 
     try {
-        const r = await fetch('/api/trade/close', {
-            method: 'POST',
-            headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify({ symbol: _selectedSymbol, reason: 'MOBILE_MANUAL' })
+        const r = await fetch('/api/trade/close?symbol=' + encodeURIComponent(_selectedSymbol), {
+            method: 'POST'
         });
         if (r.ok) {
             closePosModal();

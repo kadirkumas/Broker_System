@@ -7,8 +7,21 @@
   "daily_max_loss": 30,
   "max_open_positions": 300,
   "max_margin_ratio": 65,
+  "max_long_ratio": 100,
+  "max_short_ratio": 100,
+  "margin_mode": "cross",
+  "margin_presets": {
+    "isolated": {
+      "leverage": 3,
+      "dcaMaxSteps": 3
+    },
+    "cross": {
+      "leverage": 5,
+      "dcaMaxSteps": 4
+    }
+  },
   "useLimitOrder": true,
-  "limitTimeoutSec": 3,
+  "limitTimeoutSec": 5,
   "fallbackToMarket": true,
   "strategies": {
     "RSI_SCALPER": {
@@ -20,15 +33,21 @@
       "shortOp": ">",
       "shortVal": 90,
       "baseOrder": 10,
-      "leverage": 3,
+      "leverage": 5,
       "takeProfit": 1.5,
       "trailingSteps": "1.5:0.3, 2.5:0.2, 4:0.12, 6:0.07, 10:0.03",
       "stopLoss": 65,
-      "useDCA": true,
+      "useDCA": false,
       "volMultiplier": 1,
       "steps": "5, 13, 25, 40, 60",
       "dcaMinDistancePct": 5,
       "dcaMinTimeMin": 15,
+      "dcaDynamic": true,
+      "dcaAtrMultiplier": 2,
+      "dcaMinStep": 4,
+      "dcaMaxSteps": 3,
+      "dcaMomentumFactor": 2,
+      "dcaVolMultiplier": 1.3,
       "partialTPEnabled": true,
       "partialTPPercent": 50,
       "partialTPKeepDCA": true,
@@ -50,15 +69,21 @@
       "recenterHours": 24,
       "recenterBuffer": 0.03,
       "baseOrder": 10,
-      "leverage": 3,
+      "leverage": 5,
       "takeProfit": 1.5,
       "trailingSteps": "1.5:0.3, 2.5:0.2, 4:0.12, 6:0.07, 10:0.03",
       "stopLoss": 65,
-      "useDCA": true,
+      "useDCA": false,
       "volMultiplier": 1,
       "steps": "5, 13, 25, 40, 60",
       "dcaMinDistancePct": 5,
       "dcaMinTimeMin": 15,
+      "dcaDynamic": true,
+      "dcaAtrMultiplier": 2,
+      "dcaMinStep": 4,
+      "dcaMaxSteps": 3,
+      "dcaMomentumFactor": 2,
+      "dcaVolMultiplier": 1.3,
       "partialTPEnabled": true,
       "partialTPPercent": 50,
       "partialTPKeepDCA": true,
@@ -66,7 +91,7 @@
     },
     "DYNAMIC_GRID_REEL": {
       "enabled": false,
-      "interval": "5m",
+      "interval": "1m",
       "mode": "neutral",
       "distributionType": "arithmetic",
       "gridCount": 20,
@@ -80,7 +105,7 @@
       "recenterHours": 24,
       "recenterBuffer": 0.03,
       "baseOrder": 10,
-      "leverage": 3,
+      "leverage": 5,
       "test_symbol": ""
     },
     "DEEP_HUNTER": {
@@ -95,15 +120,21 @@
       "shortRsiMin": 80,
       "shortTrade": true,
       "baseOrder": 10,
-      "leverage": 3,
+      "leverage": 5,
       "takeProfit": 1.5,
       "trailingSteps": "1.5:0.3, 2.5:0.2, 4:0.12, 6:0.07, 10:0.03",
       "stopLoss": 65,
-      "useDCA": true,
+      "useDCA": false,
       "volMultiplier": 1,
       "steps": "5, 13, 25, 40, 60",
       "dcaMinDistancePct": 5,
       "dcaMinTimeMin": 15,
+      "dcaDynamic": true,
+      "dcaAtrMultiplier": 2,
+      "dcaMinStep": 4,
+      "dcaMaxSteps": 3,
+      "dcaMomentumFactor": 2,
+      "dcaVolMultiplier": 1.3,
       "partialTPEnabled": true,
       "partialTPPercent": 50,
       "partialTPKeepDCA": true,
@@ -114,18 +145,5 @@
     "notify_signals": false,
     "notify_closes": true,
     "notify_delisting": false
-  },
-  "margin_mode": "cross",
-  "margin_presets": {
-    "isolated": {
-      "leverage": 3,
-      "dcaMaxSteps": 3
-    },
-    "cross": {
-      "leverage": 5,
-      "dcaMaxSteps": 4
-    }
-  },
-  "max_long_ratio": 50,
-  "max_short_ratio": 50
+  }
 }

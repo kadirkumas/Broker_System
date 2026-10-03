@@ -1,3 +1,5 @@
+import json
+import sqlite3
 import os
 import shutil
 import time
@@ -804,11 +806,17 @@ async def trigger_close(symbol: str = "BTCUSDT"):
 @app.post("/api/trade/close-all")
 async def close_all_trades():
     """
-    Klasik akis - sadece klasik (grid olmayan) pozisyonlari kapatir.
-    Grid pozisyonlar korunur.
+    FIX B3: Sadece KLASIK (grid olmayan) pozisyonlari kapatir.
+    Grid pozisyonu OLAN semboller ATLANIR (Binance emirleri korunur).
     """
     conn = get_db_connection()
-    trades = conn.execute("SELECT symbol FROM active_trades").fetchall()
+    trades = conn.execute("""
+        SELECT DISTINCT symbol FROM active_trades
+        WHERE COALESCE(is_grid_position, 0) = 0
+          AND symbol NOT IN (
+              SELECT symbol FROM active_trades WHERE is_grid_position = 1
+          )
+    """).fetchall()
     conn.close()
     results = []
     for t in trades:
@@ -820,43 +828,64 @@ async def close_all_trades():
 @app.post("/api/trade/close-all-force")
 async def close_all_trades_force():
     """
-    ⚡ FORCE - Bot durdurma icin: HER SEYI siler.
-    Klasik + Grid REEL pozisyonlar + aktif emirler.
-    Anomali validasyonu YAPMAZ (spike'lari da temizler).
+    FIX B4: Bot durdurma - TUM pozisyonlari kapatir.
+    Sira: (1) emir iptal (2) pozisyon reduceOnly MARKET (3) DB temizle.
     """
     conn = get_db_connection()
-
-    # Once sayalim (rapor icin)
     n_classic = conn.execute(
         "SELECT COUNT(*) FROM active_trades WHERE COALESCE(is_grid_position,0)=0"
     ).fetchone()[0]
     n_grid = conn.execute(
         "SELECT COUNT(*) FROM active_trades WHERE is_grid_position=1"
     ).fetchone()[0]
-
-    # Tum aktif sembolleri topla (order iptali icin)
     symbols = [r["symbol"] for r in conn.execute(
         "SELECT DISTINCT symbol FROM active_trades"
     ).fetchall()]
 
-    # ⚡ Tum aktif pozisyonlari sil (klasik + grid)
+    is_real = hasattr(order_manager, "client") and not getattr(order_manager, "test_mode", False)
+    closed_pos = 0
+    cancelled = 0
+
+    if is_real:
+        for sym in symbols:
+            try:
+                try:
+                    order_manager.client.futures_cancel_all_open_orders(symbol=sym)
+                    cancelled += 1
+                except Exception as _ce:
+                    print(f"[CLOSE-ALL-FORCE] {sym} emir iptal hatasi: {_ce}")
+
+                try:
+                    positions = order_manager.client.futures_position_information(symbol=sym)
+                    pos = next(
+                        (p for p in positions if p["symbol"] == sym and float(p["positionAmt"]) != 0),
+                        None
+                    )
+                    if pos:
+                        amt = float(pos["positionAmt"])
+                        close_side = "SELL" if amt > 0 else "BUY"
+                        order_manager.client.futures_create_order(
+                            symbol=sym,
+                            side=close_side,
+                            type="MARKET",
+                            quantity=abs(amt),
+                            reduceOnly=True,
+                        )
+                        closed_pos += 1
+                        print(f"[CLOSE-ALL-FORCE] {sym} pozisyon kapatildi (amt={amt})")
+                except Exception as _pe:
+                    print(f"[CLOSE-ALL-FORCE] {sym} poz kapatma hatasi: {_pe}")
+            except Exception as _e:
+                print(f"[CLOSE-ALL-FORCE] {sym} genel hata: {_e}")
+
+    # DB temizligi en son
     conn.execute("DELETE FROM active_trades")
     conn.commit()
     conn.close()
 
-    # ⚡ Binance'te bekleyen emirleri iptal et (test mode'da no-op)
-    cancelled = 0
-    for sym in symbols:
-        try:
-            if hasattr(order_manager, "client") and not getattr(order_manager, "test_mode", False):
-                order_manager.client.futures_cancel_all_open_orders(symbol=sym)
-                cancelled += 1
-        except Exception as e:
-            print(f"[CLOSE-ALL-FORCE] {sym} emir iptali hatasi: {e}")
-
     total_count = n_classic + n_grid
-    print(f"[CLOSE-ALL-FORCE] {n_classic} klasik + {n_grid} grid = {total_count} pozisyon silindi")
-    print(f"[CLOSE-ALL-FORCE] {len(symbols)} sembol, {cancelled} sembolde emir iptal edildi")
+    print(f"[CLOSE-ALL-FORCE] DB: {n_classic} klasik + {n_grid} grid = {total_count}")
+    print(f"[CLOSE-ALL-FORCE] Binance: {cancelled} emir iptal, {closed_pos} poz kapandi (real={is_real})")
 
     return {
         "status": "success",
@@ -865,6 +894,8 @@ async def close_all_trades_force():
         "total": total_count,
         "symbols": symbols,
         "cancelled_orders": cancelled,
+        "closed_positions": closed_pos,
+        "mode": "real" if is_real else "test",
     }
 
 
@@ -1784,6 +1815,14 @@ DB_SYNC_PATH = Path(__file__).resolve().parent / "bot_data.db"
 
 
 async def _sync_push_once() -> bool:
+    # FIX B2: WAL checkpoint - son veriyi .db'ye flush et
+    try:
+        _ck = sqlite3.connect(str(DB_SYNC_PATH), timeout=10.0)
+        _ck.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+        _ck.close()
+    except Exception as _ck_e:
+        print(f"[SYNC] WAL checkpoint hatasi (devam): {_ck_e}")
+
     try:
         if not DB_SYNC_PATH.exists():
             return False
@@ -1813,9 +1852,19 @@ async def _sync_push_once() -> bool:
                 return -1, str(e).encode()[:200]
         status, body = await asyncio.to_thread(_do)
         if status == 200:
-            print(f"[SYNC] push OK | {len(data)} byte")
+            # FIX SP1: basari logu 5 dk'da 1
+            import time as _t_sp1
+            _now_sp1 = _t_sp1.time()
+            if not hasattr(_sync_push_once, "_last_ok_log") or (_now_sp1 - _sync_push_once._last_ok_log) >= 300:
+                _sync_push_once._last_ok_log = _now_sp1
+                print(f"[SYNC] push OK | {len(data)} byte")
             return True
-        print(f"[SYNC] push hata | status={status} | {body[:100]}")
+        # FIX SP1: hata logu 5 dk'da 1
+        import time as _t_sp1b
+        _now_sp1b = _t_sp1b.time()
+        if not hasattr(_sync_push_once, "_last_err_log") or (_now_sp1b - _sync_push_once._last_err_log) >= 300:
+            _sync_push_once._last_err_log = _now_sp1b
+            print(f"[SYNC] push hata | status={status} | {body[:100]}")
         return False
     except Exception as e:
         print(f"[SYNC] push exception: {e}")
@@ -1866,6 +1915,15 @@ async def sync_db_receive(request: Request):
         with open(tmp, 'wb') as f:
             f.write(body)
         os.replace(tmp, str(db_path))
+        # FIX K1: WAL/SHM temizle (eski WAL yeni DB'ye karismasin)
+        for _ext in ("-wal", "-shm"):
+            _p = Path(str(db_path) + _ext)
+            try:
+                if _p.exists():
+                    _p.unlink()
+                    print(f"[SYNC-RECV] {_p.name} temizlendi")
+            except Exception as _e_clean:
+                print(f"[SYNC-RECV] {_p.name} temizleme hatasi: {_e_clean}")
         print(f"[SYNC-RECV] DB guncellendi | {len(body)} byte")
         return {"status": "ok", "size": len(body)}
     except Exception as e:

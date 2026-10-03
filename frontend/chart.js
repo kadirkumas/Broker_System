@@ -1030,7 +1030,9 @@ window.renderActiveList = function() {
         const price = parseFloat(item.lastPrice), change = parseFloat(item.priceChangePercent); let pctColorClass = change > 0 ? 'up' : (change < 0 ? 'down' : 'neutral');
         let change03 = item.change03 !== undefined && item.change03 !== null ? parseFloat(item.change03) : change; let pct03ColorClass = change03 > 0 ? 'up' : (change03 < 0 ? 'down' : 'neutral');
         let displaySymbol = activeTab === 'futures' ? item.symbol.replace('USDT', 'USDT.P') : item.symbol, activeClass = displaySymbol === activeSym ? 'active-row' : '', tickColor = item.tickDirection || 'neutral';
-        html += `<li id="item-${displaySymbol}" class="${activeClass}" onclick="window.changeSymbol('${displaySymbol}')"><span class="symbol" title="${displaySymbol}">${displaySymbol}</span><span id="price-${displaySymbol}" class="price ${tickColor}">${window.formatPrice(price)}</span><span id="pct-${displaySymbol}" class="pct ${pctColorClass}">${change>0?'+':''}${change.toFixed(2)}%</span><span id="pct03-${displaySymbol}" class="pct ${pct03ColorClass}" style="text-align:right;">${change03>0?'+':''}${change03.toFixed(2)}%</span></li>`;
+        const _hasActivePos = window._activePositionSymbols && window._activePositionSymbols.has(item.symbol);
+        const _starHTML = _hasActivePos ? '<span class="active-pos-star" title="Acik pozisyon var">&#9733;</span>' : '';
+        html += `<li id="item-${displaySymbol}" class="${activeClass}" onclick="window.changeSymbol('${displaySymbol}')"><span class="symbol" title="${displaySymbol}">${_starHTML}${displaySymbol}</span><span id="price-${displaySymbol}" class="price ${tickColor}">${window.formatPrice(price)}</span><span id="pct-${displaySymbol}" class="pct ${pctColorClass}">${change>0?'+':''}${change.toFixed(2)}%</span><span id="pct03-${displaySymbol}" class="pct ${pct03ColorClass}" style="text-align:right;">${change03>0?'+':''}${change03.toFixed(2)}%</span></li>`;
     });
     ul.innerHTML = html;
 };
@@ -1126,8 +1128,20 @@ window.openBotConfigModal = async function() {
         document.getElementById('cfg-daily-max-loss').value = cfg.daily_max_loss || 0;
         document.getElementById('cfg-max-open-positions').value = cfg.max_open_positions || 0;
         // F64: max marjin orani
+        // F90b: margin mode yukle
+        try {
+            var _mmode = cfg.margin_mode || 'cross';
+            window._currentMarginMode = _mmode;
+            var _mmSel = document.getElementById('cfg-margin-mode');
+            if (_mmSel) _mmSel.value = _mmode;
+        } catch(e) { console.warn('Margin mode yukleme:', e); }
+        
         var _mmrEl = document.getElementById('cfg-max-margin-ratio');
         if (_mmrEl) _mmrEl.value = (cfg.max_margin_ratio != null ? cfg.max_margin_ratio : 60);
+        var _mlrEl = document.getElementById('cfg-max-long-ratio');
+        if (_mlrEl) _mlrEl.value = (cfg.max_long_ratio != null ? cfg.max_long_ratio : 50);
+        var _msrEl = document.getElementById('cfg-max-short-ratio');
+        if (_msrEl) _msrEl.value = (cfg.max_short_ratio != null ? cfg.max_short_ratio : 50);
         document.getElementById('cfg-use-limit-order').checked = cfg.useLimitOrder !== false;
         document.getElementById('cfg-limit-timeout').value = cfg.limitTimeoutSec || 3;
         document.getElementById('cfg-fallback-market').checked = cfg.fallbackToMarket !== false;
@@ -1222,6 +1236,13 @@ window.saveBotConfig = async function() {
             daily_max_loss: parseFloat(document.getElementById('cfg-daily-max-loss').value) || 0,
             max_open_positions: parseInt(document.getElementById('cfg-max-open-positions').value) || 0,
             max_margin_ratio: parseFloat((document.getElementById('cfg-max-margin-ratio') || {}).value) || 60,
+            max_long_ratio: parseFloat((document.getElementById('cfg-max-long-ratio') || {}).value) || 50,
+            max_short_ratio: parseFloat((document.getElementById('cfg-max-short-ratio') || {}).value) || 50,
+            margin_mode: window._currentMarginMode || 'cross',
+            margin_presets: {
+                isolated: { leverage: 3, dcaMaxSteps: 3 },
+                cross:    { leverage: 5, dcaMaxSteps: 4 }
+            },
             useLimitOrder: document.getElementById('cfg-use-limit-order').checked,
             limitTimeoutSec: parseInt(document.getElementById('cfg-limit-timeout').value) || 3,
             fallbackToMarket: document.getElementById('cfg-fallback-market').checked,
@@ -1750,7 +1771,7 @@ window.renderSignals = async function() {
 window.startSignalPolling = function() {
     if (window._signalPollingInterval) return;
     window.renderSignals();
-    window._signalPollingInterval = setInterval(window.renderSignals, 8000);
+    window._signalPollingInterval = setInterval(window.renderSignals, 30000);  // FIX F5: 30sn
 };
 
 window.stopSignalPolling = function() {
@@ -3226,7 +3247,7 @@ window.showSymbolTrades = async function(symbol, idx = null) {
                 position: isLong ? 'belowBar' : 'aboveBar',
                 color: '#FCD535',
                 shape: 'circle',
-                size: 0.3
+                size: 0.1
             });
             
             const lineEndTime = lastTime > entryTime ? lastTime : entryTime + 60;
@@ -3793,7 +3814,7 @@ window.autoCheckActivePositions = async function() {
 };
 
 // 5 saniyede bir otomatik kontrol
-setInterval(window.autoCheckActivePositions, 5000);
+setInterval(window.autoCheckActivePositions, 15000);  // FIX F5: 15sn
 
 // =============================================================
 // KOMISYON ORANI CACHE (frontend)
@@ -10626,7 +10647,7 @@ window._groupSortedTrades = function(sortedTrades) {
 
     // Hemen bir kez calistir, sonra her 5 sn
     setTimeout(checkNewCloses, 2000);
-    setInterval(checkNewCloses, 5000);
+    setInterval(checkNewCloses, 15000);  // FIX F5: 15sn
 
     // Manuel test icin
     window._animCheckNow = checkNewCloses;
@@ -11412,3 +11433,294 @@ console.log('[F64] quickClosePosition hazir');
     console.log('[F88] Grafik SL/LIQ toggle hazir | SL:', window._chartShowSl, 'LIQ:', window._chartShowLiq);
 })();
 
+/* ============================================================
+   F90b - Margin Mode UI
+   ============================================================ */
+(function() {
+    'use strict';
+
+    window._currentMarginMode = window._currentMarginMode || 'cross';
+
+    console.log('[F90b] Margin Mode UI hazir');
+})();
+
+/* ============================================================
+   F90b v6 - Margin Mode 2-Combo
+   ============================================================ */
+(function() {
+    'use strict';
+
+    window._currentMarginMode = window._currentMarginMode || 'cross';
+
+    // Combo degisimi
+    window.onMarginModeSelectChange = function(which) {
+        var iso = document.getElementById('margin-isolated-select');
+        var cross = document.getElementById('margin-cross-select');
+        if (!iso || !cross) return;
+
+        if (which === 'isolated') {
+            if (iso.value === 'active') cross.value = 'passive';
+            else if (cross.value === 'passive') iso.value = 'active';
+        } else if (which === 'cross') {
+            if (cross.value === 'active') iso.value = 'passive';
+            else if (iso.value === 'passive') cross.value = 'active';
+        }
+
+        window._currentMarginMode = (iso.value === 'active') ? 'isolated' : 'cross';
+
+        if (window.showToast) {
+            var info = window._currentMarginMode === 'cross'
+                ? 'Cross (5x · 4 DCA)'
+                : 'Isolated (3x · 3 DCA)';
+            window.showToast('Margin: ' + info + ' - KAYDET ile aktif olur', 'info', 2500);
+        }
+    };
+
+    // Config'ten yukle
+    window._setMarginModeUI = function(mode) {
+        window._currentMarginMode = mode || 'cross';
+        var iso = document.getElementById('margin-isolated-select');
+        var cross = document.getElementById('margin-cross-select');
+        if (!iso || !cross) return;
+        if (mode === 'isolated') {
+            iso.value = 'active';
+            cross.value = 'passive';
+        } else {
+            iso.value = 'passive';
+            cross.value = 'active';
+        }
+    };
+
+    // Geriye donuk uyumluluk (eski cagrilar)
+    window.setMarginMode = function(mode) {
+        window._setMarginModeUI(mode);
+        if (window.showToast) {
+            var info = mode === 'cross' ? 'Cross (5x · 4 DCA)' : 'Isolated (3x · 3 DCA)';
+            window.showToast('Margin: ' + info, 'info', 2000);
+        }
+    };
+
+    console.log('[F90b v6] Margin Mode 2-combo hazir');
+})();
+
+/* ============================================================
+   FIX F96: DCA Aktif/Dinamik mutex
+   Biri acilinca digeri otomatik kapanir
+   ============================================================ */
+(function() {
+    'use strict';
+
+    function _bindDcaMutex() {
+        // Her strateji icin
+        document.querySelectorAll('.strat-param[data-param="useDCA"]').forEach(function(useDcaCb) {
+            if (useDcaCb.dataset.f96Bound === '1') return;
+            useDcaCb.dataset.f96Bound = '1';
+
+            var strat = useDcaCb.dataset.strategy;
+            var dynCb = document.querySelector(
+                '.strat-param[data-strategy="' + strat + '"][data-param="dcaDynamic"]'
+            );
+            if (!dynCb) return;
+
+            // useDCA tiklama
+            useDcaCb.addEventListener('change', function() {
+                if (this.checked) {
+                    dynCb.checked = false;
+                }
+            });
+
+            // dcaDynamic tiklama
+            if (dynCb.dataset.f96Bound !== '1') {
+                dynCb.dataset.f96Bound = '1';
+                dynCb.addEventListener('change', function() {
+                    if (this.checked) {
+                        useDcaCb.checked = false;
+                    }
+                });
+            }
+        });
+
+        // Ek kontrol: ikisi de aciksa, dcaDynamic kazanir
+        document.querySelectorAll('.strat-param[data-param="dcaDynamic"]').forEach(function(dynCb) {
+            if (!dynCb.checked) return;
+            var strat = dynCb.dataset.strategy;
+            var useDcaCb = document.querySelector(
+                '.strat-param[data-strategy="' + strat + '"][data-param="useDCA"]'
+            );
+            if (useDcaCb && useDcaCb.checked) {
+                useDcaCb.checked = false;
+                console.log('[F96] ' + strat + ': ikisi de acikti, dcaDynamic kazandi');
+            }
+        });
+    }
+
+    // openBotConfigModal hook
+    if (typeof window.openBotConfigModal === 'function' && !window.openBotConfigModal._f96Hooked) {
+        var _origOpen = window.openBotConfigModal;
+        window.openBotConfigModal = function() {
+            var r = _origOpen.apply(this, arguments);
+            setTimeout(_bindDcaMutex, 200);
+            setTimeout(_bindDcaMutex, 600);
+            return r;
+        };
+        window.openBotConfigModal._f96Hooked = true;
+        console.log('[F96] openBotConfigModal hook aktif');
+    }
+
+    // Global API (manuel test icin)
+    window._bindDcaMutex = _bindDcaMutex;
+
+    console.log('[F96] DCA mutex hazir');
+})();
+
+/* FIX F5 - interval birlestirme 2026-10-02 */
+
+/* ============================================================
+   FIX ACTIVE-STAR - Aktif pozisyon yildizi
+   ============================================================ */
+(function() {
+    'use strict';
+
+    window._activePositionSymbols = new Set();
+
+    async function _fetchActivePosSymbols() {
+        try {
+            var res = await fetch('/api/trade/active');
+            if (!res.ok) return;
+            var arr = await res.json();
+            if (!Array.isArray(arr)) return;
+            var newSet = new Set();
+            arr.forEach(function(t) {
+                if (t && t.symbol) newSet.add(t.symbol);
+            });
+            // Degisim var mi?
+            var changed = false;
+            if (newSet.size !== window._activePositionSymbols.size) {
+                changed = true;
+            } else {
+                newSet.forEach(function(s) {
+                    if (!window._activePositionSymbols.has(s)) changed = true;
+                });
+            }
+            window._activePositionSymbols = newSet;
+            if (changed && typeof window.renderActiveList === 'function') {
+                window.renderActiveList();
+            }
+            console.log('[ACTIVE-STAR] Aktif sembol:', newSet.size);
+        } catch(e) {
+            // Sessizce yut
+        }
+    }
+
+    // Ilk cagri + her 15 sn
+    setTimeout(_fetchActivePosSymbols, 3000);
+    setInterval(_fetchActivePosSymbols, 15000);
+
+    // Global API
+    window._refreshActiveStar = _fetchActivePosSymbols;
+
+    console.log('[ACTIVE-STAR] Aktif pozisyon yildizi aktif (15sn)');
+})();
+
+/* ============================================================
+   FIX CENTER-POS - Coin tiklaninca pozisyonu ortala
+   ============================================================ */
+(function() {
+    'use strict';
+
+    var _flashTimers = {};
+
+    function _scrollToPosition(sym, attempt) {
+        attempt = attempt || 1;
+        if (attempt > 3) return;
+
+        // 1. Bu sembolde acik pozisyon var mi?
+        var cleanSym = String(sym || '').replace(/\.P$/i, '').toUpperCase();
+        if (!window._activePositionSymbols || !window._activePositionSymbols.has(cleanSym)) {
+            return;  // Pozisyon yok, yapilacak bir sey yok
+        }
+
+        // 2. Pozisyonlar sekmesine gec
+        var posTab = document.getElementById('tab-positions');
+        if (posTab && !posTab.classList.contains('active')) {
+            if (typeof window.switchBtpTab === 'function') {
+                window.switchBtpTab('positions');
+            }
+        }
+
+        // 3. Render bekle + satiri bul
+        setTimeout(function() {
+            var tbody = document.getElementById('btp-tbody-positions');
+            if (!tbody) {
+                _scrollToPosition(sym, attempt + 1);
+                return;
+            }
+
+            var targetRow = null;
+            var allRows = tbody.querySelectorAll('tr');
+            for (var i = 0; i < allRows.length; i++) {
+                var tr = allRows[i];
+                var onclick = tr.getAttribute('onclick') || '';
+                if (onclick.indexOf("'" + sym + "'") !== -1) {
+                    targetRow = tr;
+                    break;
+                }
+            }
+
+            if (!targetRow) {
+                // Tablo henuz render olmamis olabilir
+                _scrollToPosition(sym, attempt + 1);
+                return;
+            }
+
+            // 4. Ekran ortasina kaydir
+            try {
+                targetRow.scrollIntoView({
+                    behavior: 'smooth',
+                    block: 'center',
+                    inline: 'nearest'
+                });
+            } catch (e) {
+                targetRow.scrollIntoView();
+            }
+
+            // 5. Kisa vurgu (sari flash)
+            try {
+                targetRow.classList.remove('center-pos-flash');
+                // reflow icin bos okuma
+                void targetRow.offsetWidth;
+                targetRow.classList.add('center-pos-flash');
+
+                if (_flashTimers[cleanSym]) {
+                    clearTimeout(_flashTimers[cleanSym]);
+                }
+                _flashTimers[cleanSym] = setTimeout(function() {
+                    targetRow.classList.remove('center-pos-flash');
+                    delete _flashTimers[cleanSym];
+                }, 2000);
+            } catch (e) {}
+
+            console.log('[CENTER-POS] ' + sym + ' ortalandi (deneme ' + attempt + ')');
+        }, 400);
+    }
+
+    // changeSymbol'u sarmala
+    if (typeof window.changeSymbol === 'function' && !window.changeSymbol._centerPosHooked) {
+        var _origChange = window.changeSymbol;
+        window.changeSymbol = function(sym) {
+            var r = _origChange.apply(this, arguments);
+            // Sembol degistiginde 300ms sonra scroll denemesi
+            setTimeout(function() {
+                _scrollToPosition(sym, 1);
+            }, 300);
+            return r;
+        };
+        window.changeSymbol._centerPosHooked = true;
+        console.log('[CENTER-POS] changeSymbol hook aktif');
+    }
+
+    // Global API
+    window._scrollToPosition = _scrollToPosition;
+
+    console.log('[CENTER-POS] Hazir');
+})();

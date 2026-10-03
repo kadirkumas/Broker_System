@@ -182,20 +182,34 @@ class DynamicGridStrategy(BaseStrategy):
         recenter_buffer = float(self.params.get("recenterBuffer", 0.03))
         now = time.time()
 
+        # FIX F92: recenter cooldown + sebep takibi
         need_recenter = False
+        recenter_reason = "INIT"
+        cooldown_min = float(self.params.get("recenterCooldownMin", 30))
+        cooldown_sec = cooldown_min * 60
+        _since_last = (now - self._last_recenter_ts) if self._last_recenter_ts > 0 else 999999
 
         # 1. Zaman bazli
         if self._last_recenter_ts == 0:
             need_recenter = True
-        elif recenter_hours > 0 and (now - self._last_recenter_ts) >= recenter_hours * 3600:
+            recenter_reason = "FIRST_RUN"
+        elif recenter_hours > 0 and _since_last >= recenter_hours * 3600:
             need_recenter = True
+            recenter_reason = "TIME_" + str(int(_since_last / 3600)) + "h"
 
-        # 2. Range kirilma
+        # 2. Range kirilma (cooldown gectiyse)
         if not need_recenter and self._cached_top and self._cached_bottom:
-            buffer_top = self._cached_top * (1 + recenter_buffer)
-            buffer_bottom = self._cached_bottom * (1 - recenter_buffer)
-            if current_price > buffer_top or current_price < buffer_bottom:
-                need_recenter = True
+            if _since_last < cooldown_sec:
+                pass  # Cooldown icinde, atla
+            else:
+                buffer_top = self._cached_top * (1 + recenter_buffer)
+                buffer_bottom = self._cached_bottom * (1 - recenter_buffer)
+                if current_price > buffer_top:
+                    need_recenter = True
+                    recenter_reason = "BREAK_TOP_" + str(round((current_price/buffer_top - 1) * 100, 1)) + "pct"
+                elif current_price < buffer_bottom:
+                    need_recenter = True
+                    recenter_reason = "BREAK_BOT_" + str(round((1 - current_price/buffer_bottom) * 100, 1)) + "pct"
 
         # Referans ve seviyeleri guncelle
         if need_recenter or self._cached_levels is None:
@@ -216,7 +230,7 @@ class DynamicGridStrategy(BaseStrategy):
                 grid_count, dist_type
             )
 
-            print(f"[GRID] Recenter: ref={ref_data['reference']:.4f} "
+            print(f"[GRID] Recenter [{recenter_reason}]: ref={ref_data['reference']:.4f} "
                   f"top={ref_data['top']:.4f} bottom={ref_data['bottom']:.4f} "
                   f"({len(self._cached_levels)} seviye)")
 

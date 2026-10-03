@@ -7,7 +7,56 @@
     <link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
     <link rel="stylesheet" href="/static/style.css">
     <script src="https://unpkg.com/lightweight-charts@4.1.1/dist/lightweight-charts.standalone.production.js"></script>
-</head>
+<style id="f90b-v6-style">
+.margin-preset-row {
+    padding: 10px 16px;
+    background: linear-gradient(180deg, rgba(41,98,255,0.05), rgba(41,98,255,0.01));
+    border: 1px solid rgba(41,98,255,0.25);
+    border-radius: 8px;
+}
+.margin-preset-title {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-bottom: 8px;
+    padding-bottom: 6px;
+    border-bottom: 1px solid rgba(41,98,255,0.15);
+}
+.margin-preset-title .cfg-label {
+    font-size: 11px;
+    color: #79a0ff;
+    font-weight: 700;
+}
+.margin-preset-combos {
+    display: flex;
+    gap: 24px;
+    flex-wrap: wrap;
+    align-items: center;
+}
+.margin-preset-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+.margin-preset-label {
+    font-size: 12px;
+    color: #d1d4dc;
+    font-weight: 600;
+    min-width: 55px;
+}
+.margin-preset-select {
+    width: 90px !important;
+    padding: 4px 8px !important;
+    font-size: 12px !important;
+}
+.margin-preset-info {
+    font-size: 11px;
+    color: #848e9c;
+    font-family: 'Courier New', monospace;
+    font-weight: 600;
+    min-width: 100px;
+}
+</style></head>
 <body>
     <div class="app-container">
         <header class="top-bar">
@@ -866,6 +915,14 @@
                             <input type="number" id="cfg-max-margin-ratio" class="search-input" min="0" max="100" step="1" value="60">
                         </div>
                         <div class="bot-global-item">
+                            <span class="cfg-label" data-tip="Cross modda maksimum long orani (%). 100 = limit kapali. Ornek: 60 = long pozisyon orani %60'i gecemez.">📈 Max Long Oranı (%)</span>
+                            <input type="number" id="cfg-max-long-ratio" class="search-input" min="0" max="100" step="1" value="50">
+                        </div>
+                        <div class="bot-global-item">
+                            <span class="cfg-label" data-tip="Cross modda maksimum short orani (%). 100 = limit kapali. Ornek: 60 = short pozisyon orani %60'i gecemez.">📉 Max Short Oranı (%)</span>
+                            <input type="number" id="cfg-max-short-ratio" class="search-input" min="0" max="100" step="1" value="50">
+                        </div>
+                        <div class="bot-global-item">
                             <span class="cfg-label" data-tip="Grafikte SL (Stop Loss) seviyesini kirmizi kesikli cizgi olarak goster/gizle.">📉 Grafikte SL</span>
                             <label class="switch switch-small" style="margin-top: 6px;">
                                 <input type="checkbox" id="cfg-chart-show-sl" checked>
@@ -878,6 +935,29 @@
                                 <input type="checkbox" id="cfg-chart-show-liq" checked>
                                 <span class="slider round"></span>
                             </label>
+                        </div>
+                    </div>
+                </div>
+                <div class="margin-preset-row">
+                    <div class="margin-preset-title">
+                        <span class="cfg-label" data-tip="Margin preset secimi. Aktif olan mod, YENI pozisyonlara uygulanir.">⚖️ Margin Mode</span>
+                    </div>
+                    <div class="margin-preset-combos">
+                        <div class="margin-preset-item">
+                            <span class="margin-preset-label">İzole :</span>
+                            <select id="margin-isolated-select" class="search-input margin-preset-select" onchange="window.onMarginModeSelectChange('isolated')">
+                                <option value="passive">Pasif</option>
+                                <option value="active">Aktif</option>
+                            </select>
+                            <span class="margin-preset-info">3x · 3 DCA</span>
+                        </div>
+                        <div class="margin-preset-item">
+                            <span class="margin-preset-label">Cross :</span>
+                            <select id="margin-cross-select" class="search-input margin-preset-select" onchange="window.onMarginModeSelectChange('cross')">
+                                <option value="active">Aktif</option>
+                                <option value="passive">Pasif</option>
+                            </select>
+                            <span class="margin-preset-info">5x · 4 DCA</span>
                         </div>
                     </div>
                 </div>
@@ -969,6 +1049,36 @@
                             <div class="cfg-row">
                                 <span class="cfg-label" data-tip="Her DCA kademesinin hangi yuzde dususte tetiklenecegi. Ornek: 5,10,15,20.">Düşüş Adımları (%)</span>
                                 <input type="text" class="search-input strat-param" data-strategy="RSI_SCALPER" data-param="steps" value="5, 13, 25, 40, 60">
+                            </div>
+
+                            <!-- DCA-DINAMIK-V1 -->
+                            <div class="cfg-subtitle">⚙️ DCA Dinamik</div>
+                            <div class="cfg-row">
+                                <span class="cfg-label" data-tip="DCA dinamik modu. Statik adimlar yerine ATR + momentum bazli adimlar kullanilir. KAPALI ise yukaridaki statik adimlar kullanilir.">DCA Dinamik</span>
+                                <label class="switch switch-small">
+                                    <input type="checkbox" class="strat-param" data-strategy="RSI_SCALPER" data-param="dcaDynamic">
+                                    <span class="slider round"></span>
+                                </label>
+                            </div>
+                            <div class="cfg-row">
+                                <span class="cfg-label" data-tip="ATR bazli adim carpani. Buyuk deger = daha genis DCA araliklari. Ornek: 2.0 = ATR% x 2 x kademe.">ATR Çarpan</span>
+                                <input type="number" class="search-input strat-param" data-strategy="RSI_SCALPER" data-param="dcaAtrMultiplier" value="2.0" min="0.5" max="10" step="0.1">
+                            </div>
+                            <div class="cfg-row">
+                                <span class="cfg-label" data-tip="Minimum DCA adimi (%). ATR kucuk olsa bile adim bu degerin altina inemez.">Min Adım (%)</span>
+                                <input type="number" class="search-input strat-param" data-strategy="RSI_SCALPER" data-param="dcaMinStep" value="4" min="0.5" max="50" step="0.5">
+                            </div>
+                            <div class="cfg-row">
+                                <span class="cfg-label" data-tip="Dinamik modda maksimum DCA kademe sayisi. Statik listeden bagimsiz sinir.">Max Kademe</span>
+                                <input type="number" class="search-input strat-param" data-strategy="RSI_SCALPER" data-param="dcaMaxSteps" value="3" min="1" max="10" step="1">
+                            </div>
+                            <div class="cfg-row">
+                                <span class="cfg-label" data-tip="Momentum faktoru. Hizli dususte DCA bekleme suresini uzatir. Ornek: 2.0.">Momentum</span>
+                                <input type="number" class="search-input strat-param" data-strategy="RSI_SCALPER" data-param="dcaMomentumFactor" value="2.0" min="0" max="10" step="0.5">
+                            </div>
+                            <div class="cfg-row">
+                                <span class="cfg-label" data-tip="Likidite koruma carpani. Kumulatif DCA mesafesi LIQ mesafesinin bu oranini gecmez. Ornek: 1.3.">LIQ Emniyet</span>
+                                <input type="number" class="search-input strat-param" data-strategy="RSI_SCALPER" data-param="dcaVolMultiplier" value="1.3" min="0.5" max="3" step="0.1">
                             </div>
                             <div class="cfg-subtitle">🎯 Kısmi TP (Partial Take Profit)</div>
                             <div class="cfg-row">
@@ -1120,6 +1230,36 @@
                                 <span class="cfg-label">Düşüş Adımları (%)</span>
                                 <input type="text" class="search-input strat-param" data-strategy="DYNAMIC_GRID" data-param="steps" value="5, 13, 25, 40, 60">
                             </div>
+
+                            <!-- DCA-DINAMIK-V1 -->
+                            <div class="cfg-subtitle">⚙️ DCA Dinamik</div>
+                            <div class="cfg-row">
+                                <span class="cfg-label" data-tip="DCA dinamik modu. Statik adimlar yerine ATR + momentum bazli adimlar kullanilir. KAPALI ise yukaridaki statik adimlar kullanilir.">DCA Dinamik</span>
+                                <label class="switch switch-small">
+                                    <input type="checkbox" class="strat-param" data-strategy="DYNAMIC_GRID" data-param="dcaDynamic">
+                                    <span class="slider round"></span>
+                                </label>
+                            </div>
+                            <div class="cfg-row">
+                                <span class="cfg-label" data-tip="ATR bazli adim carpani. Buyuk deger = daha genis DCA araliklari. Ornek: 2.0 = ATR% x 2 x kademe.">ATR Çarpan</span>
+                                <input type="number" class="search-input strat-param" data-strategy="DYNAMIC_GRID" data-param="dcaAtrMultiplier" value="2.0" min="0.5" max="10" step="0.1">
+                            </div>
+                            <div class="cfg-row">
+                                <span class="cfg-label" data-tip="Minimum DCA adimi (%). ATR kucuk olsa bile adim bu degerin altina inemez.">Min Adım (%)</span>
+                                <input type="number" class="search-input strat-param" data-strategy="DYNAMIC_GRID" data-param="dcaMinStep" value="4" min="0.5" max="50" step="0.5">
+                            </div>
+                            <div class="cfg-row">
+                                <span class="cfg-label" data-tip="Dinamik modda maksimum DCA kademe sayisi. Statik listeden bagimsiz sinir.">Max Kademe</span>
+                                <input type="number" class="search-input strat-param" data-strategy="DYNAMIC_GRID" data-param="dcaMaxSteps" value="3" min="1" max="10" step="1">
+                            </div>
+                            <div class="cfg-row">
+                                <span class="cfg-label" data-tip="Momentum faktoru. Hizli dususte DCA bekleme suresini uzatir. Ornek: 2.0.">Momentum</span>
+                                <input type="number" class="search-input strat-param" data-strategy="DYNAMIC_GRID" data-param="dcaMomentumFactor" value="2.0" min="0" max="10" step="0.5">
+                            </div>
+                            <div class="cfg-row">
+                                <span class="cfg-label" data-tip="Likidite koruma carpani. Kumulatif DCA mesafesi LIQ mesafesinin bu oranini gecmez. Ornek: 1.3.">LIQ Emniyet</span>
+                                <input type="number" class="search-input strat-param" data-strategy="DYNAMIC_GRID" data-param="dcaVolMultiplier" value="1.3" min="0.5" max="3" step="0.1">
+                            </div>
                             <div class="cfg-subtitle">🎯 Kısmi TP</div>
                             <div class="cfg-row">
                                 <span class="cfg-label">Kısmi TP Aktif</span>
@@ -1247,6 +1387,36 @@
                     <span class="cfg-label" data-tip="Her DCA kademesinin tetiklenme yuzdesi">Düşüş Adımları (%)</span>
                     <input type="text" class="search-input strat-param" data-strategy="DEEP_HUNTER" data-param="steps" value="5, 13, 25, 40, 60">
                     </div>
+
+                            <!-- DCA-DINAMIK-V1 -->
+                            <div class="cfg-subtitle">⚙️ DCA Dinamik</div>
+                            <div class="cfg-row">
+                                <span class="cfg-label" data-tip="DCA dinamik modu. Statik adimlar yerine ATR + momentum bazli adimlar kullanilir. KAPALI ise yukaridaki statik adimlar kullanilir.">DCA Dinamik</span>
+                                <label class="switch switch-small">
+                                    <input type="checkbox" class="strat-param" data-strategy="DEEP_HUNTER" data-param="dcaDynamic">
+                                    <span class="slider round"></span>
+                                </label>
+                            </div>
+                            <div class="cfg-row">
+                                <span class="cfg-label" data-tip="ATR bazli adim carpani. Buyuk deger = daha genis DCA araliklari. Ornek: 2.0 = ATR% x 2 x kademe.">ATR Çarpan</span>
+                                <input type="number" class="search-input strat-param" data-strategy="DEEP_HUNTER" data-param="dcaAtrMultiplier" value="2.0" min="0.5" max="10" step="0.1">
+                            </div>
+                            <div class="cfg-row">
+                                <span class="cfg-label" data-tip="Minimum DCA adimi (%). ATR kucuk olsa bile adim bu degerin altina inemez.">Min Adım (%)</span>
+                                <input type="number" class="search-input strat-param" data-strategy="DEEP_HUNTER" data-param="dcaMinStep" value="4" min="0.5" max="50" step="0.5">
+                            </div>
+                            <div class="cfg-row">
+                                <span class="cfg-label" data-tip="Dinamik modda maksimum DCA kademe sayisi. Statik listeden bagimsiz sinir.">Max Kademe</span>
+                                <input type="number" class="search-input strat-param" data-strategy="DEEP_HUNTER" data-param="dcaMaxSteps" value="3" min="1" max="10" step="1">
+                            </div>
+                            <div class="cfg-row">
+                                <span class="cfg-label" data-tip="Momentum faktoru. Hizli dususte DCA bekleme suresini uzatir. Ornek: 2.0.">Momentum</span>
+                                <input type="number" class="search-input strat-param" data-strategy="DEEP_HUNTER" data-param="dcaMomentumFactor" value="2.0" min="0" max="10" step="0.5">
+                            </div>
+                            <div class="cfg-row">
+                                <span class="cfg-label" data-tip="Likidite koruma carpani. Kumulatif DCA mesafesi LIQ mesafesinin bu oranini gecmez. Ornek: 1.3.">LIQ Emniyet</span>
+                                <input type="number" class="search-input strat-param" data-strategy="DEEP_HUNTER" data-param="dcaVolMultiplier" value="1.3" min="0.5" max="3" step="0.1">
+                            </div>
                     <div class="cfg-subtitle">🎯 Kısmi TP (Partial Take Profit)</div>
                     <div class="cfg-row">
                     <span class="cfg-label" data-tip="Karli pozisyonun bir kismini erken kapat">Kısmi TP Aktif</span>

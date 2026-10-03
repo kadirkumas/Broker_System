@@ -231,7 +231,8 @@ class PositionManager:
     # ------------------------------------------------------------------
     async def _check_dca(self, pos: dict, current_price: float, sCfg: dict) -> bool:
         """Fiyat DCA kademesine düştüyse yeni alım yapar."""
-        if not sCfg.get("useDCA"):
+        # FIX F96: dcaDynamic tek basina da yeterli
+        if not sCfg.get("useDCA") and not sCfg.get("dcaDynamic"):
             return False
 
         steps_str = sCfg.get("steps", "1.5, 3, 5")
@@ -243,6 +244,23 @@ class PositionManager:
         dca_count = pos["dca_count"] or 0
         if dca_count >= len(steps):
             return False
+
+        # FIX B6: margin_presets.dcaMaxSteps global kontrolu
+        try:
+            _cfg_b6 = load_config()
+            _mode_b6 = _cfg_b6.get("margin_mode", "cross")
+            _presets_b6 = _cfg_b6.get("margin_presets", {}) or {}
+            _preset_b6 = _presets_b6.get(_mode_b6, {}) or {}
+            _max_dca_b6 = _preset_b6.get("dcaMaxSteps")
+            if _max_dca_b6 is not None:
+                _max_dca_b6 = int(_max_dca_b6)
+                if dca_count >= _max_dca_b6:
+                    _sym_b6 = pos.get("symbol", "?")
+                    print(f"[DCA-PRESET] {_sym_b6} mod={_mode_b6} "
+                          f"kademe={dca_count}/{_max_dca_b6} limit -> yeni DCA atlandi")
+                    return False
+        except Exception as _e_b6:
+            print(f"[DCA-PRESET] preset kontrol hatasi: {_e_b6}")
 
         symbol = pos["symbol"]
         trade_type = pos["trade_type"]
@@ -380,7 +398,15 @@ class PositionManager:
 
                     # 3) MESAFE KONTROLU
                     if _diff_pct < _min_dist:
-                        print(f"[DCA-SKIP] {symbol} mesafe yetersiz: %{_diff_pct:.3f} < %{_min_dist:.2f}")
+                        # FIX SP2: 5 dk'da 1 log
+                        import time as _t_sp2
+                        _now_sp2 = _t_sp2.time()
+                        if not hasattr(self, "_dca_skip_log"):
+                            self._dca_skip_log = {}
+                        _last = self._dca_skip_log.get(symbol, 0)
+                        if _now_sp2 - _last >= 300:
+                            self._dca_skip_log[symbol] = _now_sp2
+                            print(f"[DCA-SKIP] {symbol} mesafe yetersiz: %{_diff_pct:.3f} < %{_min_dist:.2f}")
                         return False
 
                     # 4) SURE KONTROLU
@@ -388,8 +414,16 @@ class PositionManager:
                         _age = int(_time.time()) - _last_dca_time
                         if _age < _min_time:
                             _rem = _min_time - _age
-                            print(f"[DCA-SKIP] {symbol} sure yetersiz: {_age}sn < {_min_time}sn "
-                                  f"(kalan: {_rem}sn, mesafe %{_diff_pct:.2f})")
+                            # FIX SP2: 5 dk'da 1 log
+                            import time as _t_sp2b
+                            _now_sp2b = _t_sp2b.time()
+                            if not hasattr(self, "_dca_skip_time_log"):
+                                self._dca_skip_time_log = {}
+                            _last_b = self._dca_skip_time_log.get(symbol, 0)
+                            if _now_sp2b - _last_b >= 300:
+                                self._dca_skip_time_log[symbol] = _now_sp2b
+                                print(f"[DCA-SKIP] {symbol} sure yetersiz: {_age}sn < {_min_time}sn "
+                                      f"(kalan: {_rem}sn, mesafe %{_diff_pct:.2f})")
                             return False
 
                     _age_disp = _age if _last_dca_time > 0 else 0
@@ -556,6 +590,25 @@ class PositionManager:
             print(f"[PARTIAL-TP] Gecersiz hacim {symbol}: {close_vol_usdt} / {trade['total_vol']}")
             return None
         
+        # FIX F97: ONCE kapat, gercek fill al
+        if self.order_manager:
+            try:
+                result_f97 = await asyncio.to_thread(
+                    self.order_manager.partial_close_position,
+                    symbol=symbol,
+                    close_usdt=close_vol_usdt,
+                    current_price=exit_price
+                )
+                if result_f97.get("status") != "success":
+                    print(f"[F97] {symbol} partial close hatasi: {result_f97}")
+                    return None
+                if result_f97.get("exit_price", 0) > 0:
+                    exit_price = result_f97["exit_price"]
+                    print(f"[F97] {symbol} partial fill: {exit_price}")
+            except Exception as _e_f97:
+                print(f"[F97] {symbol} partial close exception: {_e_f97}")
+                return None
+
         # --- PnL ---
         if trade_type == "BUY":
             pnl_pct = (exit_price - avg_price) / avg_price
@@ -573,21 +626,7 @@ class PositionManager:
         gross_pnl = close_vol_usdt * pnl_pct
         net_pnl = gross_pnl - exit_comm
         
-        # --- Gercek emir ---
-        if self.order_manager:
-            try:
-                result = await asyncio.to_thread(
-                    self.order_manager.partial_close_position,
-                    symbol=symbol,
-                    close_usdt=close_vol_usdt,
-                    current_price=exit_price
-                )
-                if result.get("status") != "success":
-                    print(f"[PARTIAL-TP] Emir hatasi {symbol}: {result}")
-                    return None
-            except Exception as e:
-                print(f"[PARTIAL-TP] OrderManager hata {symbol}: {e}")
-                return None
+        # FIX F97: Gercek emir yukarida yapildi
         
         # --- trade_history'e AYRI satir yaz ---
         exit_time = int(time.time())
@@ -703,6 +742,28 @@ class PositionManager:
                 exit_price = avg_price
                 print(f"[FORCE] {symbol}: Geçersiz fiyat, avg_price kullanılıyor")
 
+        # FIX F97: ONCE Binance'te kapat, gercek fill al
+        actual_exit_price = exit_price
+        if self.order_manager:
+            try:
+                close_result = await asyncio.to_thread(
+                    self.order_manager.close_position, symbol=symbol
+                )
+                if close_result and close_result.get("exit_price", 0) > 0:
+                    actual_exit_price = close_result["exit_price"]
+                    print(f"[F97] {symbol} kapanis fill: {actual_exit_price} (ticker: {exit_price})")
+                else:
+                    # FIX LOG-THROTTLE: test modu netlestir
+                    _is_test_mode = bool(getattr(self.order_manager, 'test_mode', False)) if self.order_manager else False
+                    if _is_test_mode:
+                        print(f"[F97] {symbol} TEST modu (fill simulasyon yok) - ticker: {exit_price}")
+                    else:
+                        print(f"[F97] {symbol} fill alinamadi, ticker kullaniliyor: {exit_price}")
+            except Exception as _e_f97:
+                print(f"[F97] {symbol} close hatasi: {_e_f97} - ticker kullaniliyor")
+
+        exit_price = actual_exit_price
+
         if trade["trade_type"] == "BUY":
             pnl_pct = (exit_price - avg_price) / avg_price
         else:
@@ -772,12 +833,7 @@ class PositionManager:
         conn.commit()
         conn.close()
 
-        if self.order_manager:
-            try:
-                await asyncio.to_thread(self.order_manager.close_position, symbol=symbol)
-            except Exception as e:
-                print(f"[!] OrderManager close hatası: {e}")
-
+        # FIX F97: Binance kapatma yukarida yapildi
         sign = "+" if net_pnl >= 0 else ""
         dca_info = f" (DCA:{dca_count})" if dca_count > 0 else ""
         lev_info = f" [{leverage}x]" if leverage > 1 else ""
@@ -920,6 +976,26 @@ class PositionManager:
         entry_rate = maker_rate if entry_is_maker else taker_rate
         commission = (total_vol * entry_rate) + (total_vol * taker_rate)
 
+        # FIX F97: ONCE Binance'te kapat, gercek fill al
+        actual_exit_price = exit_price
+        if self.order_manager:
+            try:
+                close_result = await asyncio.to_thread(
+                    self.order_manager.close_grid_position,
+                    symbol=symbol,
+                    grid_group_id=grid_group_id,
+                    grid_level=grid_level,
+                )
+                if close_result and close_result.get("exit_price", 0) > 0:
+                    actual_exit_price = close_result["exit_price"]
+                    print(f"[F97] {symbol} L{grid_level} kapanis fill: {actual_exit_price}")
+                else:
+                    print(f"[F97] {symbol} L{grid_level} fill alinamadi, ticker: {exit_price}")
+            except Exception as _e_f97:
+                print(f"[F97] {symbol} L{grid_level} close hatasi: {_e_f97}")
+
+        exit_price = actual_exit_price
+
         # --- PnL ---
         if pos["trade_type"] == "BUY":
             pnl_pct = (exit_price - entry_price) / entry_price
@@ -927,7 +1003,7 @@ class PositionManager:
             pnl_pct = (entry_price - exit_price) / entry_price
 
         gross_pnl = total_vol * pnl_pct
-        net_pnl = gross_pnl - commission
+        # FIX K3: net_pnl asagida funding fee ile hesaplanacak
 
         # ==========================================================
         # ⚡ ANOMALI KORUMASI: |pnl_pct| > %30 ise kayit YAPMA
@@ -937,17 +1013,7 @@ class PositionManager:
             print(f"[SPIKE-GUARD] {symbol} L{grid_level} ANOMALI "
                   f"REDDEDILDI! entry={entry_price:.6f} exit={exit_price:.6f} "
                   f"pnl=%{pnl_pct*100:.2f}")
-            # OrderManager ile pozisyonu yine de kapat (bakiye sifirlansin)
-            if self.order_manager:
-                try:
-                    await asyncio.to_thread(
-                        self.order_manager.close_grid_position,
-                        symbol=symbol,
-                        grid_group_id=grid_group_id,
-                        grid_level=grid_level,
-                    )
-                except Exception as _e:
-                    print(f"[SPIKE-GUARD] Kapatma hatasi: {_e}")
+            # FIX F97: Pozisyon yukarida kapatildi
             return {
                 "symbol": symbol,
                 "grid_level": grid_level,
@@ -956,6 +1022,11 @@ class PositionManager:
             }
 
         exit_time = int(time.time())
+        # FIX K3: funding fee cek (Binance'ten)
+        funding_fee = await self._get_funding_fee(
+            symbol, pos.get("entry_time", exit_time), exit_time
+        )
+        net_pnl = gross_pnl - commission + funding_fee
         strategy_name = pos.get("strategy_name") or "DYNAMIC_GRID_REEL"
         leverage = pos.get("leverage") or 1
 
@@ -966,27 +1037,16 @@ class PositionManager:
                (symbol, trade_type, total_vol, entry_price, initial_price, exit_price,
                 pnl_amount, pnl_pct, entry_time, exit_time,
                 strategy_name, dca_count, close_reason, leverage, funding_fee, commission)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, 0, ?)""",
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?)""",
             (symbol, pos["trade_type"], total_vol, entry_price,
              pos.get("initial_price") or entry_price, exit_price,
              net_pnl, pnl_pct * 100, pos["entry_time"], exit_time,
-             strategy_name, reason, leverage, commission)
+             strategy_name, reason, leverage, funding_fee, commission)
         )
         conn.commit()
         conn.close()
 
-        # --- OrderManager ile gercek kapatma ---
-        if self.order_manager:
-            try:
-                await asyncio.to_thread(
-                    self.order_manager.close_grid_position,
-                    symbol=symbol,
-                    grid_group_id=grid_group_id,
-                    grid_level=grid_level,
-                )
-            except Exception as e:
-                print(f"[GRID-CLOSE] OrderManager hata {symbol} L{grid_level}: {e}")
-
+        # FIX F97: Binance kapatma yukarida yapildi
         sign = "+" if net_pnl >= 0 else ""
         print(f"[GRID-CLOSE] {symbol} L{grid_level} | {reason} | "
               f"Giris: {entry_price:.6f} Cikis: {exit_price:.6f} | "
@@ -1070,8 +1130,17 @@ class PositionManager:
                     # Ayni pozisyon icin 1 kez log
                     if not hasattr(self, "_sl_auto_logged"):
                         self._sl_auto_logged = set()
-                    if position_key not in self._sl_auto_logged:
-                        self._sl_auto_logged.add(position_key)
+                    # FIX LOG-THROTTLE: sembol basina 5 dk'da 1 log
+                    import time as _t_sl
+                    _now_sl = _t_sl.time()
+                    if not hasattr(self, "_sl_auto_logged"):
+                        self._sl_auto_logged = {}
+                    # Eski format set ise dict'e cevir
+                    if isinstance(self._sl_auto_logged, set):
+                        self._sl_auto_logged = {k: 0 for k in self._sl_auto_logged}
+                    _last_sl = self._sl_auto_logged.get(position_key, 0)
+                    if _now_sl - _last_sl >= 300:
+                        self._sl_auto_logged[position_key] = _now_sl
                         print(f"[SL-AUTO] {symbol} lev={_lev_sl}x LIQ=%{_liq_pct_sl:.1f} "
                               f"config=%{_old_sl:.1f} -> SL=%{sl_pct*100:.1f} (LIQ-safe)")
             except Exception as _e_sl_auto:

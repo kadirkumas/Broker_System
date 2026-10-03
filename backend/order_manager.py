@@ -500,18 +500,31 @@ class OrderManager:
             positions = self.client.futures_position_information(symbol=symbol)
             pos = next((p for p in positions
                         if p["symbol"] == symbol and float(p["positionAmt"]) != 0), None)
+            exit_price_f97 = 0.0
+            exec_qty_f97 = 0.0
             if pos:
                 amt = float(pos["positionAmt"])
                 close_side = "SELL" if amt > 0 else "BUY"
-                self.client.futures_create_order(
+                order_f97 = self.client.futures_create_order(
                     symbol=symbol, side=close_side, type="MARKET",
                     quantity=abs(amt), reduceOnly=True
                 )
+                # FIX F97: gercek fill bekle
+                oid_f97 = order_f97.get("orderId")
+                exit_price_f97, exec_qty_f97 = self._wait_fill_and_get_price(symbol, oid_f97)
+                if exit_price_f97 > 0:
+                    print(f"[F97] {symbol} L{grid_level} kapanis fill: {exit_price_f97}")
 
             self._close_in_db(symbol, is_grid=True,
                               grid_group_id=grid_group_id, grid_level=grid_level)
-            return {"status": "success", "mode": "REAL",
-                    "symbol": symbol, "grid_level": grid_level}
+            return {
+                "status": "success",
+                "mode": "REAL",
+                "symbol": symbol,
+                "grid_level": grid_level,
+                "exit_price": exit_price_f97,
+                "executed_qty": exec_qty_f97,
+            }
         except Exception as e:
             return {"status": "error", "message": str(e)}
 
@@ -676,6 +689,80 @@ class OrderManager:
         except Exception as e:
             return {"status": "error", "message": str(e)}
 
+    # ==========================================================
+    # F97: Gercek fill fiyatini al
+    # ==========================================================
+    def _wait_fill_and_get_price(self, symbol: str, order_id, timeout_sec: float = 5.0):
+        """
+        FIX F97c: Robust fill helper.
+        - Timeout 5 sn (testnet gecikmesine tolerans)
+        - FILLED ama avgPrice=0 -> cumQuote/executedQty'den hesapla
+        - PARTIALLY_FILLED takibi
+        - Son care: futures_position_information'dan entryPrice oku
+
+        Returns: (avg_price, executed_qty)
+        """
+        if self.test_mode:
+            return (0.0, 0.0)
+        if not order_id:
+            return (0.0, 0.0)
+
+        import time as _t_f97
+        max_iter = max(1, int(timeout_sec / 0.25))
+        last_st = None
+
+        for attempt in range(max_iter):
+            try:
+                st = self.client.futures_get_order(symbol=symbol, orderId=order_id)
+                last_st = st
+                status = st.get("status", "")
+                avg_p = float(st.get("avgPrice", 0) or 0)
+                exec_q = float(st.get("executedQty", 0) or 0)
+                cum_q = float(st.get("cumQuote", 0) or 0)
+
+                if status == "FILLED":
+                    if avg_p > 0:
+                        return (avg_p, exec_q)
+                    # avgPrice 0 -> cumQuote/executedQty'den hesapla
+                    if cum_q > 0 and exec_q > 0:
+                        calc_avg = cum_q / exec_q
+                        print(f"[F97c] {symbol} avgPrice bosa dustu, cumQuote/qty={calc_avg:.8f}")
+                        return (calc_avg, exec_q)
+                    # Hala yok -> pozisyon bilgisinden dene
+                    break
+
+                if status in ("CANCELED", "REJECTED", "EXPIRED"):
+                    return (0.0, 0.0)
+
+                # NEW veya PARTIALLY_FILLED -> bekle
+            except Exception as e_q:
+                print(f"[F97c] {symbol} get_order hatasi: {e_q}")
+            _t_f97.sleep(0.25)
+
+        # Timeout veya FILLED ama avgPrice+cumQuote yok -> son care
+        if last_st:
+            avg_p = float(last_st.get("avgPrice", 0) or 0)
+            exec_q = float(last_st.get("executedQty", 0) or 0)
+            cum_q = float(last_st.get("cumQuote", 0) or 0)
+            if avg_p > 0:
+                return (avg_p, exec_q)
+            if cum_q > 0 and exec_q > 0:
+                return (cum_q / exec_q, exec_q)
+
+        # Son care: pozisyon bilgisinden entryPrice (kapanmis olsa da oradan okunabilir)
+        try:
+            positions = self.client.futures_position_information(symbol=symbol)
+            pos = next((p for p in positions if p["symbol"] == symbol), None)
+            if pos:
+                ep = float(pos.get("entryPrice", 0) or 0)
+                if ep > 0:
+                    print(f"[F97c] {symbol} pozisyon entryPrice fallback: {ep}")
+                    return (ep, 0.0)
+        except Exception as e_p:
+            print(f"[F97c] {symbol} pozisyon fallback hatasi: {e_p}")
+
+        return (0.0, 0.0)
+
     def close_position(self, symbol: str = None):
         target_symbol = symbol or self.symbol
 
@@ -689,19 +776,35 @@ class OrderManager:
             positions = self.client.futures_position_information(symbol=target_symbol)
             pos = next((p for p in positions if p['symbol'] == target_symbol and float(p['positionAmt']) != 0), None)
 
+            exit_price_f97 = 0.0
+            exec_qty_f97 = 0.0
             if pos:
                 amt = float(pos['positionAmt'])
                 close_side = "SELL" if amt > 0 else "BUY"
-                self.client.futures_create_order(
+                order_f97 = self.client.futures_create_order(
                     symbol=target_symbol,
                     side=close_side,
                     type="MARKET",
                     quantity=abs(amt),
                     reduceOnly=True
                 )
+                # FIX F97: gercek fill bekle
+                oid_f97 = order_f97.get("orderId")
+                exit_price_f97, exec_qty_f97 = self._wait_fill_and_get_price(target_symbol, oid_f97)
+                if exit_price_f97 > 0:
+                    print(f"[F97] {target_symbol} kapanis fill: {exit_price_f97}")
+                else:
+                    print(f"[F97] {target_symbol} fill alinamadi (orderId={oid_f97})")
 
             self._close_in_db(target_symbol, is_grid=False)
-            return {"status": "success", "mode": "REAL", "symbol": target_symbol, "action": "CLOSED"}
+            return {
+                "status": "success",
+                "mode": "REAL",
+                "symbol": target_symbol,
+                "action": "CLOSED",
+                "exit_price": exit_price_f97,
+                "executed_qty": exec_qty_f97,
+            }
 
         except Exception as e:
             return {"status": "error", "message": str(e)}
@@ -882,10 +985,22 @@ class OrderManager:
                 quantity=abs(close_qty),
                 reduceOnly=True
             )
-            
-            print(f"[PARTIAL] {symbol} kapatildi: {close_qty} adet ({close_usdt:.2f} USDT)")
-            return {"status": "success", "mode": "REAL", "symbol": symbol,
-                    "closed_qty": close_qty, "closed_usdt": close_usdt, "order": result}
+
+            # FIX F97: gercek fill bekle
+            oid_f97 = result.get("orderId")
+            exit_price_f97, exec_qty_f97 = self._wait_fill_and_get_price(symbol, oid_f97)
+
+            print(f"[PARTIAL] {symbol} kapatildi: {close_qty} adet ({close_usdt:.2f} USDT) | fill: {exit_price_f97}")
+            return {
+                "status": "success",
+                "mode": "REAL",
+                "symbol": symbol,
+                "closed_qty": close_qty,
+                "closed_usdt": close_usdt,
+                "exit_price": exit_price_f97,
+                "executed_qty": exec_qty_f97,
+                "order": result,
+            }
         
         except Exception as e:
             print(f"[PARTIAL] HATA {symbol}: {e}")

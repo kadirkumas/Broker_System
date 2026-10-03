@@ -12,6 +12,10 @@ from backend import telegram_notifier
 
 CONFIG_PATH = os.path.join(os.path.dirname(__file__), "bot_config.json")
 
+# FIX K2: 5 sn config cache
+_CONFIG_CACHE = {"ts": 0.0, "data": None}
+_CONFIG_CACHE_TTL = 5.0
+
 DEFAULT_CONFIG = {
     "active": False,
     "scan_interval_seconds": 30,
@@ -88,7 +92,19 @@ DEFAULT_CONFIG = {
 
 
 def load_config() -> dict:
-    """Config'i okur. Yoksa once preset'ten kopyala, sonra DEFAULT_CONFIG."""
+    """Config'i okur. 5 sn cache (FIX K2)."""
+    import time as _t_k2
+    _now_k2 = _t_k2.time()
+    if _CONFIG_CACHE["data"] is not None and (_now_k2 - _CONFIG_CACHE["ts"]) < _CONFIG_CACHE_TTL:
+        return dict(_CONFIG_CACHE["data"])
+    _result = _load_config_uncached()
+    _CONFIG_CACHE["ts"] = _now_k2
+    _CONFIG_CACHE["data"] = _result
+    return dict(_result)
+
+
+def _load_config_uncached() -> dict:
+    """Orijinal load_config govdesi (cache'siz)."""
     if not os.path.exists(CONFIG_PATH):
         # ⚡ Once preset varsa ondan kopyala
         preset_path = os.path.join(os.path.dirname(__file__), "bot_config.default.json")
@@ -124,6 +140,12 @@ def save_config(cfg: dict):
     """Config'i diske yazar."""
     with open(CONFIG_PATH, "w", encoding="utf-8") as f:
         json.dump(cfg, f, indent=2, ensure_ascii=False)
+    # FIX K2: cache invalidate
+    try:
+        _CONFIG_CACHE["ts"] = 0
+        _CONFIG_CACHE["data"] = None
+    except Exception:
+        pass
 
 
 # ⚡ Global DB write lock - ayni anda tek yazici
@@ -191,7 +213,7 @@ class StrategyEngine:
     # ------------------------------------------------------------------
     # A1/A2: RISK LIMIT KONTROLU
     # ------------------------------------------------------------------
-    def _check_risk_limits(self, side: str = None) -> str:
+    def _check_risk_limits(self, side: str = None, skip_cross_ratio: bool = False) -> str:
         """
         A1: Gunluk max zarar limiti (TR saatine gore)
         A2: Max acik pozisyon sayisi
@@ -202,9 +224,9 @@ class StrategyEngine:
         """
         cfg = self.config or {}
 
-        # --- A4: Cross modda yon dengesi ---
+        # --- A4: Cross modda yon dengesi (FIX F95: Grid REEL icin atlanir) ---
         margin_mode = cfg.get("margin_mode", "cross")
-        if margin_mode == "cross" and side in ("BUY", "SELL"):
+        if margin_mode == "cross" and side in ("BUY", "SELL") and not skip_cross_ratio:
             try:
                 max_long = float(cfg.get("max_long_ratio", 50))
                 max_short = float(cfg.get("max_short_ratio", 50))
@@ -433,7 +455,7 @@ class StrategyEngine:
     # ------------------------------------------------------------------
     _vol_cache = {"ts": 0, "n": 0, "symbols": []}
 
-    def _get_top_volatile(self, n: int):
+    async def _get_top_volatile(self, n: int):
         """En volatil N USDT-M futures coinini dondur."""
         import time as _t
 
@@ -444,7 +466,7 @@ class StrategyEngine:
             return cache["symbols"]
 
         try:
-            tickers = self.client.futures_ticker()
+            tickers = await asyncio.to_thread(self.client.futures_ticker)
         except Exception as e:
             print(f"[VOL] ticker cekilemedi: {e}")
             return []
@@ -513,7 +535,7 @@ class StrategyEngine:
             try:
                 n = int(test_val)
                 if n > 0:
-                    vol_symbols = self._get_top_volatile(n)
+                    vol_symbols = await self._get_top_volatile(n)
                     if vol_symbols:
                         scan_symbols = vol_symbols
                         print(f"[TEST-N] {strategy_name} SADECE en volatil {n} coin:")
@@ -688,8 +710,14 @@ class StrategyEngine:
                     return
 
                 # ⚡ A1/A2: Risk limit kontrolu
+                # FIX F95b: Grid tabanli stratejiler icin Cross %50/50 atlanir
                 _side_calc = "BUY" if result["signal"] == "LONG" else "SELL"
-                risk_reason = self._check_risk_limits(side=_side_calc)
+                _grid_strategies = ("DYNAMIC_GRID", "DYNAMIC_GRID_REEL")
+                _is_grid_strategy = strategy_name in _grid_strategies
+                risk_reason = self._check_risk_limits(
+                    side=_side_calc,
+                    skip_cross_ratio=_is_grid_strategy
+                )
                 if risk_reason:
                     print(f"[RISK] {symbol} sinyal atlandi: {risk_reason}")
                     self._save_signal_to_db(

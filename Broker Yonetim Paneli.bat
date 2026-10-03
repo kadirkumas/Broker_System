@@ -1,4 +1,5 @@
 @echo off
+setlocal enabledelayedexpansion
 chcp 65001 >nul
 title Broker Yonetim Paneli
 color 0A
@@ -22,18 +23,31 @@ cls
 REM ---- Cloud durum (20 sn cache) ----
 call :GET_CURRENT_TIME
 set NOW=%CURRENT_TIME%
-set /a DIFF=%NOW% - %CLOUD_CACHE_TIME%
-if %DIFF% LSS 0 set DIFF=999
-if %DIFF% GEQ 20 (
-    "%SSH_CMD%" "sudo systemctl is-active broker-bot" > "%CLOUD_CACHE_FILE%" 2>nul
-    if exist "%CLOUD_CACHE_FILE%" (
-        set /p CLOUD_CACHED_ST=<"%CLOUD_CACHE_FILE%"
-        del "%CLOUD_CACHE_FILE%" >nul 2>&1
-    )
-    if "%CLOUD_CACHED_ST%"=="" set CLOUD_CACHED_ST=bilinmiyor
-    set CLOUD_CACHE_TIME=%NOW%
-)
-set CLOUD_ST=%CLOUD_CACHED_ST%
+set /a DIFF=!NOW! - !CLOUD_CACHE_TIME!
+if !DIFF! LSS 0 set DIFF=999
+
+if !DIFF! LSS 20 goto AFTER_CLOUD_CHECK
+
+REM Cache suresi gecti - SSH ile taze cek
+%SSH_CMD% "sudo systemctl is-active broker-bot" > "%CLOUD_CACHE_FILE%" 2>nul
+
+set CLOUD_CACHED_ST=bilinmiyor
+if not exist "%CLOUD_CACHE_FILE%" goto SKIP_CACHE_READ
+for /f "usebackq tokens=*" %%L in ("%CLOUD_CACHE_FILE%") do set CLOUD_CACHED_ST=%%L
+
+:SKIP_CACHE_READ
+del "%CLOUD_CACHE_FILE%" >nul 2>&1
+set CLOUD_CACHE_TIME=!NOW!
+
+:AFTER_CLOUD_CHECK
+REM Normalize
+set CLOUD_ST=bilinmiyor
+echo !CLOUD_CACHED_ST!| findstr /I /C:"active" >nul
+if not errorlevel 1 set CLOUD_ST=active
+echo !CLOUD_CACHED_ST!| findstr /I /C:"inactive" >nul
+if not errorlevel 1 set CLOUD_ST=inactive
+echo !CLOUD_CACHED_ST!| findstr /I /C:"failed" >nul
+if not errorlevel 1 set CLOUD_ST=failed
 
 REM ---- Local durum (port kesin kontrol) ----
 set LOCAL_ST=KAPALI
@@ -42,22 +56,22 @@ if not errorlevel 1 set LOCAL_ST=AKTIF
 
 set MARK2=
 set WARN_BOTH=
-if /i "%CLOUD_ST%"=="active" if /i not "%LOCAL_ST%"=="AKTIF" set MARK2=   *** AKTIF ***
-if /i "%CLOUD_ST%"=="active" if /i "%LOCAL_ST%"=="AKTIF" set WARN_BOTH=  [!!] IKI ORTAM DA AKTIF - TEHLIKE !!
+if /i "!CLOUD_ST!"=="active" if /i not "!LOCAL_ST!"=="AKTIF" set MARK2=   *** AKTIF ***
+if /i "!CLOUD_ST!"=="active" if /i "!LOCAL_ST!"=="AKTIF" set WARN_BOTH=  [^!^!] IKI ORTAM DA AKTIF - TEHLIKE ^!^!
 
 echo.
 echo  =====================================================
 echo    BROKER YONETIM PANELI
 echo  =====================================================
 echo.
-echo    CLOUD : %SSH_IP%   [durum: %CLOUD_ST%]
-echo    LOCAL : %LOCAL_DIR%   [durum: %LOCAL_ST%]
-if not "%WARN_BOTH%"=="" echo.%WARN_BOTH%
+echo    CLOUD : %SSH_IP%   [durum: !CLOUD_ST!]
+echo    LOCAL : %LOCAL_DIR%   [durum: !LOCAL_ST!]
+if not "!WARN_BOTH!"=="" echo.!WARN_BOTH!
 echo.
 echo  -----------------------------------------------------
 echo    --- MOD DEGISTIR ---
 echo    [1]  LOCAL Moduna Gec
-echo    [2]  CLOUD Moduna Gec%MARK2%
+echo    [2]  CLOUD Moduna Gec!MARK2!
 echo    [3]  TUMUNU DURDUR
 echo.
 echo    --- CLOUD BOT ---
@@ -76,7 +90,7 @@ echo.
 echo    --- SENKRONIZASYON ---
 echo    [31] Local -^> Cloud Dosya Gonder
 echo.
-echo    --- DB TEMIZLE (DIKKAT!) ---
+echo    --- DB TEMIZLE (DIKKAT^!) ---
 echo    [41] Local DB TEMIZLE
 echo    [42] Cloud DB TEMIZLE
 echo.
@@ -107,7 +121,7 @@ if "%secim%"=="42" goto DB_CLOUD_RESET
 if "%secim%"=="0"  goto CIKIS
 
 echo.
-echo  !! Gecersiz secim: %secim%
+echo  ^!^! Gecersiz secim: %secim%
 timeout /t 2 >nul
 goto MENU
 
@@ -138,7 +152,7 @@ for /f "tokens=5" %%a in ('netstat -ano ^| findstr /R /C:":8000 .*LISTENING"') d
         set KILLED=1
     )
 )
-exit /b %KILLED%
+exit /b !KILLED!
 
 
 REM ================================================
@@ -335,7 +349,7 @@ scp -i "%SSH_KEY%" ^
     "%LOCAL_DIR%\frontend\style.css" ^
     "%LOCAL_DIR%\frontend\zoom_controls.js" ^
     "%SSH_USER%@%SSH_IP%:~/Broker_System/frontend/"
-if errorlevel 1 (echo     [X] Frontend scp HATA! & set SYNC_ERR=1)
+if errorlevel 1 (echo     [X] Frontend scp HATA^! & set SYNC_ERR=1)
 
 echo.
 echo  [2/4] Mobile dosyalari...
@@ -344,7 +358,7 @@ scp -i "%SSH_KEY%" ^
     "%LOCAL_DIR%\frontend\mobile\mobile.css" ^
     "%LOCAL_DIR%\frontend\mobile\mobile.js" ^
     "%SSH_USER%@%SSH_IP%:~/Broker_System/frontend/mobile/"
-if errorlevel 1 (echo     [X] Mobile scp HATA! & set SYNC_ERR=1)
+if errorlevel 1 (echo     [X] Mobile scp HATA^! & set SYNC_ERR=1)
 
 echo.
 echo  [3/4] Backend dosyalari...
@@ -360,18 +374,18 @@ scp -i "%SSH_KEY%" ^
     "%LOCAL_DIR%\backend\bot_config.json" ^
     "%LOCAL_DIR%\backend\bot_config.default.json" ^
     "%SSH_USER%@%SSH_IP%:~/Broker_System/backend/"
-if errorlevel 1 (echo     [X] Backend scp HATA! & set SYNC_ERR=1)
+if errorlevel 1 (echo     [X] Backend scp HATA^! & set SYNC_ERR=1)
 
 echo.
 echo  [4/4] Strateji dosyalari...
 scp -i "%SSH_KEY%" ^
     "%LOCAL_DIR%\backend\strategies\*.py" ^
     "%SSH_USER%@%SSH_IP%:~/Broker_System/backend/strategies/"
-if errorlevel 1 (echo     [X] Strateji scp HATA! & set SYNC_ERR=1)
+if errorlevel 1 (echo     [X] Strateji scp HATA^! & set SYNC_ERR=1)
 
 echo.
 if %SYNC_ERR%==1 (
-    echo  [X] SENKRONIZASYON HATALARLA TAMAMLANDI!
+    echo  [X] SENKRONIZASYON HATALARLA TAMAMLANDI^!
     echo      Yukaridaki [X] satirlarini kontrol et.
 ) else (
     echo  [+] SENKRONIZASYON TAMAMLANDI
@@ -391,7 +405,7 @@ cls
 echo.
 echo  LOCAL DB TEMIZLE
 echo.
-echo  DIKKAT: Local bot CALISIYOR olabilir!
+echo  DIKKAT: Local bot CALISIYOR olabilir^!
 echo          Once [21] ile durdurun.
 echo.
 set /p onay="  Devam edilsin mi? (E/H): "
@@ -399,7 +413,7 @@ if /i not "%onay%"=="E" goto MENU
 
 if not exist "%LOCAL_DIR%\Patch\yeni\db_check.py" (
     echo.
-    echo [X] HATA: db_check.py bulunamadi!
+    echo [X] HATA: db_check.py bulunamadi^!
     echo     Beklenen: %LOCAL_DIR%\Patch\yeni\db_check.py
     pause
     goto MENU
@@ -409,7 +423,7 @@ cd /d %LOCAL_DIR%
 py Patch\yeni\db_check.py local reset
 if errorlevel 1 (
     echo.
-    echo [X] db_check.py HATA ile cikti!
+    echo [X] db_check.py HATA ile cikti^!
 )
 echo.
 pause
@@ -424,7 +438,7 @@ cls
 echo.
 echo  CLOUD DB TEMIZLE
 echo.
-echo  DIKKAT: Cloud bot CALISIYOR olabilir!
+echo  DIKKAT: Cloud bot CALISIYOR olabilir^!
 echo          Once [11] ile durdurun.
 echo.
 set /p onay="  Devam edilsin mi? (E/H): "
@@ -432,7 +446,7 @@ if /i not "%onay%"=="E" goto MENU
 
 if not exist "%LOCAL_DIR%\Patch\yeni\db_check.py" (
     echo.
-    echo [X] HATA: db_check.py bulunamadi!
+    echo [X] HATA: db_check.py bulunamadi^!
     pause
     goto MENU
 )
@@ -441,7 +455,7 @@ cd /d %LOCAL_DIR%
 py Patch\yeni\db_check.py cloud reset
 if errorlevel 1 (
     echo.
-    echo [X] db_check.py HATA ile cikti!
+    echo [X] db_check.py HATA ile cikti^!
 )
 echo.
 pause

@@ -216,17 +216,36 @@ class DynamicGridReelStrategy(BaseStrategy):
         recenter_buffer = float(self.params.get("recenterBuffer", 0.03))
         now = time.time()
 
+        # FIX F92: recenter cooldown + sebep takibi
         need_recenter = False
+        recenter_reason = "INIT"
+        cooldown_min = float(self.params.get("recenterCooldownMin", 30))
+        cooldown_sec = cooldown_min * 60
+        _since_last = (now - st["last_recenter_ts"]) if st["last_recenter_ts"] > 0 else 999999
+
+        # Ilk calistirma
         if st["last_recenter_ts"] == 0:
             need_recenter = True
-        elif recenter_hours > 0 and (now - st["last_recenter_ts"]) >= recenter_hours * 3600:
+            recenter_reason = "FIRST_RUN"
+        # Zaman bazli (recenterHours)
+        elif recenter_hours > 0 and _since_last >= recenter_hours * 3600:
             need_recenter = True
+            recenter_reason = "TIME_" + str(int(_since_last / 3600)) + "h"
 
+        # FIX F92: Buffer kontrolu - cooldown gectiyse
         if not need_recenter and st["top"] and st["bottom"]:
-            buffer_top = st["top"] * (1 + recenter_buffer)
-            buffer_bottom = st["bottom"] * (1 - recenter_buffer)
-            if current_price > buffer_top or current_price < buffer_bottom:
-                need_recenter = True
+            if _since_last < cooldown_sec:
+                # Yeni recenter oldu, spam engeli icin bekle
+                pass
+            else:
+                buffer_top = st["top"] * (1 + recenter_buffer)
+                buffer_bottom = st["bottom"] * (1 - recenter_buffer)
+                if current_price > buffer_top:
+                    need_recenter = True
+                    recenter_reason = "BREAK_TOP_" + str(round((current_price/buffer_top - 1) * 100, 1)) + "pct"
+                elif current_price < buffer_bottom:
+                    need_recenter = True
+                    recenter_reason = "BREAK_BOT_" + str(round((1 - current_price/buffer_bottom) * 100, 1)) + "pct"
 
         if need_recenter or st["levels"] is None:
             ref_data = self._calc_reference(candles)
@@ -255,7 +274,7 @@ class DynamicGridReelStrategy(BaseStrategy):
                 grid_count, dist_type
             )
 
-            print(f"[GRID-REEL] {sym} RECENTER | ref={ref_data['reference']:.4f} "
+            print(f"[GRID-REEL] {sym} RECENTER [{recenter_reason}] | ref={ref_data['reference']:.4f} "
                   f"top={ref_data['top']:.4f} bottom={ref_data['bottom']:.4f} | "
                   f"{len(st['levels'])} seviye | group={st['group_id']}")
 

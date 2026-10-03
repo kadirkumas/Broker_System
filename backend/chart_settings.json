@@ -1,0 +1,16 @@
+{
+  "marginTop": 30,
+  "marginBottom": 20,
+  "rightOffset": 5,
+  "bgUp": "#089981",
+  "bgDown": "#f23645",
+  "wickUp": "#089981",
+  "wickDown": "#f23645",
+  "borderUp": "#089981",
+  "borderDown": "#f23645",
+  "showBorder": true,
+  "showWick": true,
+  "showCandleBorder": true,
+  "savedInterval": "5m",
+  "activeTab": "futures"
+}

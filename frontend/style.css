@@ -5706,3 +5706,112 @@ body.trade-panel-fullscreen {
 .btn-quick-close:active {
     transform: scale(0.95);
 }
+
+/* ============================================================
+   FIX ACTIVE-STAR - Aktif pozisyon yildizi
+   ============================================================ */
+.watchlist li .symbol .active-pos-star {
+    display: inline-block;
+    color: #fcd535;
+    font-size: 9px;
+    margin-right: 2px;
+    line-height: 1;
+    vertical-align: middle;
+    text-shadow: 0 0 3px rgba(252, 213, 53, 0.5);
+    animation: activeStarPulse 2s ease-in-out infinite;
+}
+
+@keyframes activeStarPulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.65; }
+}
+
+/* ============================================================
+   FIX CENTER-POS - Pozisyon vurgu animasyonu
+   ============================================================ */
+#btp-tbody-positions tr.center-pos-flash td {
+    animation: centerPosFlash 2s ease-out;
+}
+
+@keyframes centerPosFlash {
+    0% {
+        background-color: rgba(252, 213, 53, 0.45);
+        box-shadow: inset 0 0 0 2px rgba(252, 213, 53, 0.8);
+    }
+    30% {
+        background-color: rgba(252, 213, 53, 0.35);
+        box-shadow: inset 0 0 0 2px rgba(252, 213, 53, 0.7);
+    }
+    100% {
+        background-color: transparent;
+        box-shadow: none;
+    }
+}
+
+/* Smooth scroll alt panelde olsun */
+#bottom-trade-panel .btp-content {
+    scroll-behavior: smooth;
+}
+
+/* ============================================================
+   FIX TRADEONLY-SCROLL
+   Fullscreen trade-only modda scrollbar cikmiyordu.
+   Flex child scroll fix: her flex parent'a min-height: 0 lazim.
+   ============================================================ */
+
+/* 1) chart-section flex konteyner olmali + min-height: 0 */
+.chart-section.trade-only {
+    display: flex !important;
+    flex-direction: column !important;
+    min-height: 0 !important;
+    overflow: hidden !important;
+}
+
+/* 2) bottom-trade-panel - kendi icinde flex konteyner */
+.chart-section.trade-only #bottom-trade-panel {
+    display: flex !important;
+    flex-direction: column !important;
+    flex: 1 1 auto !important;
+    min-height: 0 !important;
+    height: auto !important;
+    max-height: none !important;
+    overflow: hidden !important;
+}
+
+/* 3) btp-content - tek scroll olan katman */
+.chart-section.trade-only .btp-content {
+    flex: 1 1 auto !important;
+    min-height: 0 !important;
+    max-height: none !important;
+    overflow-y: auto !important;
+    overflow-x: hidden !important;
+}
+
+/* 4) Tablolar - parent genisligine uysun */
+.chart-section.trade-only .btp-table {
+    width: 100% !important;
+}
+
+/* 5) Scrollbar gorunur ve belirgin */
+.chart-section.trade-only .btp-content::-webkit-scrollbar {
+    width: 10px;
+}
+
+.chart-section.trade-only .btp-content::-webkit-scrollbar-track {
+    background: #1e222d;
+}
+
+.chart-section.trade-only .btp-content::-webkit-scrollbar-thumb {
+    background: #4a5262;
+    border-radius: 4px;
+}
+
+.chart-section.trade-only .btp-content::-webkit-scrollbar-thumb:hover {
+    background: #6a7282;
+}
+
+/* 6) Header sticky kalsin */
+.chart-section.trade-only .btp-header {
+    flex: 0 0 auto !important;
+}
+
