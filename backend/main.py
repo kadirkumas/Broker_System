@@ -190,14 +190,15 @@ async def lifespan(app: FastAPI):
     # ⚡ REPLICA KORUMASI: Cloud'da bot ASLA calismaz
     if IS_REPLICA:
         print("[REPLICA-GUARD] Replica modu algilandi - bot BASLATILMIYOR")
-        # Config'de active=true olsa bile zorla false yap (disk'e yaz)
+        # F202: Sadece memory'de active=False yap. DISKE YAZMA!
+        # Sebep: load_config() normalize ediyor ve dosya kucultiyor (5949->5730)
         try:
             _cfg = load_config()
             if _cfg.get("active", False):
                 _cfg["active"] = False
-                save_config(_cfg)
+                # save_config(_cfg)  # F202: KALDIRILDI
                 bot.config = _cfg
-                print("[REPLICA-GUARD] bot_config.active = False (zorla)")
+                print("[REPLICA-GUARD] bot_config.active = False (memory only, disk dokunulmadi)")
             else:
                 print("[REPLICA-GUARD] bot_config.active zaten False")
         except Exception as _e:
