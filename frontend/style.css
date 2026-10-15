@@ -187,6 +187,35 @@ input:checked + .slider:before { transform: translateX(20px); }
 .btp-tab:hover { color: #EAECEF; }
 .btp-tab.active { color: #EAECEF; border-bottom-color: #FCD535; }
 
+/* F189: Strateji filtresi chip grubu */
+/* F190: Strateji filtresi dropdown */
+.btp-strat-filter {
+    display: inline-flex;
+    align-items: center;
+    margin-left: auto;
+    margin-right: 0;
+    padding-right: 12px;
+}
+.btp-strat-filter select {
+    background: #1a1d24;
+    color: #EAECEF;
+    border: 1px solid #2b3139;
+    border-radius: 4px;
+    padding: 4px 8px;
+    font-size: 11px;
+    font-weight: 600;
+    cursor: pointer;
+    outline: none;
+    min-width: 140px;
+}
+.btp-strat-filter select:hover {
+    border-color: #3a4150;
+}
+.btp-strat-filter select:focus {
+    border-color: #2962ff;
+    box-shadow: 0 0 4px rgba(41,98,255,0.3);
+}
+
 .btp-controls { 
     display: flex; 
     flex-direction: row; 
@@ -504,6 +533,11 @@ input:checked + .slider:before { transform: translateX(20px); }
 #bot-config-modal .strategies-grid {
     grid-template-columns: repeat(5, minmax(0, 1fr)) !important;
     gap: 6px !important;
+}
+
+/* F186: DYNAMIC_GRID_REEL paneli gecici olarak gizli */
+#bot-config-modal .strategy-panel[data-strategy="DYNAMIC_GRID_REEL"] {
+    display: none !important;
 }
 
 /* ⚡ Panel icindeki alanlar tasmasin */
@@ -5815,3 +5849,32 @@ body.trade-panel-fullscreen {
     flex: 0 0 auto !important;
 }
 
+
+
+/* ============================================================
+   F151f: Pozisyon tablosu dikey sutun ayiricilar
+   ============================================================ */
+#btp-tbody-positions > tr > td {
+    border-right: 1px solid rgba(255, 255, 255, 0.06);
+}
+#btp-tbody-positions > tr > td:last-child {
+    border-right: none;
+}
+
+/* Header'in varsa onun da son td'si */
+#btp-tbody-positions ~ * th:last-child,
+#btp-thead-positions th:last-child {
+    border-right: none;
+}
+#btp-thead-positions th {
+    border-right: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+
+/* ============================================================
+   F151i: 6. td (Ort.Fiyat) ve 7. td (Anlik Fiyat) cizgilerini kaldir
+   ============================================================ */
+#btp-tbody-positions > tr > td:nth-child(6),
+#btp-tbody-positions > tr > td:nth-child(7) {
+    border-right: none;
+}

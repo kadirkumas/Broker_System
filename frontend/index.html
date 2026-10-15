@@ -204,6 +204,9 @@
                             <div class="btp-tab active" id="tab-positions" onclick="switchBtpTab('positions')">Pozisyonlar(<span id="btp-count">0</span>)</div>
                             <div class="btp-tab" id="tab-history" onclick="switchBtpTab('history')">İşlem Geçmişi(<span id="btp-hist-count">0</span>)</div>
                             <div class="btp-tab" id="tab-daily" onclick="switchBtpTab('daily')">Günlük İşlemler(<span id="btp-daily-count">0</span>)</div>
+                            <div class="btp-strat-filter" id="btp-strat-filter" title="Strateji filtresi">
+                                <!-- F191: chart.js tarafindan dinamik doldurulur -->
+                            </div>
                         </div>
                         <div class="btp-controls">
                             <span id="daily-pnl-header" onclick="openDailyReportModal()" style="display: inline-block; cursor: pointer; background: rgba(41, 98, 255, 0.1); border: 1px solid #2962ff; padding: 3px 8px; border-radius: 4px; color: #EAECEF; font-weight: bold; font-size: 12px; margin-right: 8px;">
@@ -628,6 +631,8 @@
                                 <option value="DYNAMIC_GRID">Dynamic Grid (DCA)</option>
                                 <option value="DYNAMIC_GRID_REEL">Dynamic Grid REEL</option>
                                 <option value="DEEP_HUNTER">Deep Hunter</option>
+                                <option value="EMA_TREND">EMA Trend</option>
+                                <option value="ASAP">ASAP ⏳ (yakında)</option>
                                 
                             </select>
                         </div>
@@ -815,6 +820,10 @@
                         <li class="ind-li" onclick="openIndConfig('DEEP_HUNTER')">
                             <span class="ind-name">Deep Hunter</span>
                             <span class="ind-author">EMA + RSI Dip/Tepe</span>
+                        </li>
+                        <li class="ind-li" onclick="openIndConfig('EMA_TREND')">
+                            <span class="ind-name">EMA Trend</span>
+                            <span class="ind-author">EMA Kesisim (Basit)</span>
                         </li>
                     </ul>
                 </div>
@@ -1282,6 +1291,146 @@
                         </div>
                     </div>
                     <!-- ========== DYNAMIC GRID REEL PANEL ========== -->
+                    <div class="strategy-panel" data-strategy="EMA_TREND">
+                        <div class="strategy-header">
+                            <div class="strategy-title">
+                                <span class="strategy-dot" style="background:#00bcd4;"></span>
+                                EMA Trend
+                            </div>
+                            <label class="switch">
+                                <input type="checkbox" class="strat-enabled" data-strategy="EMA_TREND">
+                                <span class="slider round"></span>
+                            </label>
+                        </div>
+                        <div class="strategy-body">
+                            <div class="cfg-row">
+                                <span class="cfg-label" data-tip="Stratejinin mum periyodu. 15m onerilir (orta vade trend).">Zaman Dilimi</span>
+                                <select class="search-input strat-interval" data-strategy="EMA_TREND">
+                                    <option value="1m">1m</option>
+                                    <option value="5m">5m</option>
+                                    <option value="15m" selected>15m</option>
+                                    <option value="1h">1h</option>
+                                    <option value="4h">4h</option>
+                                </select>
+                            </div>
+                            <div class="cfg-row">
+                                <span class="cfg-label" data-tip="EMA periyodu. Fiyat EMA ustundeyse LONG, altindaysa SHORT. 200=uzun trend, 50=kisa trend.">EMA Period</span>
+                                <input type="number" class="search-input strat-param" data-strategy="EMA_TREND" data-param="emaPeriod" value="200" min="10" max="500" step="10">
+                            </div>
+                            <div class="cfg-row">
+                                <span class="cfg-label" data-tip="LONG sinyalleri aktif/pasif">LONG Aktif</span>
+                                <label class="switch switch-small">
+                                    <input type="checkbox" class="strat-param" data-strategy="EMA_TREND" data-param="longTrade" checked>
+                                    <span class="slider round"></span>
+                                </label>
+                            </div>
+                            <div class="cfg-row">
+                                <span class="cfg-label" data-tip="SHORT sinyalleri aktif/pasif">SHORT Aktif</span>
+                                <label class="switch switch-small">
+                                    <input type="checkbox" class="strat-param" data-strategy="EMA_TREND" data-param="shortTrade" checked>
+                                    <span class="slider round"></span>
+                                </label>
+                            </div>
+                        </div>
+                        <div class="strategy-body strategy-trade-section">
+                            <div class="cfg-subtitle">💰 İşlem Ayarları</div>
+                            <div class="cfg-row">
+                                <span class="cfg-label" data-tip="Pozisyon acilisinda kullanilacak USDT miktari">İlk İşlem (USDT)</span>
+                                <input type="number" class="search-input strat-param" data-strategy="EMA_TREND" data-param="baseOrder" value="10" min="1" step="1" oninput="window.updateMarginPreview('EMA_TREND')">
+                            </div>
+                            <div class="cfg-row">
+                                <span class="cfg-label" data-tip="Kaldirac orani">Kaldıraç</span>
+                                <input type="number" class="search-input strat-param" data-strategy="EMA_TREND" data-param="leverage" value="5" min="1" max="50" step="1" oninput="window.updateMarginPreview('EMA_TREND')">
+                            </div>
+                            <div class="cfg-row margin-row">
+                                <span class="cfg-label" data-tip="Kilitlenen gercek teminat">💵 Marjin (Kilitlenen)</span>
+                                <span id="margin-preview-EMA_TREND" class="margin-preview">2.00 USDT</span>
+                            </div>
+                            <div class="cfg-row">
+                                <span class="cfg-label" data-tip="Pozisyon bu kar yuzdesine ulasinca kapat">Hedef Kâr (%)</span>
+                                <input type="number" class="search-input strat-param" data-strategy="EMA_TREND" data-param="takeProfit" value="2.0" min="0.1" step="0.1">
+                            </div>
+                            <div class="cfg-row" style="grid-column: 1 / -1;">
+                                <span class="cfg-label" data-tip="Kademeli izleyen stop. Format: kar%:trail% &middot; Ornek: 1.5:0.3, 2.5:0.2">🎯 AI TTP</span>
+                                <input type="text" class="search-input strat-param" data-strategy="EMA_TREND" data-param="trailingSteps" value="1.5:0.3, 2.5:0.2, 4:0.12, 6:0.07, 10:0.03" style="font-family: monospace; font-size: 10.5px; text-align: left; width: 100%;">
+                            </div>
+                            <div class="cfg-row">
+                                <span class="cfg-label" data-tip="Fiyat girise gore bu yuzde ters giderse pozisyon kapanir">Stop Loss (%)</span>
+                                <input type="number" class="search-input strat-param" data-strategy="EMA_TREND" data-param="stopLoss" value="5" min="0.1" step="0.1">
+                            </div>
+                            <div class="cfg-subtitle">🔁 DCA (Kademeli Alım)</div>
+                            <div class="cfg-row">
+                                <span class="cfg-label" data-tip="Fiyat ters giderse ek alim yapar">DCA Aktif</span>
+                                <label class="switch switch-small">
+                                    <input type="checkbox" class="strat-param" data-strategy="EMA_TREND" data-param="useDCA">
+                                    <span class="slider round"></span>
+                                </label>
+                            </div>
+                            <div class="cfg-row">
+                                <span class="cfg-label" data-tip="DCA dinamik modu. ATR bazli adimlar kullanilir.">DCA Dinamik</span>
+                                <label class="switch switch-small">
+                                    <input type="checkbox" class="strat-param" data-strategy="EMA_TREND" data-param="dcaDynamic" checked>
+                                    <span class="slider round"></span>
+                                </label>
+                            </div>
+                            <div class="cfg-row">
+                                <span class="cfg-label" data-tip="ATR carpan">ATR Çarpan</span>
+                                <input type="number" class="search-input strat-param" data-strategy="EMA_TREND" data-param="dcaAtrMultiplier" value="2.0" min="0.5" max="10" step="0.1">
+                            </div>
+                            <div class="cfg-row">
+                                <span class="cfg-label" data-tip="Min DCA adimi (%)">Min Adım (%)</span>
+                                <input type="number" class="search-input strat-param" data-strategy="EMA_TREND" data-param="dcaMinStep" value="4" min="0.5" max="50" step="0.5">
+                            </div>
+                            <div class="cfg-row">
+                                <span class="cfg-label" data-tip="Maks DCA kademe">Max Kademe</span>
+                                <input type="number" class="search-input strat-param" data-strategy="EMA_TREND" data-param="dcaMaxSteps" value="3" min="1" max="10" step="1">
+                            </div>
+
+                            <div class="cfg-row">
+                                <span class="cfg-label" data-tip="DCA momentum carpani. Fiyat momentumu arttikca DCA adim mesafesi kisalir. Ornek: 2 = momentum x2 etkisi.">Momentum</span>
+                                <input type="number" class="search-input strat-param" data-strategy="EMA_TREND" data-param="dcaMomentumFactor" value="2" min="0" max="10" step="0.1">
+                            </div>
+                            <div class="cfg-row">
+                                <span class="cfg-label" data-tip="Likidasyona yaklasirken DCA hacmini azaltan emniyet carpani. Yuksek deger = daha temkinli. Ornek: 1.3 = max %30 fazla hacim.">LIQ Emniyet</span>
+                                <input type="number" class="search-input strat-param" data-strategy="EMA_TREND" data-param="dcaVolMultiplier" value="1.3" min="1" max="5" step="0.1">
+                            </div>
+                            <div class="cfg-row">
+                                <span class="cfg-label" data-tip="Her DCA kademesinde hacim carpani">Hacim Çarpanı</span>
+                                <input type="number" class="search-input strat-param" data-strategy="EMA_TREND" data-param="volMultiplier" value="1" min="1" step="0.1">
+                            </div>
+                            <div class="cfg-row">
+                                <span class="cfg-label" data-tip="Her DCA kademesinin tetiklenme yuzdesi">Düşüş Adımları (%)</span>
+                                <input type="text" class="search-input strat-param" data-strategy="EMA_TREND" data-param="steps" value="5, 13, 25, 40, 60">
+                            </div>
+                            <div class="cfg-row">
+                                <span class="cfg-label" data-tip="DCA min mesafe (%)">DCA Min Mesafe (%)</span>
+                                <input type="number" class="search-input strat-param" data-strategy="EMA_TREND" data-param="dcaMinDistancePct" value="5" min="0.5" max="50" step="0.5">
+                            </div>
+                            <div class="cfg-row">
+                                <span class="cfg-label" data-tip="DCA min sure (dk)">DCA Min Süre (dk)</span>
+                                <input type="number" class="search-input strat-param" data-strategy="EMA_TREND" data-param="dcaMinTimeMin" value="15" min="0" max="1440" step="1">
+                            </div>
+                            <div class="cfg-subtitle">🎯 Kısmi TP (Partial Take Profit)</div>
+                            <div class="cfg-row">
+                                <span class="cfg-label" data-tip="Karli pozisyonun bir kismini erken kapat">Kısmi TP Aktif</span>
+                                <label class="switch switch-small">
+                                    <input type="checkbox" class="strat-param" data-strategy="EMA_TREND" data-param="partialTPEnabled" checked>
+                                    <span class="slider round"></span>
+                                </label>
+                            </div>
+                            <div class="cfg-row">
+                                <span class="cfg-label" data-tip="Kismi TP yuzdesi">Kapatma Oranı (%)</span>
+                                <input type="number" class="search-input strat-param" data-strategy="EMA_TREND" data-param="partialTPPercent" value="50" min="1" max="99" step="1">
+                            </div>
+                            <div class="cfg-row">
+                                <span class="cfg-label" data-tip="PT sonrasi DCA devam etsin mi">PT Sonrası DCA</span>
+                                <label class="switch switch-small">
+                                    <input type="checkbox" class="strat-param" data-strategy="EMA_TREND" data-param="partialTPKeepDCA" checked>
+                                    <span class="slider round"></span>
+                                </label>
+                            </div>
+                        </div>
+                    </div>
                     <div class="strategy-panel" data-strategy="DEEP_HUNTER">
                     <div class="strategy-header">
                     <div class="strategy-title">
@@ -1548,7 +1697,244 @@
                     </div>
                     <!-- ========== /DYNAMIC GRID REEL PANEL ========== -->
 
-                    <!-- [DH-REPOSITION] DEEP_HUNTER panel -->
+                    <!-- ASAP STRATEGY PANEL (F184 redesigned) -->
+                    <div class="strategy-panel" data-strategy="ASAP">
+                        <div class="strategy-header">
+                            <div class="strategy-title">
+                                <span class="strategy-dot" style="background:#00e676;"></span>
+                                ASAP
+                            </div>
+                            <label class="switch">
+                                <input type="checkbox" class="strat-enabled" data-strategy="ASAP">
+                                <span class="slider round"></span>
+                            </label>
+                        </div>
+
+                        <div class="strategy-body">
+                            <div class="cfg-row">
+                                <span class="cfg-label" data-tip="Tarama periyodu. ASAP icin 15m onerilir.">Zaman Dilimi</span>
+                                <select class="search-input strat-interval" data-strategy="ASAP">
+                                    <option value="1m">1m</option>
+                                    <option value="5m">5m</option>
+                                    <option value="15m" selected>15m</option>
+                                    <option value="30m">30m</option>
+                                    <option value="1h">1h</option>
+                                </select>
+                            </div>
+                            <div class="cfg-subtitle">🚪 Giriş Filtreleri (5 Katman)</div>
+                            <div class="cfg-row">
+                                <span class="cfg-label" data-tip="TP sonrasi ayni coinde tekrar giris icin bekleme (dk).">Cooldown TP (dk)</span>
+                                <input type="number" class="search-input strat-param" data-strategy="ASAP" data-param="cooldownAfterTP" value="15" min="0" max="1440" step="1">
+                            </div>
+                            <div class="cfg-row">
+                                <span class="cfg-label" data-tip="Time-exit/manual kapanis sonrasi bekleme (dk).">Cooldown Exit (dk)</span>
+                                <input type="number" class="search-input strat-param" data-strategy="ASAP" data-param="cooldownAfterExit" value="60" min="0" max="1440" step="1">
+                            </div>
+                            <div class="cfg-row">
+                                <span class="cfg-label" data-tip="Ayni coinde 3. giristen sonra bekleme (dk).">3. Giriş Cooldown</span>
+                                <input type="number" class="search-input strat-param" data-strategy="ASAP" data-param="cooldownAfter3rdEntry" value="180" min="0" max="1440" step="1">
+                            </div>
+                            <div class="cfg-row">
+                                <span class="cfg-label" data-tip="Son 1 saatte bu %'den fazla hareket varsa girme (anti-chase).">Anti-Chase 1sa %</span>
+                                <input type="number" class="search-input strat-param" data-strategy="ASAP" data-param="maxMoveLastHour" value="5.0" min="0.5" max="50" step="0.5">
+                            </div>
+                            <div class="cfg-row">
+                                <span class="cfg-label" data-tip="EMA20'den bu %'den fazla uzaksa girme.">EMA Uzaklık Max %</span>
+                                <input type="number" class="search-input strat-param" data-strategy="ASAP" data-param="maxEmaDistance" value="2.0" min="0.1" max="20" step="0.1">
+                            </div>
+                            <div class="cfg-row">
+                                <span class="cfg-label" data-tip="LONG icin RSI bu degerin uzerindeyse girme.">RSI Max Buy</span>
+                                <input type="number" class="search-input strat-param" data-strategy="ASAP" data-param="rsiMaxBuy" value="70" min="50" max="100" step="1">
+                            </div>
+                            <div class="cfg-row">
+                                <span class="cfg-label" data-tip="SHORT icin RSI bu degerin altindaysa girme.">RSI Min Sell</span>
+                                <input type="number" class="search-input strat-param" data-strategy="ASAP" data-param="rsiMinSell" value="30" min="0" max="50" step="1">
+                            </div>
+                            <div class="cfg-row">
+                                <span class="cfg-label" data-tip="LONG icin range position ust limiti (0-1).">Range Max Buy</span>
+                                <input type="number" class="search-input strat-param" data-strategy="ASAP" data-param="rangeMaxBuy" value="0.5" min="0" max="1" step="0.05">
+                            </div>
+                            <div class="cfg-row">
+                                <span class="cfg-label" data-tip="SHORT icin range position alt limiti (0-1).">Range Min Sell</span>
+                                <input type="number" class="search-input strat-param" data-strategy="ASAP" data-param="rangeMinSell" value="0.5" min="0" max="1" step="0.05">
+                            </div>
+                        </div>
+
+                        <div class="strategy-body strategy-trade-section">
+                            <div class="cfg-subtitle">📊 İndikatör Periyotları</div>
+                            <div class="cfg-row">
+                                <span class="cfg-label" data-tip="RSI periyodu.">RSI Period</span>
+                                <input type="number" class="search-input strat-param" data-strategy="ASAP" data-param="rsiPeriod" value="14" min="2" max="50" step="1">
+                            </div>
+                            <div class="cfg-row">
+                                <span class="cfg-label" data-tip="Hizli EMA periyodu.">EMA Fast</span>
+                                <input type="number" class="search-input strat-param" data-strategy="ASAP" data-param="emaFastPeriod" value="20" min="5" max="200" step="1">
+                            </div>
+                            <div class="cfg-row">
+                                <span class="cfg-label" data-tip="Yavas EMA periyodu.">EMA Slow</span>
+                                <input type="number" class="search-input strat-param" data-strategy="ASAP" data-param="emaSlowPeriod" value="50" min="10" max="500" step="1">
+                            </div>
+                            <div class="cfg-row">
+                                <span class="cfg-label" data-tip="Range position icin son N mum.">Range Lookback</span>
+                                <input type="number" class="search-input strat-param" data-strategy="ASAP" data-param="rangeLookback" value="20" min="5" max="200" step="1">
+                            </div>
+                            <div class="cfg-row">
+                                <span class="cfg-label" data-tip="Anti-chase icin son N mum.">Move Lookback</span>
+                                <input type="number" class="search-input strat-param" data-strategy="ASAP" data-param="moveLookback" value="4" min="1" max="48" step="1">
+                            </div>
+                            <div class="cfg-row">
+                                <span class="cfg-label" data-tip="EMA fark notr esigi (%).">Trend Nötr %</span>
+                                <input type="number" class="search-input strat-param" data-strategy="ASAP" data-param="trendNeutralPct" value="0.5" min="0" max="10" step="0.1">
+                            </div>
+                        </div>
+
+                        <div class="strategy-body strategy-trade-section">
+                            <div class="cfg-subtitle">💰 İşlem Ayarları</div>
+                            <div class="cfg-row">
+                                <span class="cfg-label" data-tip="Ilk islem USDT (saf teminat).">İlk İşlem (USDT)</span>
+                                <input type="number" class="search-input strat-param" data-strategy="ASAP" data-param="baseOrder" value="12" min="1" step="1" oninput="window.updateMarginPreview && window.updateMarginPreview('ASAP')">
+                            </div>
+                            <div class="cfg-row">
+                                <span class="cfg-label" data-tip="Kaldiraç. 3x onerilir.">Kaldıraç <span class="cfg-hint">x</span></span>
+                                <input type="number" class="search-input strat-param" data-strategy="ASAP" data-param="leverage" value="3" min="1" max="125" step="1" oninput="window.updateMarginPreview && window.updateMarginPreview('ASAP')">
+                            </div>
+                            <div class="cfg-row margin-row">
+                                <span class="cfg-label" data-tip="Kilitlenen teminat = Ilk Islem / Kaldiraç.">💵 Marjin (Kilitlenen)</span>
+                                <span id="margin-preview-ASAP" class="margin-preview">4.00 USDT</span>
+                            </div>
+                            <div class="cfg-row">
+                                <span class="cfg-label" data-tip="Hedef kar yuzdesi.">Hedef Kâr (%)</span>
+                                <input type="number" class="search-input strat-param" data-strategy="ASAP" data-param="takeProfit" value="1.5" min="0.1" step="0.1">
+                            </div>
+                            <div class="cfg-row" style="grid-column: 1 / -1;">
+                                <span class="cfg-label" data-tip="AI TTP kademeleri: kar:trail">AI TTP</span>
+                                <input type="text" class="search-input strat-param" data-strategy="ASAP" data-param="trailingSteps" value="1.5:0.3, 2.5:0.2, 4:0.12, 6:0.07, 10:0.03">
+                            </div>
+                            <div class="cfg-row">
+                                <span class="cfg-label" data-tip="Stop Loss. ASAP: 0 (YOK).">Stop Loss (%)</span>
+                                <input type="number" class="search-input strat-param" data-strategy="ASAP" data-param="stopLoss" value="0" min="0" step="0.1">
+                            </div>
+                        </div>
+
+                        <div class="strategy-body strategy-trade-section">
+                            <div class="cfg-subtitle">🔁 DCA (Kademeli Alım)</div>
+                            <div class="cfg-row">
+                                <span class="cfg-label" data-tip="DCA aktif mi?">DCA Aktif</span>
+                                <label class="switch"><input type="checkbox" class="strat-param" data-strategy="ASAP" data-param="useDCA" checked><span class="slider round"></span></label>
+                            </div>
+                            <div class="cfg-row">
+                                <span class="cfg-label" data-tip="Her DCA adiminda hacim carpani.">Hacim Çarpanı</span>
+                                <input type="number" class="search-input strat-param" data-strategy="ASAP" data-param="volMultiplier" value="1.2" min="1" step="0.1">
+                            </div>
+                            <div class="cfg-row" style="grid-column: 1 / -1;">
+                                <span class="cfg-label" data-tip="Statik DCA adimlari (%).">Statik Adımlar (%)</span>
+                                <input type="text" class="search-input strat-param" data-strategy="ASAP" data-param="steps" value="5, 13, 25, 40, 60">
+                            </div>
+                            <div class="cfg-subtitle">⚙️ DCA Dinamik</div>
+                            <div class="cfg-row">
+                                <span class="cfg-label" data-tip="Dinamik DCA modu.">DCA Dinamik</span>
+                                <label class="switch"><input type="checkbox" class="strat-param" data-strategy="ASAP" data-param="dcaDynamic" checked><span class="slider round"></span></label>
+                            </div>
+                            <div class="cfg-row">
+                                <span class="cfg-label" data-tip="ATR carpani.">ATR Çarpan</span>
+                                <input type="number" class="search-input strat-param" data-strategy="ASAP" data-param="dcaAtrMultiplier" value="2.0" min="0.5" max="10" step="0.1">
+                            </div>
+                            <div class="cfg-row">
+                                <span class="cfg-label" data-tip="Minimum adim (%).">Min Adım (%)</span>
+                                <input type="number" class="search-input strat-param" data-strategy="ASAP" data-param="dcaMinStep" value="5" min="0.5" max="50" step="0.5">
+                            </div>
+                            <div class="cfg-row">
+                                <span class="cfg-label" data-tip="Maks DCA kademesi.">Max Kademe</span>
+                                <input type="number" class="search-input strat-param" data-strategy="ASAP" data-param="dcaMaxSteps" value="7" min="1" max="10" step="1">
+                            </div>
+                            <div class="cfg-row">
+                                <span class="cfg-label" data-tip="Min kademe mesafesi (%).">Min Mesafe (%)</span>
+                                <input type="number" class="search-input strat-param" data-strategy="ASAP" data-param="dcaMinDistancePct" value="5" min="0.5" max="50" step="0.5">
+                            </div>
+                            <div class="cfg-row">
+                                <span class="cfg-label" data-tip="Momentum duzeltme.">Momentum</span>
+                                <input type="number" class="search-input strat-param" data-strategy="ASAP" data-param="dcaMomentumFactor" value="2.0" min="0" max="10" step="0.1">
+                            </div>
+                            <div class="cfg-row">
+                                <span class="cfg-label" data-tip="Iki DCA arasi min sure (dk).">Min Süre (dk)</span>
+                                <input type="number" class="search-input strat-param" data-strategy="ASAP" data-param="dcaMinTimeMin" value="15" min="0" max="1440" step="1">
+                            </div>
+                            <div class="cfg-row">
+                                <span class="cfg-label" data-tip="DCA hacim onay carpani.">DCA Hacim Çarpanı</span>
+                                <input type="number" class="search-input strat-param" data-strategy="ASAP" data-param="dcaVolMultiplier" value="1.3" min="0.5" max="3" step="0.1">
+                            </div>
+                        </div>
+
+                        <div class="strategy-body strategy-trade-section">
+                            <div class="cfg-subtitle">🎯 Kısmi TP (Partial Take Profit)</div>
+                            <div class="cfg-row">
+                                <span class="cfg-label" data-tip="Kismi TP aktif mi?">Kısmi TP Aktif</span>
+                                <label class="switch"><input type="checkbox" class="strat-param" data-strategy="ASAP" data-param="partialTPEnabled" checked><span class="slider round"></span></label>
+                            </div>
+                            <div class="cfg-row">
+                                <span class="cfg-label" data-tip="TP'de kapatilacak yuzde.">Kapatma Oranı (%)</span>
+                                <input type="number" class="search-input strat-param" data-strategy="ASAP" data-param="partialTPPercent" value="50" min="1" max="99" step="1">
+                            </div>
+                            <div class="cfg-row">
+                                <span class="cfg-label" data-tip="PT sonrasi DCA devam etsin mi?">PT Sonrası DCA</span>
+                                <label class="switch"><input type="checkbox" class="strat-param" data-strategy="ASAP" data-param="partialTPKeepDCA" checked><span class="slider round"></span></label>
+                            </div>
+                        </div>
+
+                        <div class="strategy-body strategy-trade-section">
+                            <div class="cfg-subtitle">📋 Sembol Havuzu</div>
+                            <div class="cfg-row">
+                                <span class="cfg-label" data-tip="Havuzda kac coin.">Sembol Sayısı</span>
+                                <input type="number" class="search-input strat-param" data-strategy="ASAP" data-param="symbolCount" value="30" min="5" max="200" step="5">
+                            </div>
+                            <div class="cfg-row">
+                                <span class="cfg-label" data-tip="Min 24s hacim (USDT).">Min Hacim 24s</span>
+                                <input type="number" class="search-input strat-param" data-strategy="ASAP" data-param="minVolume24h" value="10000000" min="100000" step="1000000">
+                            </div>
+                            <div class="cfg-row">
+                                <span class="cfg-label" data-tip="Min ATR (%).">ATR Min (%)</span>
+                                <input type="number" class="search-input strat-param" data-strategy="ASAP" data-param="atrMinPct" value="2.0" min="0.1" max="20" step="0.1">
+                            </div>
+                            <div class="cfg-row">
+                                <span class="cfg-label" data-tip="Max ATR (%).">ATR Max (%)</span>
+                                <input type="number" class="search-input strat-param" data-strategy="ASAP" data-param="atrMaxPct" value="6.0" min="0.1" max="30" step="0.1">
+                            </div>
+                            <div class="cfg-row">
+                                <span class="cfg-label" data-tip="24s hareket limitten fazlaysa havuzdan cikar.">Max 24s Hareket %</span>
+                                <input type="number" class="search-input strat-param" data-strategy="ASAP" data-param="maxMove24hPct" value="15.0" min="1" max="100" step="1">
+                            </div>
+                            <div class="cfg-row">
+                                <span class="cfg-label" data-tip="Havuz kac saatte yenilenir.">Havuz Yenile (saat)</span>
+                                <input type="number" class="search-input strat-param" data-strategy="ASAP" data-param="poolRefreshHours" value="4" min="1" max="48" step="1">
+                            </div>
+                        </div>
+
+                        <div class="strategy-body strategy-trade-section">
+                            <div class="cfg-subtitle">⚠️ Risk Limitleri</div>
+                            <div class="cfg-row">
+                                <span class="cfg-label" data-tip="Max acik pozisyon.">Max Açık Poz</span>
+                                <input type="number" class="search-input strat-param" data-strategy="ASAP" data-param="maxOpenPositions" value="50" min="1" max="500" step="1">
+                            </div>
+                            <div class="cfg-row">
+                                <span class="cfg-label" data-tip="Max marjin (%). Asilirsa yeni acilis yok.">Max Marjin Oranı %</span>
+                                <input type="number" class="search-input strat-param" data-strategy="ASAP" data-param="maxMarginRatio" value="40" min="5" max="100" step="5">
+                            </div>
+                            <div class="cfg-row">
+                                <span class="cfg-label" data-tip="Gunluk zarar limiti (USDT).">Günlük Max Zarar</span>
+                                <input type="number" class="search-input strat-param" data-strategy="ASAP" data-param="dailyMaxLoss" value="30" min="1" step="1">
+                            </div>
+                            <div class="cfg-row">
+                                <span class="cfg-label" data-tip="Pozisyon bu saatten sonra zararda ise time-exit.">Max Hold (saat)</span>
+                                <input type="number" class="search-input strat-param" data-strategy="ASAP" data-param="maxHoldHours" value="24" min="1" max="720" step="1">
+                            </div>
+                            <div class="cfg-row">
+                                <span class="cfg-label" data-tip="Bir coinde max kac pozisyon.">Max Poz/Sembol</span>
+                                <input type="number" class="search-input strat-param" data-strategy="ASAP" data-param="maxPosPerSymbol" value="2" min="1" max="10" step="1">
+                            </div>
+                        </div>
+                    </div>
+
+<!-- [DH-REPOSITION] DEEP_HUNTER panel -->
 
                     </div>            </div>
 

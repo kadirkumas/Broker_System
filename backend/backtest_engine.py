@@ -5,7 +5,7 @@ Async task olarak calisir, progress raporlanir.
 import time
 import traceback
 from datetime import datetime
-from backend.strategies import RSIScalperStrategy, DynamicGridStrategy, DynamicGridReelStrategy, DeepHunterStrategy
+from backend.strategies import RSIScalperStrategy, DynamicGridStrategy, DynamicGridReelStrategy, DeepHunterStrategy, EmaTrendStrategy, ASAPStrategy
 
 
 # ==========================================================
@@ -149,6 +149,10 @@ def get_strategy(name, params):
         return DynamicGridReelStrategy(params)
     elif name == "DEEP_HUNTER":
         return DeepHunterStrategy(params)
+    elif name == "EMA_TREND":
+        return EmaTrendStrategy(params)
+    elif name == "ASAP":
+        return ASAPStrategy(params)
     return None
 
 

@@ -1,0 +1,24 @@
+# ============================================================
+# BLOKLU SEMBOLLER - F169
+# ============================================================
+# Her satirda bir sembol. # ile baslayan satirlar YORUM (yok sayilir).
+# Bos satirlar yok sayilir.
+#
+# Bu listedeki semboller icin:
+#   - Yeni pozisyon ACILMAZ (sinyal tarama atlar)
+#   - Mevcut pozisyon varsa DOKUNULMAZ (normal akis devam eder)
+#
+# Degisiklik sonrasi: bot en gec bir sonraki refresh_symbol_list
+# cagrisinda (scan cycle) yeni listeyi okur. Hemen etki icin bot'u
+# yeniden baslat.
+# ============================================================
+
+# --- Test/Stale coinler ---
+FXSUSDT
+SLERFUSDT
+
+# Yeni sembol eklemek icin buraya yaz:
+AAVEUSDT
+AKTUSDT
+BTCUSDT
+EIGENUSDT

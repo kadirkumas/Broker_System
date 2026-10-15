@@ -65,7 +65,7 @@ async function fetchTrades() {
 
 async function fetchClosed() {
     try {
-        const r = await fetch('/api/trade/history?limit=15');
+        const r = await fetch('/api/trade/history?limit=100');
         const d = await r.json();
         renderClosed(Array.isArray(d) ? d : []);
     } catch(e) {
@@ -163,8 +163,9 @@ function renderPositions(trades) {
     trades = trades.slice().sort((a, b) => {
         const pa = parseFloat(a.unrealized_pnl) || 0;
         const pb = parseFloat(b.unrealized_pnl) || 0;
-        return pb - pa;  // buyukten kucuge
+        return pb - pa;
     });
+
     list.innerHTML = trades.map(t => {
         const sym = (t.symbol || '').replace('.P','');
         const isLong = t.trade_type === 'BUY';
@@ -178,21 +179,35 @@ function renderPositions(trades) {
 
         const pnlClass = pnl >= 0 ? 'green' : 'red';
         const pnlTxt = (pnl >= 0 ? '+' : '') + fmtNum(pnl) + ' $';
+        const pctTxt = (pnlPct >= 0 ? '+' : '') + fmtNum(pnlPct, 2) + '%';
+
+        // Fiyatlar
+        const initP = t.initial_price ? fmtPrice(t.initial_price) : '-';
+        const avgP = t.avg_price ? fmtPrice(t.avg_price) : '-';
+
+        // Strateji
+        const strat = t.strategy_name || '-';
 
         return `
-            <div class="list-item ${dirClass}" onclick="openPosModal('${t.symbol}')">
-                <div class="li-left">
-                    <div class="li-sym">${sym}</div>
-                    <div class="li-meta">
-                        <span>${dir}</span>
-                        <span>${lev}x</span>
-                        <span>${fmtNum(vol)} $</span>
-                        ${dca > 0 ? `<span class="dca-badge">D:${dca}</span>` : ''}
-                    </div>
+            <div class="pos-card ${dirClass}" onclick="openPosModal('${t.symbol}')">
+                <div class="pos-row-1">
+                    <span class="pos-sym">${sym}</span>
+                    <span class="pos-pnl ${pnlClass}">${pnlTxt}</span>
                 </div>
-                <div class="li-right">
-                    <div class="li-pnl ${pnlClass}">${pnlTxt}</div>
-                    <div class="li-sub">${pnlPct >= 0 ? '+' : ''}${fmtNum(pnlPct, 2)}%</div>
+                <div class="pos-row-2">
+                    <span class="pos-meta">
+                        ${dir} <b>${lev}x</b>
+                        ${dca > 0 ? `· <span class="dca-badge">D:${dca}</span>` : ''}
+                    </span>
+                    <span class="pos-pct ${pnlClass}">${pctTxt}</span>
+                </div>
+                <div class="pos-row-3">
+                    <span>Giriş: <b>${initP}</b></span>
+                    <span>Ort: <b>${avgP}</b></span>
+                </div>
+                <div class="pos-row-4">
+                    <span>Strateji: <b>${strat}</b></span>
+                    <span>Toplam: <b>${fmtNum(vol)} $</b></span>
                 </div>
             </div>
         `;
@@ -219,40 +234,51 @@ function renderClosed(trades) {
     list.innerHTML = trades.map(t => {
         const sym = (t.symbol || '').replace('.P', '');
         const isLong = t.trade_type === 'BUY';
-        const dir = isLong ? 'LONG' : 'SHORT';
-        const dirClass = isLong ? 'long' : 'short';
+
+        // Close reason tam metin
+        let closeR = (t.close_reason || '').trim();
+        if (!closeR) closeR = 'KAPANIŞ';
+        // Kısalt (uzunsa)
+        if (closeR.length > 40) closeR = closeR.substring(0, 40);
+
+        // PnL
         const pnl = parseFloat(t.pnl_amount) || 0;
         const pnlPct = parseFloat(t.pnl_pct) || 0;
         const isProfit = pnl >= 0;
-
         const pnlClass = isProfit ? 'green' : 'red';
-        const pnlTxt = (pnl >= 0 ? '+' : '') + fmtNum(pnl, 2) + ' $';
-        const pctTxt = (pnlPct >= 0 ? '+' : '') + fmtNum(pnlPct, 2) + '%';
+        const pnlSign = pnl >= 0 ? '+' : '';
+        const pctSign = pnlPct >= 0 ? '+' : '';
 
-        // Sebep kısalt
-        let reason = (t.close_reason || '').toUpperCase();
-        let shortReason = '—';
-        if (reason.includes('AI-TTP') || reason.includes('AI TTP') || reason.includes('TRAILING')) shortReason = 'TTP';
-        else if (reason.includes('PARTIAL')) shortReason = 'PT';
-        else if (reason.includes('STOP')) shortReason = 'SL';
-        else if (reason.includes('TAKE')) shortReason = 'TP';
-        else if (reason.includes('DELIST')) shortReason = 'DEL';
+        // Fiyatlar
+        const entryP = parseFloat(t.entry_price) || 0;
+        const exitP = parseFloat(t.exit_price) || 0;
 
-        const durationStr = _fmtDuration(t.entry_time, t.exit_time);
+        // Zaman (exit)
+        let dateStr = '-';
+        const ts = (t.exit_time || 0) * 1000;
+        if (ts > 0) {
+            try {
+                const d = new Date(ts);
+                const dStr = d.toLocaleDateString('tr-TR');
+                const tStr = d.toLocaleTimeString('tr-TR');
+                dateStr = dStr + ' ' + tStr;
+            } catch(e) {}
+        }
 
         return `
-            <div class="list-item ${dirClass}" onclick="openClosedModal('${t.id}')">
-                <div class="li-left">
-                    <div class="li-sym">${sym}</div>
-                    <div class="li-meta">
-                        <span>${dir}</span>
-                        <span>${shortReason}</span>
-                        <span>${durationStr}</span>
-                    </div>
+            <div class="closed-item" onclick="openClosedModal('${t.id}')">
+                <div class="closed-header">
+                    <span class="closed-sym">${sym}</span>
+                    <span class="closed-reason">| ${closeR} |</span>
                 </div>
-                <div class="li-right">
-                    <div class="li-pnl ${pnlClass}">${pnlTxt}</div>
-                    <div class="li-sub">${pctTxt}</div>
+                <div class="closed-detail">
+                    <span>Giriş: <b>${entryP}</b></span>
+                    <span>Çıkış: <b>${exitP}</b></span>
+                    <span>Kâr: <b class="${pnlClass}">${pctSign}${pnlPct.toFixed(2)}%</b></span>
+                </div>
+                <div class="closed-footer">
+                    <span class="closed-time">${dateStr}</span>
+                    <span>Net: <b class="${pnlClass}">${pnlSign}${pnl.toFixed(4)} USDT</b></span>
                 </div>
             </div>
         `;
@@ -280,20 +306,48 @@ function renderSignals(signals) {
     }
     list.innerHTML = signals.slice(0, 10).map(s => {
         const sym = (s.symbol || '').replace('.P','');
-        const isLong = s.signal === 'LONG';
-        const isClose = s.signal === 'CLOSE' || s.close_reason;
-        const cls = isClose ? 'sig-close' : (isLong ? 'sig-long' : 'sig-short');
-        const icon = isClose ? '🔗' : (isLong ? '▲' : '▼');
-        const label = isClose ? (s.close_reason || 'KAPANIŞ') : s.signal;
-        const reason = s.reason ? s.reason.substring(0, 30) : '';
+        const strat = s.strategy || s.strategy_name || '';
+        const sig = s.signal || '';
+        const isLong = sig === 'LONG';
+        const isClose = sig === 'CLOSE';
+        const sideCls = isClose ? 'close' : (isLong ? 'long' : 'short');
+        const sideTxt = isClose ? 'KAPANIŞ' : sig;
+
+        // Zaman
+        const ts = s.created_at || s.time || s.candle_time || 0;
+        let dateStr = '-';
+        if (ts > 0) {
+            try {
+                const d = new Date(ts);
+                dateStr = d.toLocaleDateString('tr-TR') + ' ' + d.toLocaleTimeString('tr-TR');
+            } catch(e) {}
+        }
+
+        // Skip reason
+        const opened = (s.opened_position !== undefined) ? s.opened_position : s.opened;
+        const skipped = (opened === 0) || s.skip_reason;
+        const skipReason = s.skip_reason
+            ? String(s.skip_reason).substring(0, 60)
+            : 'ATLANDI';
+
+        // Fiyat/USDT
+        const price = s.price || 0;
+        const total = s.total_usdt || 0;
+
         return `
-            <div class="list-item ${cls}">
-                <div class="li-left">
-                    <div class="li-sym">${icon} ${sym}</div>
-                    <div class="li-meta">
-                        <span>${label}</span>
-                        ${reason ? `<span>${reason}</span>` : ''}
-                    </div>
+            <div class="sig-item ${sideCls}">
+                <div class="sig-header">
+                    <span class="sig-sym">${sym}</span>
+                    ${strat ? `<span class="sig-strat">[${strat}]</span>` : ''}
+                    <span class="sig-side ${sideCls}">${sideTxt}</span>
+                </div>
+                <div class="sig-meta">
+                    <span class="sig-time">${dateStr}</span>
+                    ${skipped ? `<span class="sig-skip">⚠ ${skipReason}</span>` : ''}
+                </div>
+                <div class="sig-detail">
+                    <span>Giriş Fiyat: <b>${price}</b></span>
+                    <span>Toplam: <b>${total} USDT</b></span>
                 </div>
             </div>
         `;
@@ -816,7 +870,7 @@ window.resetMobilePin = function() {
         // Cache kontrolu (5 dk)
         var now = Date.now();
         if (window._moSymbolsCache && (now - window._moSymbolsCache.ts) < 300000) {
-            window._renderSymbolList(window._moSymbolsCache.symbols);
+            // F174: cache hit -> render YOK (sadece cache kullanilabilir)
             return;
         }
 
@@ -847,9 +901,9 @@ window.resetMobilePin = function() {
             symbols = Array.from(new Set(symbols)).sort();
 
             window._moSymbolsCache = { ts: now, symbols: symbols };
-            window._renderSymbolList(symbols);
+            // F174: render YOK - sadece cache doldur
 
-            console.log('[MO-SEARCH] ' + symbols.length + ' sembol yuklendi');
+            console.log('[MO-SEARCH] ' + symbols.length + ' sembol cache\'lendi');
         } catch(e) {
             console.error('[MO-SEARCH] Hata:', e);
             document.getElementById('mo-symbol-list').innerHTML =
@@ -961,8 +1015,11 @@ window.resetMobilePin = function() {
     // ⚡ Focus event (liste ac)
     document.addEventListener('focusin', function(e) {
         if (e.target && e.target.id === 'mo-symbol') {
+            // F174: cache yoksa once yukle, sonra render
             if (!window._moSymbolsCache) {
-                window._loadManualSymbols();
+                window._loadManualSymbols().then(function() {
+                    window._renderSymbolList();
+                });
             } else {
                 window._renderSymbolList();
             }
@@ -1001,6 +1058,10 @@ window.resetMobilePin = function() {
 
         window.updateManualPreview();
         window._loadManualSymbols();
+
+        // F174: modal acilirken sembol listesi KAPALI
+        var _symListF174 = document.getElementById('mo-symbol-list');
+        if (_symListF174) _symListF174.style.display = 'none';
 
         modal.style.display = 'flex';
     };

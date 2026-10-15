@@ -88,7 +88,15 @@ class PositionManager:
                     "trailingSteps": "1.5:0.3, 2.5:0.2, 4:0.12, 6:0.07, 10:0.03",
                     "stopLoss": 3.0,
                     "useDCA": False, "baseOrder": 10, "volMultiplier": 1.2, "steps": "1.5, 3, 5",
-                    "dcaMinDistancePct": 5.0, "dcaMinTimeMin": 15}
+                    "dcaMinDistancePct": 5.0, "dcaMinTimeMin": 15,
+                    # FIX F100: eksik alanlar
+                    "dcaDynamic": False,
+                    "dcaAtrMultiplier": 2.0,
+                    "dcaMinStep": 4.0,
+                    "dcaMaxSteps": 3,
+                    "dcaMomentumFactor": 2.0,
+                    "dcaVolMultiplier": 1.3,
+                    "interval": "15m"}
         if strategy_name and strategy_name in strategies_config:
             cfg = strategies_config[strategy_name]
             return {
@@ -102,6 +110,14 @@ class PositionManager:
                 "steps": cfg.get("steps", defaults["steps"]),
                 "dcaMinDistancePct": float(cfg.get("dcaMinDistancePct", defaults["dcaMinDistancePct"])),
                 "dcaMinTimeMin": int(cfg.get("dcaMinTimeMin", defaults["dcaMinTimeMin"])),
+                # FIX F100: eksik alanlar
+                "dcaDynamic": bool(cfg.get("dcaDynamic", defaults["dcaDynamic"])),
+                "dcaAtrMultiplier": float(cfg.get("dcaAtrMultiplier", defaults["dcaAtrMultiplier"])),
+                "dcaMinStep": float(cfg.get("dcaMinStep", defaults["dcaMinStep"])),
+                "dcaMaxSteps": int(cfg.get("dcaMaxSteps", defaults["dcaMaxSteps"])),
+                "dcaMomentumFactor": float(cfg.get("dcaMomentumFactor", defaults["dcaMomentumFactor"])),
+                "dcaVolMultiplier": float(cfg.get("dcaVolMultiplier", defaults["dcaVolMultiplier"])),
+                "interval": str(cfg.get("interval", defaults["interval"])),
             }
         return defaults
 
@@ -242,7 +258,13 @@ class PositionManager:
             return False
 
         dca_count = pos["dca_count"] or 0
-        if dca_count >= len(steps):
+        # F157b: Dinamik modda max 7 kademe, statik modda len(steps)
+        _dyn_cap_f157b = bool(sCfg.get("dcaDynamic", False))
+        _max_dca_f157b = 7 if _dyn_cap_f157b else len(steps)
+        if dca_count >= _max_dca_f157b:
+            if _dyn_cap_f157b:
+                print(f"[F157b-MAX] {symbol} maks kademe {_max_dca_f157b} (dinamik), dur")
+            return False
             return False
 
         # FIX B6: margin_presets.dcaMaxSteps global kontrolu
@@ -268,12 +290,34 @@ class PositionManager:
         base_order = sCfg.get("baseOrder", 10)
         vol_mult = sCfg.get("volMultiplier", 1.2)
 
-        next_step_pct = steps[dca_count] / 100
+        # F153: Dinamik mod ise statik steps[] listesini ATLA
+        #   - dcaDynamic=True  -> sadece dcaMinDistancePct alt kapi
+        #   - dcaDynamic=False -> eski davranis (steps[dca_count])
+        _dyn_early_f153 = bool(sCfg.get("dcaDynamic", False))
+        if _dyn_early_f153:
+            _min_dist_cfg_f153 = float(sCfg.get("dcaMinDistancePct", 2.0))
+            next_step_pct = _min_dist_cfg_f153 / 100.0
+            print(f"[F153-DYN] {symbol} dinamik mod | alt kapi=%{_min_dist_cfg_f153:.2f} (statik liste atlandi)")
+        else:
+            next_step_pct = steps[dca_count] / 100
+
+        # F159: Artimsal DCA - base = son DCA (varsa), yoksa initial_price
+        _f159_base = initial_price
+        try:
+            import json as _json_f159
+            _dh_f159 = pos.get("dca_history") or "[]"
+            _hist_f159 = _json_f159.loads(_dh_f159) if isinstance(_dh_f159, str) else _dh_f159
+            if _hist_f159 and len(_hist_f159) > 0:
+                _last_dca_f159 = float(_hist_f159[-1].get("price", 0))
+                if _last_dca_f159 > 0:
+                    _f159_base = _last_dca_f159
+        except Exception:
+            pass
         if trade_type == "BUY":
-            trigger_price = initial_price * (1 - next_step_pct)
+            trigger_price = _f159_base * (1 - next_step_pct)
             hit = current_price <= trigger_price
         else:
-            trigger_price = initial_price * (1 + next_step_pct)
+            trigger_price = _f159_base * (1 + next_step_pct)
             hit = current_price >= trigger_price
 
         if not hit:
@@ -328,8 +372,30 @@ class PositionManager:
                             # --- 2) Parametreler ---
                             _atr_mult = float(sCfg.get("dcaAtrMultiplier", 2.0))
                             _dca_base = float(sCfg.get("dcaMinStep", 4))
-                            _max_steps = int(sCfg.get("dcaMaxSteps", 3))
+
+                            # F157: Dinamik max kademe (min 4, piyasa dustukce 5-6-7)
+                            _cfg_max_steps_f157 = int(sCfg.get("dcaMaxSteps", 4))
+                            _min_steps_f157 = max(4, _cfg_max_steps_f157)  # asla 4'un alti
+
+                            if initial_price > 0:
+                                _dd_pct_f157 = abs((current_price - initial_price) / initial_price) * 100
+                            else:
+                                _dd_pct_f157 = 0.0
+
+                            if _dd_pct_f157 >= 50:
+                                _dyn_max_f157 = 7
+                            elif _dd_pct_f157 >= 35:
+                                _dyn_max_f157 = 6
+                            elif _dd_pct_f157 >= 20:
+                                _dyn_max_f157 = 5
+                            else:
+                                _dyn_max_f157 = 4
+
+                            _max_steps = max(_min_steps_f157, _dyn_max_f157)
                             _step_idx = dca_count + 1
+
+                            print(f"[F157-MAX] {symbol} dd={_dd_pct_f157:.2f}% | "
+                                  f"max_kademe={_max_steps} (min={_min_steps_f157})")
 
                             # dcaMaxSteps limiti
                             if _step_idx > _max_steps:
@@ -391,6 +457,10 @@ class PositionManager:
                                   f"(min=%{_min_dist:.1f} statik)")
 
                             _min_dist = _final_step
+                            # F171: SL icin cache
+                            if not hasattr(self, "_dca_last_step"):
+                                self._dca_last_step = {}
+                            self._dca_last_step[symbol] = float(_final_step)
                             _min_time = _dyn_time
                             _min_time_min = _dyn_time_min
                         except Exception as _de:
@@ -435,10 +505,95 @@ class PositionManager:
         new_count = dca_count + 1
         step_vol = base_order * (vol_mult ** new_count)
 
+        # ============================================================
+        # F142: BINANCE'E GERCEK DCA EMRI GONDER
+        # ============================================================
+        # KRITIK: Emir basarisiz olursa DB guncellenmez
+        _dca_exec_price = None
+        _dca_exec_vol = None
+        if self.order_manager and not getattr(self.order_manager, 'test_mode', False):
+            try:
+                import asyncio as _aio_dca
+                # 1) Anlik fiyat
+                _ticker_dca = await _aio_dca.to_thread(
+                    self.order_manager.client.futures_symbol_ticker, symbol=symbol
+                )
+                _live_price = float(_ticker_dca['price'])
+                if _live_price <= 0:
+                    print(f"[DCA-EXEC] {symbol} gecersiz fiyat, DCA atlandi")
+                    return False
+                
+                # 2) Precision ve qty
+                _, _qty_prec = self.order_manager.get_symbol_precision(symbol)
+                _qty = round(step_vol / _live_price, _qty_prec)
+                if _qty <= 0:
+                    print(f"[DCA-EXEC] {symbol} qty=0 (step_vol={step_vol}, price={_live_price}), atlandi")
+                    return False
+                
+                # 3) Emir yonu: pozisyon yonu ile AYNI (DCA ek alim)
+                _dca_side = trade_type  # BUY pozisyon -> BUY DCA, SELL pozisyon -> SELL DCA
+                
+                # 4) MARKET emri gonder
+                print(f"[DCA-EXEC] {symbol} DCA#{new_count} MARKET {_dca_side} qty={_qty} (beklenen ~{step_vol} USDT)")
+                _order = await _aio_dca.to_thread(
+                    self.order_manager.client.futures_create_order,
+                    symbol=symbol,
+                    side=_dca_side,
+                    type="MARKET",
+                    quantity=_qty
+                )
+                
+                _oid = _order.get('orderId')
+                if not _oid:
+                    print(f"[DCA-EXEC] {symbol} emir reddedildi: {_order}")
+                    return False
+                
+                # 5) Gercek fill fiyatini al
+                try:
+                    import time as _t_dca
+                    _t_dca.sleep(0.3)
+                    _detail = await _aio_dca.to_thread(
+                        self.order_manager.client.futures_get_order,
+                        symbol=symbol, orderId=_oid
+                    )
+                    _dca_exec_price = float(_detail.get('avgPrice') or _detail.get('price') or _live_price)
+                    _exec_qty = float(_detail.get('executedQty') or _qty)
+                    _dca_exec_vol = _exec_qty * _dca_exec_price
+                    print(f"[DCA-EXEC] {symbol} FILL @ {_dca_exec_price} | qty={_exec_qty} | hacim={_dca_exec_vol:.4f} USDT")
+                except Exception as _fe:
+                    _dca_exec_price = _live_price
+                    _dca_exec_vol = _qty * _live_price
+                    print(f"[DCA-EXEC] {symbol} fill okunamadi, yaklasik: {_dca_exec_vol:.4f} USDT | {str(_fe)[:60]}")
+                
+            except Exception as _de:
+                print(f"[DCA-EXEC] {symbol} HATA: {str(_de)[:150]}")
+                return False
+        else:
+            # Test modu -> simule
+            _dca_exec_price = current_price
+            _dca_exec_vol = step_vol
+            print(f"[DCA-EXEC] {symbol} TEST modu DCA#{new_count} | {step_vol} USDT")
+
+        # ============================================================
+        # 6) DB GUNCELLE (emir basarili ise)
+        # ============================================================
+        # Gercek exec fiyati/hacmi kullan
+        _use_vol = _dca_exec_vol if _dca_exec_vol and _dca_exec_vol > 0 else step_vol
+        _use_price = _dca_exec_price if _dca_exec_price and _dca_exec_price > 0 else current_price
+
         old_total_vol = pos["total_vol"]
         old_avg = pos["avg_price"]
-        new_total_vol = old_total_vol + step_vol
-        new_avg = ((old_avg * old_total_vol) + (current_price * step_vol)) / new_total_vol
+        new_total_vol = old_total_vol + _use_vol
+        # F150: QTY-agirlikli ortalama (vol-agirlikli DEGIL)
+        # vol = qty * price oldugundan, vol ile qty ters iliskili.
+        # Dogru formül:  toplam_vol / toplam_qty
+        _old_qty_f150 = (old_total_vol / old_avg) if old_avg > 0 else 0
+        _new_qty_f150 = (_use_vol / _use_price) if _use_price > 0 else 0
+        _tot_qty_f150 = _old_qty_f150 + _new_qty_f150
+        if _tot_qty_f150 > 0:
+            new_avg = new_total_vol / _tot_qty_f150
+        else:
+            new_avg = ((old_avg * old_total_vol) + (_use_price * _use_vol)) / new_total_vol  # fallback
 
         # ⚡ DCA history kaydı (zaman + fiyat + kademe)
         try:
@@ -448,9 +603,9 @@ class PositionManager:
 
         old_history.append({
             "time": int(time.time()),
-            "price": float(current_price),
+            "price": float(_use_price),  # F142: gercek fill fiyati
             "step": int(new_count),
-            "vol": float(step_vol),
+            "vol": float(_use_vol),       # F142: gercek hacim
             "avg_after": float(new_avg),
         })
 
@@ -601,12 +756,99 @@ class PositionManager:
                 )
                 if result_f97.get("status") != "success":
                     print(f"[F97] {symbol} partial close hatasi: {result_f97}")
+                    # F126: Pozisyon Binance'te yoksa DB'den sil (kök çözüm)
+                    _msg = str(result_f97.get("message", "")).lower()
+                    if "bulunamadi" in _msg or "not found" in _msg or "does not exist" in _msg:
+                        print(f"[F126] {symbol} Binance'te yok! DB temizleniyor...")
+                        try:
+                            _c = get_db_connection()
+                            # F136+F138: once history'ye yaz (GERCEK exit_price ile)
+                            try:
+                                import time as _t_f136b
+                                _now_f136b = int(_t_f136b.time())
+                                _row_f136b = _c.execute("SELECT * FROM active_trades WHERE symbol = ?", (symbol,)).fetchone()
+                                if _row_f136b:
+                                    _p = dict(_row_f136b)
+                                    _avg_f = float(_p.get("avg_price") or 0)
+                                    _vol_f = float(_p.get("total_vol") or 0)
+                                    _tt_f = _p.get("trade_type", "BUY")
+                                    
+                                    # F138: gercek exit_price - parametre olarak gelen exit_price
+                                    _exit_real_f138 = float(exit_price) if exit_price and exit_price > 0 else _avg_f
+                                    
+                                    # F138: PnL hesabi
+                                    if _avg_f > 0:
+                                        if _tt_f == "BUY":
+                                            _pnl_pct_f138 = (_exit_real_f138 - _avg_f) / _avg_f
+                                        else:
+                                            _pnl_pct_f138 = (_avg_f - _exit_real_f138) / _avg_f
+                                    else:
+                                        _pnl_pct_f138 = 0
+                                    _pnl_usdt_f138 = _vol_f * _pnl_pct_f138
+                                    
+                                    _c.execute(
+                                        """INSERT INTO trade_history
+                                           (symbol, trade_type, total_vol, entry_price, initial_price, exit_price,
+                                            pnl_amount, pnl_pct, entry_time, exit_time,
+                                            strategy_name, dca_count, close_reason, leverage, funding_fee, commission)
+                                           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'RECONCILED', ?, 0, 0)""",
+                                        (symbol, _tt_f, _vol_f, _avg_f,
+                                         _p.get("initial_price") or _avg_f, _exit_real_f138,
+                                         _pnl_usdt_f138, _pnl_pct_f138 * 100,
+                                         _p.get("entry_time"), _now_f136b,
+                                         _p.get("strategy_name") or "UNKNOWN", _p.get("dca_count") or 0,
+                                         _p.get("leverage") or 1)
+                                    )
+                                    print(f"[F138] {symbol} exit={_exit_real_f138:.6f} | PnL={_pnl_usdt_f138:+.4f} USDT ({_pnl_pct_f138*100:+.2f}%)")
+                            except Exception as _h_f136b:
+                                print(f"[F136] {symbol} history hata: {str(_h_f136b)[:80]}")
+                            _c.execute("DELETE FROM active_trades WHERE symbol = ?", (symbol,))
+                            _c.commit()
+                            _c.close()
+                            print(f"[F126] {symbol} DB'den silindi + history'ye yazildi")
+                        except Exception as _e126:
+                            print(f"[F126] DB silme hatasi: {_e126}")
+                        return "RECONCILED"
                     return None
+
+                # ═══ F143: GERCEK EMIR DOGRULAMASI ═══
+                # partial_close_position "success" dönse bile Binance'te gerçekten
+                # pozisyon azalmış mı kontrol et. Azalmamışsa DB'yi GÜNCELLEME.
+                import os as _os_f143b
+                _sim_env_f143b = _os_f143b.environ.get("SIMULATE_ORDERS", "false").strip().lower() == "true"
+                _mode_f143b = result_f97.get("mode", "REAL")
+                _verified_f143b = result_f97.get("verified_reduction_qty", None)
+
+                if _mode_f143b == "TEST" and not _sim_env_f143b:
+                    print(f"[F143] {symbol} PT IPTAL: order_manager test_mode=True ama SIMULATE_ORDERS=false")
+                    print(f"[F143] {symbol} Binance'e gercek emir GONDERILMEDI - DB guncellenmiyor")
+                    return None
+
+                if _mode_f143b == "REAL" and _verified_f143b is not None and _verified_f143b <= 0:
+                    print(f"[F143] {symbol} PT IPTAL: Binance'te pozisyon AZALMADI "
+                          f"(delta={_verified_f143b}) - DB guncellenmiyor")
+                    return None
+
+                if _mode_f143b == "REAL" and _verified_f143b is None:
+                    print(f"[F143-UYARI] {symbol} verified_reduction_qty donmedi - "
+                          f"eski surum order_manager olabilir, DB guncelleniyor")
+
                 if result_f97.get("exit_price", 0) > 0:
                     exit_price = result_f97["exit_price"]
                     print(f"[F97] {symbol} partial fill: {exit_price}")
             except Exception as _e_f97:
                 print(f"[F97] {symbol} partial close exception: {_e_f97}")
+                # F126: Exception'da da ayni kontrol
+                _msg2 = str(_e_f97).lower()
+                if "bulunamadi" in _msg2 or "not found" in _msg2 or "does not exist" in _msg2:
+                    print(f"[F126] {symbol} (exception) Binance'te yok, DB temizleniyor...")
+                    try:
+                        _c2 = get_db_connection()
+                        _c2.execute("DELETE FROM active_trades WHERE symbol = ?", (symbol,))
+                        _c2.commit()
+                        _c2.close()
+                    except Exception: pass
+                    return "RECONCILED"
                 return None
 
         # --- PnL ---
@@ -802,6 +1044,40 @@ class PositionManager:
         # net_pnl = brut - komisyon + funding
         # (funding negatifse duser, pozitifse ekler)
         net_pnl = gross_pnl - commission + funding_fee
+        # F194d: ASAP kapanis -> cooldown
+        if trade.get("strategy_name") == "ASAP":
+            try:
+                from backend.strategies.asap import asap_set_cooldown
+                _cfg2 = load_config()
+                _a2 = _cfg2.get("strategies", {}).get("ASAP", {})
+                _rs = str(reason or "").upper()
+                if "PARTIAL" in _rs or "TP" in _rs or "TTP" in _rs or "TRAIL" in _rs:
+                    _cd = int(_a2.get("cooldownAfterTP", 1)) * 60
+                    asap_set_cooldown(symbol, _cd, "tp")
+                    print(f"[F194d] {symbol} on_tp -> cooldown {_cd}s")
+                else:
+                    _cd = int(_a2.get("cooldownAfterExit", 1)) * 60
+                    asap_set_cooldown(symbol, _cd, "exit")
+                    print(f"[F194d] {symbol} on_exit -> cooldown {_cd}s")
+            except Exception as _e194d:
+                print(f"[F194d] cooldown set hatasi: {_e194d}")
+        # F193b: ASAP TP/exit hook
+        if (trade.get("strategy_name") == "ASAP"):
+            try:
+                from backend.strategies.asap import asap_set_cooldown
+                _rsn = str(reason or "").upper()
+                _cfg_pm = load_config()
+                _asap_cfg = _cfg_pm.get("strategies", {}).get("ASAP", {})
+                if "PARTIAL" in _rsn or "TP" in _rsn or "TTP" in _rsn:
+                    _cd = int(_asap_cfg.get("cooldownAfterTP", 10)) * 60
+                    asap_set_cooldown(symbol, _cd, "tp")
+                    print(f"[F193b] {symbol} on_tp -> cooldown {int(_cd/60)} dk")
+                else:
+                    _cd = int(_asap_cfg.get("cooldownAfterExit", 30)) * 60
+                    asap_set_cooldown(symbol, _cd, "exit")
+                    print(f"[F193b] {symbol} on_exit -> cooldown {int(_cd/60)} dk")
+            except Exception as _e193b3:
+                print(f"[F193b] on_exit hatasi: {_e193b3}")
 
         # ⚡ VALIDASYON 3-4: Sadece force=False için
         if not force:
@@ -1116,7 +1392,31 @@ class PositionManager:
 
             tp_pct = params["takeProfit"] / 100
             sl_pct = params["stopLoss"] / 100
+            # F170c: SL mesafesi = DCA mesafesi x K (K default 1.5)
+            # Boylece SL, sonraki DCA seviyesinin ALTINDA kalir
+            # F171: Dinamik DCA mesafesi (cache) | fallback: config dcaMinDistancePct
+            _f170c_dca_dist = float(params.get("dcaMinDistancePct", 5.0))
+            if hasattr(self, "_dca_last_step") and symbol in self._dca_last_step:
+                _f170c_dca_dist = float(self._dca_last_step[symbol])
+            _f170c_k = float(params.get("slDcaMultiplier", 1.5))
+            _f170c_old_sl_pct = sl_pct
+            sl_pct = (_f170c_dca_dist * _f170c_k) / 100.0
+            # Log throttle: sembol basi 5 dk
+            if not hasattr(self, "_f170c_log"):
+                self._f170c_log = {}
+            import time as _t_f170c
+            _now_f170c = _t_f170c.time()
+            if _now_f170c - self._f170c_log.get(symbol, 0) >= 300:
+                self._f170c_log[symbol] = _now_f170c
+                print(f"[F171] {symbol} SL mesafe: %{_f170c_old_sl_pct*100:.2f} -> %{sl_pct*100:.2f} (next_step=%{_f170c_dca_dist:.2f} x K={_f170c_k})")
 
+            # F170: F84 LIQ-safe cap config ile kontrol (varsayilan KAPALI)
+            _f170_liq_safe = False
+            try:
+                _cfg_f170 = load_config()
+                _f170_liq_safe = bool(_cfg_f170.get("slLiqSafeCapEnabled", False))
+            except Exception:
+                pass
             # F84: LIQ-safe SL (SL > LIQ olmamali)
             try:
                 _lev_sl = max(1, int(pos.get("leverage") or 1))
@@ -1124,7 +1424,7 @@ class PositionManager:
                 _liq_pct_sl = (100.0 / _lev_sl) - 1.0
                 # SL = LIQ'in %85'i (emniyet payi)
                 _auto_sl_pct = (_liq_pct_sl * 0.85) / 100.0
-                if sl_pct > _auto_sl_pct:
+                if _f170_liq_safe and sl_pct > _auto_sl_pct:
                     _old_sl = sl_pct * 100
                     sl_pct = _auto_sl_pct
                     # Ayni pozisyon icin 1 kez log
@@ -1184,9 +1484,28 @@ class PositionManager:
                     else:
                         profit_pct = (entry_price - current_price) / entry_price
 
+            # F180: Time-based exit (maxHoldHours)
+            _f180_max_h = params.get("maxHoldHours")
+            if _f180_max_h and _f180_max_h > 0:
+                _f180_entry_ts = int(pos.get("entry_time") or 0)
+                if _f180_entry_ts > 0:
+                    import time as _t_f180
+                    _f180_age_h = (_t_f180.time() - _f180_entry_ts) / 3600.0
+                    if _f180_age_h >= _f180_max_h and profit_pct < 0:
+                        print(f"[F180] {symbol} TIME-EXIT: yas={_f180_age_h:.1f}s >= {_f180_max_h}s "
+                              f"pnl={profit_pct*100:.2f}% -> KAPAT")
+                        await self._execute_close(
+                            symbol, current_price,
+                            f"TIME-EXIT ({_f180_age_h:.1f}s, {profit_pct*100:.2f}%)"
+                        )
+                        self.trailing_state.pop(position_key, None)
+                        continue
+
             # 2. Stop Loss ⚡ [SL-AFTER-DCA]
             # SL_base = son DCA fiyati (varsa), yoksa avg_price
-            sl_base_price = entry_price
+            # F170b (Secenek B): SL base = initial_price (ilk giris)
+            # DCA oldukca asagida son DCA fiyatina kayar
+            sl_base_price = pos.get("initial_price") or entry_price
             try:
                 import json as _json_sl
                 _dh_sl = pos.get("dca_history") or "[]"
@@ -1194,10 +1513,13 @@ class PositionManager:
                 if _history_sl and len(_history_sl) > 0:
                     _last_dca_price = float(_history_sl[-1].get("price", 0))
                     if _last_dca_price > 0:
+                        # F170: SL base = son DCA fiyati
                         sl_base_price = _last_dca_price
+                        print(f"[F170] {symbol} SL base=son DCA ({sl_base_price:.6f}) [AVG={entry_price:.6f}]")
             except Exception as _e_sl:
                 print(f"[SL-DCA] history parse hatasi ({symbol}): {_e_sl}")
 
+            # F170b (Secenek B): sl_base_price her zaman dolu (initial veya son DCA)
             if trade_type == "BUY":
                 sl_trigger = sl_base_price * (1 - sl_pct)
                 sl_hit = current_price <= sl_trigger
@@ -1209,7 +1531,8 @@ class PositionManager:
                 # Gercek zarar yuzdesi (avg_price bazli, rapor icin)
                 _real_pct = ((current_price - entry_price) / entry_price * 100) if trade_type == "BUY" \
                             else ((entry_price - current_price) / entry_price * 100)
-                _base_label = "DCA" if sl_base_price != entry_price else "AVG"
+                # F170b: base = DCA ise 'DCA', degilse 'INIT'
+                _base_label = "DCA" if (sl_base_price != (pos.get("initial_price") or entry_price)) else "INIT"
                 print(f"[SL-DCA] {symbol} SL | base={sl_base_price:.6f} ({_base_label}) "
                       f"trigger={sl_trigger:.6f} cur={current_price:.6f} real={_real_pct:.2f}%")
                 await self._execute_close(symbol, current_price,
@@ -1241,6 +1564,22 @@ class PositionManager:
                 # ⚡ Test modunda min notional uygulanmaz (gercek emir yok)
                 _is_test = bool(getattr(self.order_manager, 'test_mode', False)) if self.order_manager else False
                 MIN_ORDER_USDT = 0.5 if _is_test else 5.0
+
+                # F130b: PT cok kucukse minPtUsdt'ye yukari cek
+                try:
+                    _cfg_f130b = load_config()
+                    _min_pt = float(_cfg_f130b.get("minPtUsdt", 5.5))
+                except Exception:
+                    _min_pt = 5.5
+                if not _is_test and pt_close_vol < _min_pt:
+                    _total_vol_f130b = float(pos["total_vol"] or 0)
+                    _safe_max_f130b = _total_vol_f130b * 0.90
+                    if _min_pt <= _safe_max_f130b:
+                        print(f"[F130b] {symbol} PT {pt_close_vol:.2f} -> {_min_pt:.2f} USDT (minPtUsdt)")
+                        pt_close_vol = _min_pt
+                    else:
+                        print(f"[F130b] {symbol} PT atlandi: total={_total_vol_f130b:.2f}, "
+                              f"minPtUsdt={_min_pt:.2f} > %90 ({_safe_max_f130b:.2f})")
                 
                 if pt_close_vol < MIN_ORDER_USDT:
                     print(f"[PARTIAL-TP] {symbol} atlandi: kapatilacak cok kucuk "
@@ -1269,7 +1608,11 @@ class PositionManager:
                         symbol, current_price, pt_close_vol, pt_percent_val, reason
                     )
                     
-                    if pt_result:
+                    if pt_result == "RECONCILED":
+                        # F126: Pozisyon Binance'te yoktu, DB'den silindi
+                        print(f"[F126] {symbol} reconcile edildi (pozisyon artik yok)")
+                        continue
+                    elif pt_result:
                         self.trailing_state[position_key] = {"active": False, "hwm": None}
                         print(f"[PARTIAL-TP] {symbol} trailing RESET | "
                               f"Kalan: {pt_result['remaining_volume']:.2f} USDT")

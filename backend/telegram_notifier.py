@@ -88,16 +88,12 @@ async def notify_close(
     side = "LONG" if trade_type == "BUY" else "SHORT"
     dca_info = f" (DCA:{dca_count})" if dca_count > 0 else ""
     
+    # F115: sadelestirilmis format
     text = (
-        f"{emoji} <b>POZİSYON KAPANDI</b>\n"
-        f"\n"
+        f"{emoji} <b>Kâr/Zarar:</b> {sign}{net_pnl:.4f} USDT\n"
+        f"<b>Profit:</b> {reason}\n"
         f"<b>Sembol:</b> {symbol}{dca_info}\n"
-        f"<b>Yön:</b> {side}\n"
-        f"<b>Giriş:</b> {_fmt_price(entry_price)}\n"
-        f"<b>Çıkış:</b> {_fmt_price(exit_price)}\n"
-        f"<b>Sebep:</b> {reason}\n"
-        f"<b>Kâr:</b> {sign}{pnl_pct:.2f}%\n"
-        f"<b>Net:</b> {sign}{net_pnl:.4f} USDT"
+        f"<b>Yön:</b> {side}"
     )
     return await send_telegram_message(text)
 

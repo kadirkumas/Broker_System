@@ -69,8 +69,55 @@ window._strategyColors = {
     'DYNAMIC_GRID':      { color: '#fcd535', name: 'Dynamic Grid (DCA)' },
     'DYNAMIC_GRID_REEL': { color: '#f6465d', name: 'Dynamic Grid REEL' },
     'DEEP_HUNTER':       { color: '#9c27b0', name: 'Deep Hunter' },
+    'EMA_TREND':         { color: '#00bcd4', name: 'EMA Trend' },
+    'ASAP':              { color: '#00e676', name: 'ASAP' },
     'MANUAL':            { color: '#848e9c', name: 'Manual' },
     'UNKNOWN':           { color: '#848e9c', name: 'Bilinmeyen' }
+};
+
+// F189: Strateji filtresi state ve fonksiyonlar
+window.stratFilter = localStorage.getItem('cryptoStratFilter') || 'all';
+
+window.setStratFilter = function(strat) {
+    window.stratFilter = strat;
+    localStorage.setItem('cryptoStratFilter', strat);
+    // F190: select degerini guncelle
+    const sel = document.getElementById('btp-strat-select');
+    if (sel && sel.value !== strat) sel.value = strat;
+    const posTab = document.getElementById('tab-positions');
+    const histTab = document.getElementById('tab-history');
+    const dailyTab = document.getElementById('tab-daily');
+    if (posTab && posTab.classList.contains('active') && window.renderBottomTrades) window.renderBottomTrades();
+    if (histTab && histTab.classList.contains('active') && window.renderHistoricalTrades) window.renderHistoricalTrades();
+    if (dailyTab && dailyTab.classList.contains('active') && window.renderDailyTrades) window.renderDailyTrades();
+};
+
+window.applyStrategyFilter = function(trades) {
+    if (!Array.isArray(trades)) return trades;
+    if (!window.stratFilter || window.stratFilter === 'all') return trades;
+    return trades.filter(t => {
+        const s = (t && (t.strategy_name || t.strategy)) || '';
+        return s === window.stratFilter;
+    });
+};
+
+window.buildStrategyFilterUI = function() {
+    const host = document.getElementById('btp-strat-filter');
+    if (!host) return;
+    const colors = window._strategyColors || {};
+    // F190: <select> dropdown
+    let html = '<select id="btp-strat-select" onchange="window.setStratFilter(this.value)">';
+    html += '<option value="all">🎯 Tüm Stratejiler</option>';
+    Object.keys(colors).forEach(key => {
+        if (key === 'UNKNOWN') return;
+        const info = colors[key];
+        html += '<option value="' + key + '">● ' + (info.name || key) + '</option>';
+    });
+    html += '</select>';
+    host.innerHTML = html;
+    // Mevcut secimi ayarla
+    const sel = document.getElementById('btp-strat-select');
+    if (sel) sel.value = window.stratFilter || 'all';
 };
 
 window.getStrategyDot = function(strategyName) {
@@ -235,52 +282,120 @@ window.updateTabCounts = async function() {
     const now = Date.now();
     if (now - window._lastTabCountsFetch < 3000) return;
     window._lastTabCountsFetch = now;
-    
+
     try {
+        // F196: Filtre bilinci
+        const _searchQ = document.getElementById('btp-search-input')
+            ? document.getElementById('btp-search-input').value.toUpperCase()
+            : '';
+        const _stratF = window.stratFilter || 'all';
+        const _hasFilter = (_searchQ.length > 0) || (_stratF !== 'all');
+
+        if (_hasFilter) {
+            // Filtre aktif -> istemci tarafi say
+            await window._f196_countFiltered(_searchQ, _stratF);
+            return;
+        }
+
+        // Filtre yok -> eski API yolu
         const res = await fetch('/api/stats/signals');
         const stats = await res.json();
-        
+
         const histTab = document.getElementById('tab-history');
         if (histTab) histTab.innerText = `İşlem Geçmişi(${stats.closed_positions})`;
-        
+
         const posTab = document.getElementById('tab-positions');
         if (posTab) posTab.innerText = `Pozisyonlar(${stats.active_positions})`;
-        
+
         // Günlük için ayrı endpoint
         const dailyRes = await fetch('/api/stats/daily?days=1');
         const dailyData = await dailyRes.json();
-        
-        // ⚡ SADECE bugünün satırını al (TR saati)
+
         let todayCount = 0, todayPnl = 0;
         if (Array.isArray(dailyData) && dailyData.length > 0) {
-            // TR saatine göre bugünün tarihi (YYYY-MM-DD)
             const _now = new Date();
             const _trNow = new Date(_now.getTime() + (3 * 60 * 60 * 1000));
             const todayKey = _trNow.getUTCFullYear() + '-' +
                              String(_trNow.getUTCMonth() + 1).padStart(2, '0') + '-' +
                              String(_trNow.getUTCDate()).padStart(2, '0');
-            
+
             const todayRow = dailyData.find(r => r.date === todayKey);
             if (todayRow) {
                 todayCount = todayRow.trades || 0;
                 todayPnl = todayRow.net_pnl || 0;
             }
-            // Bugün hiç işlem yoksa 0'da kalır (dünün değeri gösterilmez)
         }
-        
+
         const dailyTab = document.getElementById('tab-daily');
         if (dailyTab) dailyTab.innerText = `Günlük İşlemler(${todayCount})`;
-        
-        // ⚡ "Bugün" kutucuğunu her zaman güncelle
+
         const pnlEl = document.getElementById('daily-total-pnl');
         if (pnlEl) {
             const sign = todayPnl >= 0 ? '+' : '';
             pnlEl.innerText = `${sign}${todayPnl.toFixed(2)}$`;
             pnlEl.style.color = todayPnl >= 0 ? '#0ECB81' : '#F6465D';
         }
-        
+
     } catch(e) {
         console.error('Tab counts error:', e);
+    }
+};
+
+// F196: Filtre aktifken istemci tarafi say
+window._f196_countFiltered = async function(searchQ, stratFilter) {
+    try {
+        // 3 endpoint paralel
+        const [posRes, histRes, dailyRes] = await Promise.all([
+            fetch('/api/trade/active-with-pnl'),
+            fetch('/api/trade/history?limit=1000'),
+            fetch('/api/stats/daily?days=1')
+        ]);
+        let posArr = await posRes.json();
+        let histArr = await histRes.json();
+        const dailyArr = await dailyRes.json();
+
+        if (!Array.isArray(posArr)) posArr = [];
+        if (!Array.isArray(histArr)) histArr = [];
+
+        // Strateji filtresi
+        const _sf = (stratFilter && stratFilter !== 'all')
+            ? (arr) => arr.filter(t => (t.strategy_name || t.strategy || '') === stratFilter)
+            : (arr) => arr;
+
+        // SearchQ filtresi
+        const _sq = searchQ
+            ? (arr) => arr.filter(t => (t.symbol || '').toUpperCase().includes(searchQ))
+            : (arr) => arr;
+
+        const _pos = _sq(_sf(posArr));
+        const _hist = _sq(_sf(histArr));
+
+        // Bugünkü kapanan
+        const todayStr = new Date().toDateString();
+        const _todayHist = _hist.filter(t => new Date((t.exit_time || 0) * 1000).toDateString() === todayStr);
+
+        // Bugün PnL
+        let todayPnl = 0;
+        _todayHist.forEach(t => todayPnl += (t.pnl_amount || 0));
+
+        // UI guncelle
+        const posTab = document.getElementById('tab-positions');
+        if (posTab) posTab.innerText = `Pozisyonlar(${_pos.length})`;
+
+        const histTab = document.getElementById('tab-history');
+        if (histTab) histTab.innerText = `İşlem Geçmişi(${_hist.length})`;
+
+        const dailyTab = document.getElementById('tab-daily');
+        if (dailyTab) dailyTab.innerText = `Günlük İşlemler(${_todayHist.length})`;
+
+        const pnlEl = document.getElementById('daily-total-pnl');
+        if (pnlEl) {
+            const sign = todayPnl >= 0 ? '+' : '';
+            pnlEl.innerText = `${sign}${todayPnl.toFixed(2)}$`;
+            pnlEl.style.color = todayPnl >= 0 ? '#0ECB81' : '#F6465D';
+        }
+    } catch(e) {
+        console.error('[F196] filtered count error:', e);
     }
 };
 
@@ -293,6 +408,35 @@ window.syncTradeLabels = function(idx) {
     if (container.children.length !== allLabels.length * 2) { container.innerHTML = ''; allLabels.forEach(lbl => { lbl.el = null; lbl.lineEl = null; }); }
     allLabels.forEach((lbl) => {
         if (!lbl.el) { let div = document.createElement('div'); div.className = `trade-label ${lbl.colorClass}`; div.innerHTML = lbl.text; container.appendChild(div); lbl.el = div; let line = document.createElement('div'); line.className = `trade-line ${lbl.colorClass}`; container.appendChild(line); lbl.lineEl = line; }
+        // FIX F107d: POS-ENTRY etiket = STAR-0300 yildizi ile ayni boyut
+        if (lbl.type === 'POS-ENTRY' || (lbl.colorClass && String(lbl.colorClass).indexOf('pos-entry-lbl') >= 0)) {
+            try {
+                var _bsF107d = 6;
+                var _tsOpt = cObj.chart.timeScale().options();
+                if (_tsOpt && _tsOpt.barSpacing) _bsF107d = _tsOpt.barSpacing;
+                // FIX F107d: STAR-0300 ile ayni hesap (5-16px)
+                var _lwF107d = Math.max(5, Math.min(Math.round(_bsF107d), 16));
+                var _fsF107d = Math.max(8, Math.min(Math.round(_lwF107d * 0.75), 12));
+                // setProperty('important') ile CSS !important'i zorla ez
+                var _setProp = function(el, prop, val) {
+                    el.style.setProperty(prop, val, 'important');
+                };
+                _setProp(lbl.el, 'width', _lwF107d + 'px');
+                _setProp(lbl.el, 'min-width', _lwF107d + 'px');
+                _setProp(lbl.el, 'max-width', _lwF107d + 'px');
+                _setProp(lbl.el, 'height', _lwF107d + 'px');
+                _setProp(lbl.el, 'line-height', _lwF107d + 'px');
+                _setProp(lbl.el, 'padding', '0');
+                _setProp(lbl.el, 'font-size', _fsF107d + 'px');
+                _setProp(lbl.el, 'border-radius', '3px');
+                // Debug
+                if (!window._f107dLogged) {
+                    window._f107dLogged = true;
+                    console.log('[F107d] barSpacing=' + _bsF107d + ' labelW=' + _lwF107d + ' fontSize=' + _fsF107d);
+                }
+            } catch(eF107d) {}
+        }
+
         let x = cObj.chart.timeScale().timeToCoordinate(lbl.time); let yText = cObj.series.priceToCoordinate(lbl.price); let yLine = cObj.series.priceToCoordinate(lbl.linePrice);
         if (x === null || yText === null || yLine === null) { lbl.el.style.display = 'none'; lbl.lineEl.style.display = 'none'; return; }
         lbl.el.style.display = 'block'; lbl.lineEl.style.display = 'block';
@@ -300,6 +444,15 @@ window.syncTradeLabels = function(idx) {
         const _yOff = lbl.yOffset || 0; if (lbl.position === 'aboveBar') { const _offset = lbl.colorClass === 'active-entry' ? 65 : 55; finalY = yText - h - _offset - _yOff; lbl.lineEl.style.left = (x - 15) + 'px'; lbl.lineEl.style.top = (yLine - 1) + 'px'; } 
         else if (lbl.position === 'belowBar') { const _offset = lbl.colorClass === 'active-entry' ? 65 : 55; finalY = yText + _offset + _yOff; lbl.lineEl.style.left = (x - 15) + 'px'; lbl.lineEl.style.top = (yLine - 1) + 'px'; } 
         else if (lbl.position === 'onLine') { finalY = yText - h - 4; finalX = x + 8; lbl.lineEl.style.display = 'none'; }
+        // FIX F107e: POS-ENTRY hemen mum ustunde/altinda (STAR gibi)
+        if (lbl.type === 'POS-ENTRY' || (lbl.colorClass && String(lbl.colorClass).indexOf('pos-entry-lbl') >= 0)) {
+            if (lbl.position === 'aboveBar') {
+                finalY = yText - h - 3;  // 3px yukarida (STAR gibi)
+            } else {
+                finalY = yText + 3;  // 3px asagida
+            }
+        }
+
         lbl.el.style.left = finalX + 'px'; lbl.el.style.top = finalY + 'px';
     });
     // ⚡ Grid REEL seviye etiketlerini de guncelle
@@ -407,6 +560,11 @@ window.deleteHistoricalTrade = function(id, event) {
     if (event) event.stopPropagation();
     if (historicalTradesMap[id]) { delete historicalTradesMap[id]; deletedTradesSet.add(id); localStorage.setItem('cryptoTradeHistory_v2', JSON.stringify(historicalTradesMap)); localStorage.setItem('cryptoDeletedTrades_v2', JSON.stringify(Array.from(deletedTradesSet))); window.lastHistoryHash = ""; window.lastDailyHash = ""; window.refreshBottomPanel(); window.updateTabCounts(); }
 };
+
+// F189: sayfa acilisinda UI build
+setTimeout(function() {
+    if (window.buildStrategyFilterUI) window.buildStrategyFilterUI();
+}, 800);
 
 window.refreshBottomPanel = function() {
     window.updateTabCounts();
@@ -692,7 +850,7 @@ window.renderBottomTrades = async function() {
     const searchQ = document.getElementById('btp-search-input') ? document.getElementById('btp-search-input').value.toUpperCase() : '';
     
     try {
-        const res = await fetch('/api/trade/active');
+        const res = await fetch('/api/trade/active-with-pnl' /* F128: active-with-pnl */);
         const trades = await res.json();
         
         const priceMap = {};
@@ -700,7 +858,10 @@ window.renderBottomTrades = async function() {
         spotData.forEach(item => { priceMap[item.symbol] = item.lastPrice; });
         
         let posArray = [];
-        trades.forEach(t => {
+
+        // F189: strateji filtresi
+        const _f189_trades = window.applyStrategyFilter(trades);
+        _f189_trades.forEach(t => {
             const symbol = t.symbol;
             const displaySymbol = symbol + '.P';
             
@@ -746,6 +907,19 @@ window.renderBottomTrades = async function() {
                 type: t.trade_type === 'BUY' ? 'LONG' : 'SHORT',
                 typeRaw: t.trade_type,
                 totalVol: t.total_vol,
+                // F129: Binance gercek degerleri (F124)
+                notional_actual: t.notional_actual,
+                qty_actual: t.qty_actual,
+                binance_mark_price: t.binance_mark_price,
+                binance_entry_price: t.binance_entry_price,
+                on_binance: t.on_binance,
+                // F131: Binance hazir alanlari
+                binance_unrealized_profit: t.binance_unrealized_profit,
+                binance_liquidation_price: t.binance_liquidation_price,
+                binance_initial_margin: t.binance_initial_margin,
+                binance_leverage: t.binance_leverage,
+                binance_margin_type: t.binance_margin_type,
+                binance_break_even_price: t.binance_break_even_price,
                 avgPrice: t.avg_price,
                 initialPrice: t.initial_price || t.avg_price,
                 entryTime: t.entry_time,
@@ -780,7 +954,16 @@ window.renderBottomTrades = async function() {
                 case 'totalVol':     valA = a.totalVol; valB = b.totalVol; break;
                 case 'avgPrice':     valA = a.avgPrice; valB = b.avgPrice; break;
                 case 'currentPrice': valA = a.currentPrice; valB = b.currentPrice; break;
-                case 'pnl':          valA = a.pnl; valB = b.pnl; break;
+                case 'pnl':
+                    // F164: Sort = gorunen deger (Binance uPnL oncelikli)
+                    // Panelde gosterilen $ degeri ile ayni olsun
+                    valA = (a.binance_unrealized_profit !== undefined && a.on_binance)
+                        ? a.binance_unrealized_profit
+                        : (a.pnl || 0);
+                    valB = (b.binance_unrealized_profit !== undefined && b.on_binance)
+                        ? b.binance_unrealized_profit
+                        : (b.pnl || 0);
+                    break;
                 case 'entryTime':    valA = a.entryTime; valB = b.entryTime; break;
                 default:             valA = a.entryTime; valB = b.entryTime;
             }
@@ -788,11 +971,15 @@ window.renderBottomTrades = async function() {
             return (valA - valB) * dir;
         });
         
+        // F129b: pozisyon sayisini global degiskene yaz
+        window._posCount = posArray.length;
+        
         let totalCurrentVol = 0, totalMargin = 0, grossProfit = 0, grossLoss = 0;
         let activeCount = posArray.length;
         
         posArray.forEach(p => {
-            totalCurrentVol += p.totalVol;
+            // F124: Toplam hacim - gercek notional_actual varsa onu kullan
+            totalCurrentVol += (p.notional_actual != null && p.notional_actual > 0) ? p.notional_actual : p.totalVol;
             const lev = p.leverage || 1;
             totalMargin += p.totalVol / lev;  // ⚡ Marjin hesabı
             if (p.pnl > 0) grossProfit += p.pnl; else grossLoss += p.pnl;
@@ -838,13 +1025,20 @@ window.renderBottomTrades = async function() {
             const diffSec = Math.max(0, Math.floor(Date.now() / 1000) - p.entryTime);
             const d = Math.floor(diffSec / 86400), h = Math.floor((diffSec % 86400) / 3600), m = Math.floor((diffSec % 3600) / 60);
             const timeStr = `${d > 0 ? d + "g " : ""}${h > 0 ? h + "s " : ""}${m}dk`;
-            const pnlColor = p.pnl >= 0 ? '#0ECB81' : '#F6465D';
+            // F166: Renk = Binance uPnL isaretine gore (yon degil, KAR/ZARAR)
+            const pnlColor = (p.binance_unrealized_profit !== undefined && p.on_binance)
+                ? (p.binance_unrealized_profit >= 0 ? '#0ECB81' : '#F6465D')
+                : (p.pnl >= 0 ? '#0ECB81' : '#F6465D');
             const sign = p.pnl >= 0 ? '+' : '';
             const tagClass = p.type === 'LONG' ? 'pos-long' : 'pos-short';
             const typeIcon = p.type === 'LONG' ? '▲' : '▼';
             
-            const leverage = p.leverage || 1;
-            const margin = p.totalVol / leverage;
+            // F131: Binance'ten gelen leverage varsa onu kullan
+            const leverage = p.binance_leverage || p.leverage || 1;
+            // F131: Binance initialMargin varsa onu kullan
+            const margin = p.binance_initial_margin > 0 
+                ? p.binance_initial_margin 
+                : (p.totalVol / leverage);
             
             const dcaBg = p.dcaCount > 0 ? 'color:#fcd535; background:rgba(252,213,53,0.1);' : 'color:#848e9c;';
             const ptBadge = p.ptDone ? `<span title="Kısmi TP alındı" style="min-width:34px; text-align:center; font-size:10px; font-weight:600; padding:1px 4px; border-radius:3px; background:rgba(252,213,53,0.15); color:#fcd535;">PT✓</span>` : '';
@@ -864,9 +1058,17 @@ window.renderBottomTrades = async function() {
                 const _tagText = p.dcaCount > 0 ? 'DCA:' + p.dcaCount : 'Ana';
                 tagOrBadge = `<span style="min-width:44px; text-align:center; font-size:10px; font-weight:600; padding:1px 4px; border-radius:3px; ${dcaBg}">${_tagText}</span>`;
             }
-            const volCell = `<span style="display:inline-flex; align-items:center; justify-content:flex-end; gap:6px;"><span style="min-width:68px; text-align:right; color:#EAECEF; font-weight:600;">${p.totalVol.toFixed(2)} USDT</span><span style="min-width:26px; text-align:right; color:#fcd535; font-weight:600; font-size:10px;">${leverage}x</span><span style="min-width:82px; text-align:right; color:#0ECB81; font-weight:600; font-size:10px;">Marjin: ${margin.toFixed(2)}</span>${tagOrBadge}</span>`;
+            // F124: notional_actual || totalVol (fallback)
+            const _dispVol = (p.notional_actual != null && p.notional_actual > 0) ? p.notional_actual : p.totalVol;
+            const _volColor = (p.notional_actual != null && p.notional_actual > 0 && Math.abs(p.notional_actual - p.totalVol) / p.totalVol > 0.05) ? '#fcd535' : '#EAECEF';
+            const volCell = `<span style="display:inline-flex; align-items:center; justify-content:flex-end; gap:6px;"><span style="min-width:68px; text-align:right; color:${_volColor}; font-weight:600;">${_dispVol.toFixed(2)} USDT</span><span style="min-width:26px; text-align:right; color:#fcd535; font-weight:600; font-size:10px;">${leverage}x</span><span style="min-width:82px; text-align:right; color:#0ECB81; font-weight:600; font-size:10px;">Marjin: ${margin.toFixed(2)}</span>${tagOrBadge}</span>`;
             
-            html += `<tr class="${isActiveRow}" onclick="window.changeSymbol('${p.displaySymbol}')"><td class="center" onclick="event.stopPropagation(); window.toggleDcaExpand('${p.symbol}', event);" style="cursor:${p.dcaCount > 0 ? 'pointer' : 'default'}; color:#5d6471; font-size:11px; user-select:none; white-space:nowrap;">${posArray.indexOf(p) + 1}${p.dcaCount > 0 ? (window._expandedDca.has(p.symbol) ? ' <span style="color:#FCD535; font-weight:bold; font-size:9px;">&#9660;</span>' : ' <span style="color:#FCD535; font-size:9px;">&#9654;</span>') : ''}</td><td class="left" style="font-weight:600; cursor:pointer;">${p.displaySymbol}</td><td class="left ${tagClass}">${typeIcon} ${p.type}${window.getStrategyDot(p.strategyName)}${ptBadge}</td><td class="right" style="font-size:11px;">${volCell}</td><td class="right" style="color:#848e9c;">${window.formatPrice(p.initialPrice || p.avgPrice)}</td><td class="right" style="color:#fcd535; font-weight:600;">${window.formatPrice(p.avgPrice)}</td><td class="right">${window.formatPrice(p.currentPrice)}</td><td class="right" style="color:#F6465D; font-weight:600; font-size:11px;">${liqPrice > 0 ? window.formatPrice(liqPrice) : '—'}</td><td class="right" style="color:${pnlColor}; font-weight:bold;">${sign}${p.pnlPct.toFixed(2)}% (${sign}${p.pnl.toFixed(2)}$)</td><td class="right" style="color:#848e9c;">-${(p.totalVol * getDisplayCommission(p.symbol)).toFixed(4)}$</td><td class="right" style="color:#EAECEF; font-size:11px;">${window.formatDateTime(p.entryTime)}</td><td class="right" style="color:#848e9c;">${timeStr}</td><td class="center" onclick="event.stopPropagation();"><span class="btn-quick-close" onclick="window.quickClosePosition('${p.symbol}', event)" title="Pozisyonu kapat">✕</span></td></tr>`;
+            html += `<tr class="${isActiveRow}" onclick="window.changeSymbol('${p.displaySymbol}')"><td class="center" onclick="event.stopPropagation(); window.toggleDcaExpand('${p.symbol}', event);" style="cursor:${p.dcaCount > 0 ? 'pointer' : 'default'}; color:#5d6471; font-size:11px; user-select:none; white-space:nowrap;">${posArray.indexOf(p) + 1}${p.dcaCount > 0 ? (window._expandedDca.has(p.symbol) ? ' <span style="color:#FCD535; font-weight:bold; font-size:9px;">&#9660;</span>' : ' <span style="color:#FCD535; font-size:9px;">&#9654;</span>') : ''}</td><td class="left" style="font-weight:600; cursor:pointer;">${p.displaySymbol}</td><td class="left ${tagClass}">${typeIcon} ${p.type}${window.getStrategyDot(p.strategyName)}${ptBadge}</td><td class="right" style="font-size:11px;" title="${p.on_binance === false ? 'Binance\'te pozisyon bulunamadi!' : 'Binance: ' + (p.qty_actual || 0) + ' adet'}">${volCell}</td><td class="left" style="color:#848e9c;">${window.formatPrice(p.initialPrice || p.avgPrice)}</td><td class="left" style="color:#fcd535; font-weight:600; white-space:nowrap; min-width:160px;">${window.formatPrice(p.avgPrice || p.binance_entry_price)}${(p.binance_entry_price && p.avgPrice && Math.abs(p.binance_entry_price - p.avgPrice) / p.avgPrice > 0.0005) ? `<span style="opacity:0.55; font-weight:400; font-size:9px; margin-left:6px; white-space:nowrap; display:inline-block;">(BN: ${window.formatPrice(p.binance_entry_price)})</span>` : ''}</td><td class="right" style="white-space:nowrap; min-width:120px;">${window.formatPrice(p.binance_mark_price || p.currentPrice)}${(p.binance_break_even_price && p.binance_break_even_price > 0) ? `<span style="color:#848e9c; font-weight:400; font-size:10px; margin-left:8px; white-space:nowrap; display:inline-block;" title="Break Even: Bu fiyata gelirse komisyon+funding dahil net sifir">BE: ${window.formatPrice(p.binance_break_even_price)}</span>` : ""}</td><td class="center" style="color:#F6465D; font-weight:600; font-size:11px;">${(p.binance_liquidation_price > 0 ? window.formatPrice(p.binance_liquidation_price) : (liqPrice > 0 ? window.formatPrice(liqPrice) : '—'))}</td><td class="center" style="color:${pnlColor}; font-weight:bold;">${p.binance_unrealized_profit !== undefined && p.on_binance ? 
+                (p.binance_unrealized_profit >= 0 ? '+' : '') + 
+                ((p.binance_initial_margin > 0) ? (p.binance_unrealized_profit / p.binance_initial_margin * 100).toFixed(2) : p.pnlPct.toFixed(2)) + '% (' + 
+                (p.binance_unrealized_profit >= 0 ? '+' : '') + p.binance_unrealized_profit.toFixed(2) + '$)' +
+                ((p.binance_initial_margin > 0 && (p.binance_leverage || p.leverage)) ? ` <span style="font-size:10px; font-weight:500; margin-left:5px; color:#EAECEF;">(${((p.binance_unrealized_profit / p.binance_initial_margin * 100) / (p.binance_leverage || p.leverage || 1)).toFixed(2)}%)</span>` : '') :
+                (sign + p.pnlPct.toFixed(2) + '% (' + sign + p.pnl.toFixed(2) + '$)')}</td><td class="center" style="color:#848e9c;">-${(p.totalVol * getDisplayCommission(p.symbol)).toFixed(4)}$</td><td class="right" style="color:#EAECEF; font-size:11px;">${window.formatDateTime(p.entryTime)}</td><td class="right" style="color:#848e9c;">${timeStr}</td><td class="center" onclick="event.stopPropagation();"><span class="btn-quick-close" onclick="window.quickClosePosition('${p.symbol}', event)" title="Pozisyonu kapat">✕</span></td></tr>`;
 
             // ⚡ DCA Tree: her DCA için alt satır
             let _dcaHistory = [];
@@ -892,7 +1094,7 @@ window.renderBottomTrades = async function() {
 
                     html += `<tr style="background:rgba(252,213,53,0.04); cursor:pointer;" onclick="window.changeSymbol('${p.displaySymbol}')">
                         <td class="center" style="color:#5d6471; font-size:11px; padding-left:6px;">${_branch}</td>
-                        <td class="left" style="color:#FCD535; font-size:11px; font-weight:600; padding-left:16px;">DCA${_step}</td>
+                        <td class="left" style="color:#FCD535; font-size:11px; font-weight:600; padding-left:16px;">DCA${_step}${(p.initialPrice && _price) ? `<span style="color:#F6465D; font-weight:600; margin-left:6px; font-size:10px;" title="DCA acildigi andaki zarar yuzdesi">%${Math.abs(((p.type === "SHORT" ? (_price - p.initialPrice) : (p.initialPrice - _price)) / p.initialPrice) * 100).toFixed(2).replace(".", ",")}</span>`: ""}</td>
                         <td class="left"></td>
                         <td class="right" style="color:#FCD535; font-size:11px; font-weight:600;">+${_vol.toFixed(2)} USDT</td>
                         <td class="right" style="color:#EAECEF; font-size:11px;">${window.formatPrice(_price)}</td>
@@ -1132,6 +1334,15 @@ window.openBotConfigModal = async function() {
         try {
             var _mmode = cfg.margin_mode || 'cross';
             window._currentMarginMode = _mmode;
+            // FIX F104: combo UI'i config ile senkron et
+            try {
+                if (typeof window._setMarginModeUI === 'function') {
+                    window._setMarginModeUI(_mmode);
+                    console.log('[F104] Margin combo UI senkron:', _mmode);
+                }
+            } catch(_e_f104) {
+                console.warn('[F104] _setMarginModeUI hata:', _e_f104);
+            }
             var _mmSel = document.getElementById('cfg-margin-mode');
             if (_mmSel) _mmSel.value = _mmode;
         } catch(e) { console.warn('Margin mode yukleme:', e); }
@@ -1146,7 +1357,7 @@ window.openBotConfigModal = async function() {
         document.getElementById('cfg-limit-timeout').value = cfg.limitTimeoutSec || 3;
         document.getElementById('cfg-fallback-market').checked = cfg.fallbackToMarket !== false;
         
-        ['RSI_SCALPER', 'DYNAMIC_GRID', 'DYNAMIC_GRID_REEL', 'DEEP_HUNTER'].forEach(strat => {
+        ['RSI_SCALPER', 'DYNAMIC_GRID', 'DYNAMIC_GRID_REEL', 'DEEP_HUNTER', 'EMA_TREND', 'ASAP'].forEach(strat => {
             const s = (cfg.strategies || {})[strat] || {};
             
             const en = document.querySelector(`.strat-enabled[data-strategy="${strat}"]`);
@@ -1179,7 +1390,7 @@ window.openBotConfigModal = async function() {
         const status = await statusRes.json();
         updateBotModalStatus(status.running && status.config.active);
         
-                const tradesRes = await fetch('/api/trade/active');
+                const tradesRes = await fetch('/api/trade/active-with-pnl' /* F128: active-with-pnl */);
         const trades = await tradesRes.json();
         document.getElementById('bot-modal-active-count').innerText = trades.length;
         
@@ -1249,7 +1460,7 @@ window.saveBotConfig = async function() {
             strategies: {}
         };
         
-        ['RSI_SCALPER', 'DYNAMIC_GRID', 'DYNAMIC_GRID_REEL', 'DEEP_HUNTER'].forEach(strat => {
+        ['RSI_SCALPER', 'DYNAMIC_GRID', 'DYNAMIC_GRID_REEL', 'DEEP_HUNTER', 'EMA_TREND', 'ASAP'].forEach(strat => {
             const s = {};
             
             const en = document.querySelector(`.strat-enabled[data-strategy="${strat}"]`);
@@ -1322,7 +1533,7 @@ window.startBot = async function() {
 
 window.stopBot = async function() {
     try {
-        const tradesRes = await fetch('/api/trade/active');
+        const tradesRes = await fetch('/api/trade/active-with-pnl' /* F128: active-with-pnl */);
         const trades = await tradesRes.json();
         
         let closePositions = false;
@@ -2136,6 +2347,14 @@ window.openIndConfig = function(type, isEdit = false, editKey = null) {
         html += `<div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;"><span class="cfg-label">ATR Carpan</span><input type="number" id="cfg-dgr-atrm" class="search-input" style="width:80px;" value="${atrM}" step="0.5"></div>`;
         html += `<div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;"><span class="cfg-label">Mod</span><select id="cfg-dgr-mode" class="search-input" style="width:100px;"><option value="neutral" ${mode==='neutral'?'selected':''}>Neutral</option><option value="long" ${mode==='long'?'selected':''}>Long</option><option value="short" ${mode==='short'?'selected':''}>Short</option></select></div>`;
         html += `<div style="display:flex; justify-content:space-between; align-items:center;"><span class="cfg-label">Dagilim</span><select id="cfg-dgr-dist" class="search-input" style="width:100px;"><option value="arithmetic" ${dist==='arithmetic'?'selected':''}>Aritmetik</option><option value="geometric" ${dist==='geometric'?'selected':''}>Geometrik</option></select></div>`;
+    } else if (type === 'EMA_TREND') {
+        document.getElementById('config-title').innerText = 'EMA Trend Ayarlari';
+        let emaP = defaultParams.emaPeriod || 200;
+        let lEn = defaultParams.longTrade !== false;
+        let sEn = defaultParams.shortTrade !== false;
+        html += `<div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;"><span class="cfg-label">EMA Period</span><input type="number" id="cfg-ema-trend-period" class="search-input" style="width:80px;" value="${emaP}" step="10"></div>`;
+        html += `<div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;"><span class="cfg-label">LONG Aktif</span><input type="checkbox" id="cfg-ema-trend-len" ${lEn ? 'checked' : ''}></div>`;
+        html += `<div style="display:flex; justify-content:space-between; align-items:center;"><span class="cfg-label">SHORT Aktif</span><input type="checkbox" id="cfg-ema-trend-sen" ${sEn ? 'checked' : ''}></div>`;
     } else if (type === 'DEEP_HUNTER') {
         document.getElementById('config-title').innerText = 'Deep Hunter Ayarlari';
         let emaP = defaultParams.emaPeriod || 200;
@@ -2190,6 +2409,12 @@ window.saveConfigParams = function() {
         params.distributionType = document.getElementById('cfg-dgr-dist').value || 'arithmetic';
         isMarker = true;
         nameStr = `Dynamic Grid REEL (${params.gridCount})`;
+    } else if (type === 'EMA_TREND') {
+        params.emaPeriod = parseInt(document.getElementById('cfg-ema-trend-period').value) || 200;
+        params.longTrade = document.getElementById('cfg-ema-trend-len').checked;
+        params.shortTrade = document.getElementById('cfg-ema-trend-sen').checked;
+        isMarker = true;
+        nameStr = `EMA Trend (${params.emaPeriod})`;
     } else if (type === 'DEEP_HUNTER') {
         params.emaPeriod = parseInt(document.getElementById('cfg-dh-emap').value) || 200;
         params.rsiPeriod = parseInt(document.getElementById('cfg-dh-rsip').value) || 7;
@@ -2321,6 +2546,7 @@ window.recalculateAllIndicators = function(idx) {
             if (val.type === 'DYNAMIC_GRID') result = window.calcDynamicGrid(cObj.rawCandles, val.params, cObj);
             if (val.type === 'DYNAMIC_GRID_REEL') result = window.calcDynamicGridReel(cObj.rawCandles, val.params, cObj);
             if (val.type === 'DEEP_HUNTER') result = window.calcDeepHunter(cObj.rawCandles, val.params, cObj);
+            if (val.type === 'EMA_TREND') result = window.calcEmaTrend(cObj.rawCandles, val.params, cObj);
 
             if (result) {
                 if (!val.hidden) { cObj.strategyMarkers = cObj.strategyMarkers.concat(result.markers || []); cObj.tradeLabels = cObj.tradeLabels.concat(result.tradeLabels || []); }
@@ -2718,7 +2944,7 @@ window.onload = async () => {
     // ⚡ Aktif pozisyonlarin komisyon oranlarini on-yukle
     setTimeout(async () => {
         try {
-            const res = await fetch('/api/trade/active');
+            const res = await fetch('/api/trade/active-with-pnl' /* F128: active-with-pnl */);
             const trades = await res.json();
             if (Array.isArray(trades)) {
                 const symbols = [...new Set(trades.map(t => t.symbol))];
@@ -2738,7 +2964,31 @@ window.onload = async () => {
     window.updateTabCounts();
     //window.switchBottomTab('signals'); // ⚡ Default olarak Sinyaller sekmesi açılsın
     
-    setInterval(window.refreshBottomPanel, 8000); 
+    // F129b: Adaptif refresh (pozisyon sayisina gore)
+    window._posCount = 0;
+    window._refreshTimer = null;
+    
+    window._getAdaptiveMs = function() {
+        const n = window._posCount || 0;
+        if (n <= 20) return 2000;
+        if (n <= 50) return 4000;
+        if (n <= 100) return 6000;
+        return 10000;
+    };
+    
+    window._adaptiveRefresh = function() {
+        if (document.hidden) {
+            window._refreshTimer = setTimeout(window._adaptiveRefresh, 30000);
+            return;
+        }
+        try { window.refreshBottomPanel(); } catch(e) {}
+        const ms = window._getAdaptiveMs();
+        window._refreshTimer = setTimeout(window._adaptiveRefresh, ms);
+    };
+    
+    setTimeout(window._adaptiveRefresh, 3000);
+    console.log('[F129b] Adaptif refresh aktif');
+
 };
 
 setInterval(() => {
@@ -3122,7 +3372,7 @@ window.updateMarginPreview = function(strategy) {
 
 // Modal açıldığında tüm marjin önizlemelerini güncelle
 window.updateAllMarginPreviews = function() {
-    ['RSI_SCALPER', 'DYNAMIC_GRID', 'DYNAMIC_GRID_REEL', 'DEEP_HUNTER'].forEach(s => window.updateMarginPreview(s));
+    ['RSI_SCALPER', 'DYNAMIC_GRID', 'DYNAMIC_GRID_REEL', 'DEEP_HUNTER', 'EMA_TREND', 'ASAP'].forEach(s => window.updateMarginPreview(s));
 };
 
 // =============================================================
@@ -3155,7 +3405,7 @@ window.jumpToSymbolWithTrades = function(symbol) {
     const cleanSym = symbol.replace('.P', '');
     setTimeout(() => {
         window.showSymbolTrades(cleanSym);
-    }, 900);
+    }, 250);
 };
 
 window.showSymbolTrades = async function(symbol, idx = null) {
@@ -3169,8 +3419,8 @@ window.showSymbolTrades = async function(symbol, idx = null) {
     
     try {
         const [histRes, activeRes] = await Promise.all([
-            fetch('/api/trade/history?limit=500'),
-            fetch('/api/trade/active')
+            fetch('/api/trade/history?symbol=' + cleanSym + '&limit=100'),
+            fetch('/api/trade/active-with-pnl' /* F128: active-with-pnl */)
         ]);
         
         const history = await histRes.json();
@@ -3195,7 +3445,10 @@ window.showSymbolTrades = async function(symbol, idx = null) {
                 const firstCandleTime = cObj.rawCandles.length > 0 ? cObj.rawCandles[0].time : 0;
                 const lastCandleTime = cObj.lastCandleTime || 0;
                 
-                let t1 = _alignTf(time1), t2 = _alignTf(time2);
+                // FIX F103c: inline _alignTf (TDZ kok cozumu)
+                const _tfSecAL = window.getIntervalSeconds(cObj.interval || '5m') || 300;
+                const _alignTfAL = (t) => t ? Math.floor(t / _tfSecAL) * _tfSecAL : t;
+                let t1 = _alignTfAL(time1), t2 = _alignTfAL(time2);
                 if (t1 < firstCandleTime) t1 = firstCandleTime;
                 if (t2 < firstCandleTime) t2 = firstCandleTime;
                 if (t1 > lastCandleTime) t1 = lastCandleTime;
@@ -3226,6 +3479,36 @@ window.showSymbolTrades = async function(symbol, idx = null) {
         const now = Math.floor(Date.now() / 1000);
         const lastTime = (cObj.lastCandleTime && cObj.lastCandleTime > now) ? cObj.lastCandleTime : now;
 
+        // FIX F103d: ORT yatay kesikli yesil cizgi + LABEL
+        if (symbolActive.length > 0) {
+            try {
+                const _posF103 = symbolActive[0];
+                const _avgPF103 = _posF103.avg_price;
+                const _tfSecF103 = window.getIntervalSeconds(cObj.interval || '5m') || 300;
+                const _entryTF103 = _posF103.entry_time ? Math.floor(_posF103.entry_time / _tfSecF103) * _tfSecF103 : null;
+                if (_avgPF103 > 0 && _entryTF103) {
+                    const _ortSeries = cObj.chart.addLineSeries({
+                        color: 'rgba(14, 203, 129, 0.85)',
+                        lineWidth: 1,
+                        lineStyle: 2,                 // dashed
+                        crosshairMarkerVisible: false,
+                        lastValueVisible: true,       // ← LABEL GORUNUR
+                        priceLineVisible: false,
+                        title: 'ORT',
+                        autoscaleInfoProvider: function() { return null; }
+                    });
+                    _ortSeries.setData([
+                        { time: _entryTF103, value: _avgPF103 },
+                        { time: lastTime, value: _avgPF103 }
+                    ]);
+                    lines.push(_ortSeries);
+                    console.log('[F103d] ORT cizgi + label eklendi:', _avgPF103);
+                }
+            } catch(eF103d) {
+                console.warn('[F103d] ORT line hata:', eF103d);
+            }
+        }
+
         // ⚡ Marker hizalama: unix saniyeyi mum basina yuvarla
         const _tfSec = window.getIntervalSeconds(cObj.interval || '5m') || 300;
         const _alignTf = (t) => t ? Math.floor(t / _tfSec) * _tfSec : t;
@@ -3242,12 +3525,39 @@ window.showSymbolTrades = async function(symbol, idx = null) {
                 return;
             }
             
+            // FIX F107: Nokta gizle, yerine L/S etiketi
             markers.push({
                 time: entryTime,
                 position: isLong ? 'belowBar' : 'aboveBar',
-                color: '#FCD535',
+                color: '#0ECB81',
                 shape: 'circle',
-                size: 0.1
+                size: 0
+            });
+            // FIX F107b: L/S etiketini mumun TEPESINE/DIBINE yerlestir.
+            // Giris fiyatina gore konumlanirsa etiket yanlis yere duser.
+            // Ilgili mumu bul, SHORT icin high, LONG icin low kullan.
+            var _candles107b = cObj.rawCandles || cObj.candles || [];
+            var _candle107b = null;
+            for (var _ci107b = _candles107b.length - 1; _ci107b >= 0; _ci107b--) {
+                if (_candles107b[_ci107b].time === entryTime) {
+                    _candle107b = _candles107b[_ci107b];
+                    break;
+                }
+            }
+            var _lblPrice107b = initialPrice;
+            if (_candle107b) {
+                _lblPrice107b = isLong ? _candle107b.low : _candle107b.high;
+            }
+            tradeLabels.push({
+                time: entryTime,
+                price: _lblPrice107b,
+                linePrice: initialPrice,
+                text: isLong ? 'L' : 'S',
+                type: 'POS-ENTRY',
+                isExit: false,
+                position: isLong ? 'belowBar' : 'aboveBar',
+                colorClass: isLong ? 'pos-entry-lbl long' : 'pos-entry-lbl short',
+                yOffset: 0
             });
             
             const lineEndTime = lastTime > entryTime ? lastTime : entryTime + 60;
@@ -3258,33 +3568,9 @@ window.showSymbolTrades = async function(symbol, idx = null) {
             const avgPrice = pos.avg_price;
             const dcaCount = pos.dca_count || 0;
 
-            // 1) Giriş etiketi (üstte)
-            tradeLabels.push({
-                time: entryTime,
-                price: initialPrice,
-                linePrice: initialPrice,
-                text: `G: ${window.formatPrice(initialPrice)}`,
-                type: isLong ? 'LONG' : 'SHORT',
-                isExit: false,
-                position: isLong ? 'belowBar' : 'aboveBar',
-                colorClass: 'active-entry',
-                yOffset: 0
-            });
+            // FIX F103: Giriş etiketi kaldirildi (nokta + ORT cizgisi yeterli)
 
-            // 2) Ort./DCA etiketi (altta)
-            if (dcaCount > 0 && avgPrice && Math.abs(avgPrice - initialPrice) > 0.000001) {
-                tradeLabels.push({
-                    time: entryTime,
-                    price: initialPrice,
-                    linePrice: avgPrice,
-                    text: `ORT: ${window.formatPrice(avgPrice)}`,
-                    type: isLong ? 'LONG' : 'SHORT',
-                    isExit: false,
-                    position: isLong ? 'belowBar' : 'aboveBar',
-                    colorClass: 'active-entry',
-                    yOffset: 34
-                });
-            }
+            // FIX F103: ORT etiketi kaldirildi (yerine yatay cizgi var)
             
             // ⚡ DCA kademeleri: dca_history'den gercek zaman + fiyat
             let dcaHistory = [];
@@ -3315,23 +3601,12 @@ window.showSymbolTrades = async function(symbol, idx = null) {
                     markers.push({
                         time: dcaTime,
                         position: isLong ? 'belowBar' : 'aboveBar',
-                        color: '#FCD535',
+                        color: '#0ECB81',  // FIX F102: yesil
                         shape: 'circle',
-                        size: 0.3
+                        size: 0.1
                     });
 
-                    // DCA etiketi
-                    // DCA label - mum uzerinde, fiyat ile birlikte
-                    tradeLabels.push({
-                        time: dcaTime,
-                        price: dcaPrice,
-                        linePrice: dcaPrice,
-                        text: `DCA${dcaStep}: ${window.formatPrice(dcaPrice)}`,
-                        type: isLong ? 'LONG' : 'SHORT',
-                        isExit: false,
-                        position: 'belowBar',
-                        colorClass: 'active-entry'
-                    });
+                    // FIX F103: DCA etiketi kaldirildi (nokta yeterli)
                 });
             }
         });
@@ -3344,37 +3619,51 @@ window.showSymbolTrades = async function(symbol, idx = null) {
             const isLong = trade.trade_type === 'BUY';
             const isProfit = trade.pnl_amount >= 0;
             
-            // ⚡ TUM islemler gosterilir - filtreleme YOK
-            // (Anormal testnet islemleri de gorunsun, kullanici karar verir)
-            
+            // FIX F108: Giriş nokta -> L/S etiketi (gizle)
             markers.push({
                 time: entryTime,
                 position: isLong ? 'belowBar' : 'aboveBar',
                 color: isLong ? '#0ECB81' : '#F6465D',
                 shape: 'circle',
-                size: 1
+                size: 0
             });
-            
-            markers.push({
-                time: exitTime,
-                position: isLong ? 'aboveBar' : 'belowBar',
-                color: isProfit ? '#0ECB81' : '#F6465D',
-                shape: 'circle',
-                size: 1
-            });
-            
-            addLine(entryTime, entryPrice, exitTime, exitPrice, isProfit ? 'rgba(14,203,129,0.35)' : 'rgba(246,70,93,0.35)', 1, true);
-            
             tradeLabels.push({
                 time: entryTime,
                 price: entryPrice,
                 linePrice: entryPrice,
-                text: `${window.formatPrice(entryPrice)}`,
-                type: isLong ? 'LONG' : 'SHORT',
+                text: isLong ? 'L' : 'S',
+                type: 'POS-ENTRY',
                 isExit: false,
                 position: isLong ? 'belowBar' : 'aboveBar',
-                colorClass: isLong ? 'long-entry' : 'short-entry'
+                colorClass: isLong ? 'pos-entry-lbl long' : 'pos-entry-lbl short',
+                yOffset: 0
             });
+            
+            // Çıkış nokta (aynı kalır)
+            // F112: karli cikis marker'i kaldirildi (sadece yesil nokta gizlendi)
+            if (!isProfit) {
+                markers.push({
+                    time: exitTime,
+                    position: isLong ? 'aboveBar' : 'belowBar',
+                    color: '#F6465D',
+                    shape: 'circle',
+                    size: 1
+                });
+            }
+            
+            addLine(entryTime, entryPrice, exitTime, exitPrice, isProfit ? 'rgba(14,203,129,0.35)' : 'rgba(246,70,93,0.35)', 1, true);
+            
+            // F111: giris fiyat etiketi kaldirildi (kullanici istegi)
+            // tradeLabels.push({
+            //     time: entryTime,
+            //     price: entryPrice,
+            //     linePrice: entryPrice,
+            //     text: `${window.formatPrice(entryPrice)}`,
+            //     type: isLong ? 'LONG' : 'SHORT',
+            //     isExit: false,
+            //     position: isLong ? 'belowBar' : 'aboveBar',
+            //     colorClass: isLong ? 'long-entry' : 'short-entry'
+            // });
             
             const sign = isProfit ? '+' : '';
             tradeLabels.push({
@@ -3795,7 +4084,7 @@ window.autoCheckActivePositions = async function() {
     const cleanSym = cObj.symbol.replace('.P', '');
 
     try {
-        const res = await fetch('/api/trade/active');
+        const res = await fetch('/api/trade/active-with-pnl' /* F128: active-with-pnl */);
         const trades = await res.json();
         if (!Array.isArray(trades)) return;
 
@@ -3803,8 +4092,19 @@ window.autoCheckActivePositions = async function() {
         const symbolChanged = (window._lastActiveSymbol !== cObj.symbol);
         const neverLoaded = !cObj.userTrades || (cObj.userTrades.markers || []).length === 0;
 
-        if (symbolChanged || neverLoaded) {
-            console.log(`[AUTO] Sembol: ${window._lastActiveSymbol} -> ${cObj.symbol}`);
+        // F162: Aktif sembolun pozisyonu KAPANDI mi?
+        window._lastTradeSyms = window._lastTradeSyms || new Set();
+        const currentSyms = new Set(trades.map(t => t.symbol));
+        const wasOpen = window._lastTradeSyms.has(cleanSym);
+        const stillOpen = currentSyms.has(cleanSym);
+        const justClosed = wasOpen && !stillOpen;
+        window._lastTradeSyms = currentSyms;
+
+        if (symbolChanged || neverLoaded || justClosed) {
+            const reason = symbolChanged ? 'sembol degisti'
+                          : neverLoaded ? 'ilk yukleme'
+                          : 'pozisyon kapandi';
+            console.log(`[F162] Chart yenile: ${reason} | ${cleanSym}`);
             window._lastActiveSymbol = cObj.symbol;
             await window.showSymbolTrades(cleanSym);
         }
@@ -7068,7 +7368,7 @@ window.calculateRiskMetrics = async function() {
         const balance = parseFloat(wallet.balance) || 0;
 
         // 2. Aktif pozisyonlar
-        const tRes = await fetch('/api/trade/active');
+        const tRes = await fetch('/api/trade/active-with-pnl' /* F128: active-with-pnl */);
         const trades = await tRes.json();
 
         let usedMargin = 0;
@@ -7413,7 +7713,9 @@ window.dismissCriticalOverlay = function() {
                 'RSI_SCALPER': 'RSI Scalper',
                 'DYNAMIC_GRID': 'Dynamic Grid (DCA)',
                 'DYNAMIC_GRID_REEL': 'Dynamic Grid REEL',
-                'DEEP_HUNTER': 'Deep Hunter'
+                'DEEP_HUNTER': 'Deep Hunter',
+                'EMA_TREND': 'EMA Trend',
+                'ASAP': 'ASAP'
             };
             var _stratLabel = _stratMap[strategy] || strategy;
             var _confirmMsg =
@@ -11585,7 +11887,7 @@ console.log('[F64] quickClosePosition hazir');
 
     async function _fetchActivePosSymbols() {
         try {
-            var res = await fetch('/api/trade/active');
+            var res = await fetch('/api/trade/active-with-pnl' /* F128: active-with-pnl */);
             if (!res.ok) return;
             var arr = await res.json();
             if (!Array.isArray(arr)) return;
@@ -11723,4 +12025,249 @@ console.log('[F64] quickClosePosition hazir');
     window._scrollToPosition = _scrollToPosition;
 
     console.log('[CENTER-POS] Hazir');
+})();
+
+/* ============================================================
+   FIX F106b calcEmaTrend - Sade mor EMA cizgisi
+   ============================================================ */
+(function() {
+    'use strict';
+
+    function _f106bEma(prices, period) {
+        var len = prices.length;
+        var result = new Array(len);
+        for (var i = 0; i < len; i++) result[i] = null;
+        if (len < period || period < 1) return result;
+
+        var k = 2 / (period + 1);
+        var sum = 0;
+        for (var i = 0; i < period; i++) sum += prices[i];
+        var ema = sum / period;
+        result[period - 1] = ema;
+        for (var i = period; i < len; i++) {
+            ema = prices[i] * k + ema * (1 - k);
+            result[i] = ema;
+        }
+        return result;
+    }
+
+    window.calcEmaTrend = function(data, params, cObj, isBackground) {
+        if (!cObj.tradeLineSeriesArr) cObj.tradeLineSeriesArr = [];
+
+        // Eski EMA_TREND serilerini temizle
+        if (cObj.chart && cObj._emaTrendSeries) {
+            cObj._emaTrendSeries.forEach(function(ls) {
+                try { cObj.chart.removeSeries(ls); } catch(e) {}
+            });
+        }
+        cObj._emaTrendSeries = [];
+
+        if (isBackground) {
+            return { markers: [], lastTrade: null, tradeLabels: [] };
+        }
+
+        var emaPeriod = parseInt(params.emaPeriod) || 200;
+        if (!data || data.length < 5) {
+            return { markers: [], lastTrade: null, tradeLabels: [] };
+        }
+
+        var closes = data.map(function(c) { return c.close; });
+        var emaArr = _f106bEma(closes, emaPeriod);
+
+        // EMA cizgisi (sadece)
+        if (cObj.chart) {
+            var emaData = [];
+            for (var i = 0; i < data.length; i++) {
+                if (emaArr[i] !== null && emaArr[i] !== undefined) {
+                    emaData.push({ time: data[i].time, value: emaArr[i] });
+                }
+            }
+            if (emaData.length > 0) {
+                try {
+                    var emaSeries = cObj.chart.addLineSeries({
+                        color: 'rgba(156, 39, 176, 0.9)',  // mor
+                        lineWidth: 2,
+                        crosshairMarkerVisible: false,
+                        lastValueVisible: false,           // sag label gizli
+                        priceLineVisible: false,
+                        title: '',
+                        autoscaleInfoProvider: function() { return null; }
+                    });
+                    emaSeries.setData(emaData);
+                    cObj._emaTrendSeries.push(emaSeries);
+                    cObj.tradeLineSeriesArr.push(emaSeries);
+                } catch(e) {
+                    console.warn('[F106b] EMA seri hatasi:', e);
+                }
+            }
+        }
+
+        return { markers: [], lastTrade: null, tradeLabels: [] };
+    };
+
+    console.log('[F106b] EMA_TREND chart gostergesi (sade mor cizgi) hazir');
+})();
+
+/* FIX F107 - Pozisyon giris L/S stili */
+(function() {
+    'use strict';
+    if (document.getElementById('f107-pos-entry-style')) return;
+
+    var st = document.createElement('style');
+    st.id = 'f107-pos-entry-style';
+    st.textContent = [
+        '.trade-label.pos-entry-lbl {',
+        '    min-width: 8px;',
+        '    height: auto;',
+        '    line-height: 1 !important;',
+        '    padding: 0 !important;',
+        '    border-radius: 4px !important;',
+        '    font-size: 12px !important;',
+        '    font-weight: 900 !important;',
+        '    color: #fff !important;',
+        '    text-align: center !important;',
+        '    box-shadow: 0 0 6px rgba(0,0,0,0.6) !important;',
+        '    border: 1px solid rgba(255,255,255,0.15) !important;',
+        '}',
+        '.trade-label.pos-entry-lbl.long {',
+        '    background: #0ECB81 !important;',
+        '}',
+        '.trade-label.pos-entry-lbl.short {',
+        '    background: #F6465D !important;',
+        '}',
+        '.trade-label.pos-entry-lbl + .trade-line.pos-entry-lbl {',
+        '    display: none !important;',
+        '}'
+    ].join('\n');
+    document.head.appendChild(st);
+    console.log('[F107] L/S marker stili yuklendi');
+})();
+
+
+/* ============================================================
+   F152a: "f" kisayolu -> chart gizle/goster (trade panel fullscreen)
+   - Input/textarea/select icinde calismaz
+   - Ctrl/Alt/Shift/Meta ile calismaz
+   ============================================================ */
+(function() {
+    'use strict';
+
+    document.addEventListener('keydown', function(e) {
+        // 1) Input guard
+        var t = e.target;
+        if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' ||
+                  t.tagName === 'SELECT' || t.isContentEditable)) {
+            return;
+        }
+        // 2) Modifier guard (tarayici kisayollariyla cakismasin)
+        if (e.ctrlKey || e.altKey || e.metaKey || e.shiftKey) {
+            return;
+        }
+        // 3) "f" / "F"
+        if (e.key === 'f' || e.key === 'F') {
+            e.preventDefault();
+            if (typeof window.toggleTradePanelFullscreen === 'function') {
+                window.toggleTradePanelFullscreen();
+            } else {
+                console.warn('[F152a] toggleTradePanelFullscreen tanimli degil');
+            }
+        }
+    });
+
+    console.log('[F152a] "f" kisayolu hazir (chart gizle/goster)');
+})();
+
+
+/* ============================================================
+   F163: Pozisyon tablosu otomatik yenileme
+   - Her 10 sn, sadece positions sekmesi aktifse
+   - Sayfa gizliyse durur (tarayici tasarrufu)
+   - Siralama korunur (positionsSortCol/Dir global)
+   ============================================================ */
+(function() {
+    'use strict';
+
+    var REFRESH_MS = 10000;  // 10 sn
+    var timer = null;
+
+    function tick() {
+        // Sayfa gizliyse atla
+        if (document.hidden) return;
+
+        // Sadece positions sekmesi aktifse
+        var posTab = document.getElementById('tab-positions');
+        if (!posTab || !posTab.classList.contains('active')) return;
+
+        // Alt panel gorunur mu?
+        var panel = document.getElementById('bottom-trade-panel');
+        if (panel && panel.classList.contains('collapsed')) return;
+
+        // Refresh (siralama state korunur)
+        if (typeof window.refreshBottomPanel === 'function') {
+            try {
+                window.refreshBottomPanel();
+            } catch(e) {
+                console.warn('[F163] refresh hata:', e);
+            }
+        }
+    }
+
+    function start() {
+        if (timer) return;
+        timer = setInterval(tick, REFRESH_MS);
+        console.log('[F163] Pozisyon tablosu auto-refresh: ' + (REFRESH_MS/1000) + 'sn');
+    }
+
+    function stop() {
+        if (timer) {
+            clearInterval(timer);
+            timer = null;
+        }
+    }
+
+    // Sayfa gorunurluk degisince
+    document.addEventListener('visibilitychange', function() {
+        if (document.hidden) stop();
+        else start();
+    });
+
+    // Baslat
+    if (!document.hidden) start();
+
+    // Debug
+    window._f163RefreshNow = tick;
+    window._f163Stop = stop;
+    window._f163Start = start;
+})();
+
+/* ============================================================
+   F197: ASAP backtest guard (yakinda)
+   ============================================================ */
+(function() {
+    'use strict';
+    function install() {
+        if (typeof window.startBacktest !== 'function') return false;
+        if (window.startBacktest._f197AsapGuard) return true;
+        var _orig = window.startBacktest;
+        window.startBacktest = async function() {
+            var _sel = document.getElementById('bt-strategy');
+            var _strat = _sel ? _sel.value : '';
+            if (_strat === 'ASAP') {
+                if (typeof window.showToast === 'function') {
+                    window.showToast('\u23F3 ASAP backtest yakinda eklenecek', 'info');
+                } else {
+                    alert('ASAP backtest yakinda eklenecek');
+                }
+                return;
+            }
+            return _orig.apply(this, arguments);
+        };
+        window.startBacktest._f197AsapGuard = true;
+        console.log('[F197] ASAP backtest guard aktif');
+        return true;
+    }
+    // Hemen dene, olmazsa 1 sn sonra tekrar
+    if (!install()) {
+        setTimeout(install, 1000);
+    }
 })();

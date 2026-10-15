@@ -5,7 +5,9 @@ import shutil
 import time
 import sqlite3
 from binance.client import Client
-from backend.strategies import RSIScalperStrategy, DynamicGridStrategy, DynamicGridReelStrategy, DeepHunterStrategy
+from backend.strategies import RSIScalperStrategy, DynamicGridStrategy, DynamicGridReelStrategy, DeepHunterStrategy, EmaTrendStrategy, ASAPStrategy
+from backend.strategies.asap import asap_check_cooldown, asap_set_cooldown, asap_reset
+from backend.strategies.asap import asap_inc_entry, asap_get_entry_count, asap_set_cooldown, asap_check_cooldown
 from backend.database import get_db_connection
 from backend import telegram_notifier
 
@@ -181,13 +183,53 @@ class StrategyEngine:
     # ------------------------------------------------------------------
     # Sembol listesi
     # ------------------------------------------------------------------
+    def _load_blocked_symbols(self) -> set:
+        """F169: backend/blocked_symbols.txt dosyasindan bloklu sembolleri okur.
+
+        Format:
+          - Her satirda bir sembol (orn: FXSUSDT)
+          - # ile baslayan satirlar yorum
+          - Bos satirlar yok sayilir
+          - Dosya yoksa bos set doner (hicbir sembol bloklu degil)
+
+        Etki: Sadece sinyal tarama filtresi icin kullanilir.
+              Mevcut pozisyonlar, DCA, PT, TTP, SL etkilenmez.
+        """
+        try:
+            from pathlib import Path as _P_f169
+            _bf169 = _P_f169(__file__).resolve().parent / "blocked_symbols.txt"
+            if not _bf169.exists():
+                return set()
+            _out_f169 = set()
+            for _ln_f169 in _bf169.read_text(encoding="utf-8").splitlines():
+                _s_f169 = _ln_f169.strip()
+                if not _s_f169 or _s_f169.startswith("#"):
+                    continue
+                # Yorum satirinda sembol varsa atla
+                if " " in _s_f169 or "\t" in _s_f169:
+                    continue
+                _out_f169.add(_s_f169.upper())
+            return _out_f169
+        except Exception as _e_f169:
+            print(f"[F169] blocked_symbols.txt okuma hatasi: {_e_f169}")
+            return set()
+
     async def refresh_symbol_list(self):
         try:
             tickers = await asyncio.to_thread(self.client.futures_ticker)
             usdt = [t for t in tickers if t["symbol"].endswith("USDT")]
             usdt.sort(key=lambda t: float(t.get("quoteVolume", 0)), reverse=True)
             max_sym = int(self.config.get("max_symbols", 30))
-            self.symbols = [t["symbol"] for t in usdt[:max_sym]]
+            # F169: bloklu sembolleri cikar
+            _blocked_f169 = self._load_blocked_symbols()
+            _raw_f169 = [t["symbol"] for t in usdt[:max_sym]]
+            if _blocked_f169:
+                _before_f169 = len(_raw_f169)
+                _raw_f169 = [s for s in _raw_f169 if s not in _blocked_f169]
+                _skipped_f169 = _before_f169 - len(_raw_f169)
+                print(f"[F169] {len(_blocked_f169)} bloklu sembol yuklendi, "
+                      f"{_skipped_f169} atlandi")
+            self.symbols = _raw_f169
             print(f"[*] Taranacak sembol sayısı: {len(self.symbols)}")
         except Exception as e:
             print(f"[!] Sembol listesi alınamadı: {e}")
@@ -387,21 +429,31 @@ class StrategyEngine:
             return DynamicGridReelStrategy(strat_cfg)
         elif strategy_name == "DEEP_HUNTER":
             return DeepHunterStrategy(strat_cfg)
+        elif strategy_name == "EMA_TREND":
+            return EmaTrendStrategy(strat_cfg)
+        elif strategy_name == "ASAP":
+            return ASAPStrategy(strat_cfg)
         return None
 
     def _create_strategy_for_symbol(self, strategy_name: str, strat_cfg: dict, symbol: str):
         """
         Symbol-bazli strategy instance cache.
-        Stateful stratejiler (DYNAMIC_GRID, DYNAMIC_GRID_REEL) icin ZORUNLU.
+        Stateful stratejiler (DYNAMIC_GRID, DYNAMIC_GRID_REEL, ASAP) icin ZORUNLU.
         Diger stratejiler icin normal create (cache kullanma).
         """
-        STATEFUL = {"DYNAMIC_GRID_REEL", "DYNAMIC_GRID"}
+        STATEFUL = {"DYNAMIC_GRID_REEL", "DYNAMIC_GRID", "ASAP"}
         if strategy_name not in STATEFUL:
             return self._create_strategy(strategy_name, strat_cfg)
 
         cache_key = f"{strategy_name}::{symbol}"
         if cache_key not in self._strategy_cache:
-            self._strategy_cache[cache_key] = self._create_strategy(strategy_name, strat_cfg)
+            # F178: ASAP icin _symbol inject et
+            if strategy_name == "ASAP":
+                _sc = dict(strat_cfg)
+                _sc["_symbol"] = symbol
+                self._strategy_cache[cache_key] = self._create_strategy(strategy_name, _sc)
+            else:
+                self._strategy_cache[cache_key] = self._create_strategy(strategy_name, strat_cfg)
         return self._strategy_cache[cache_key]
 
     # ------------------------------------------------------------------
@@ -509,6 +561,118 @@ class StrategyEngine:
 
         return result
 
+    # ------------------------------------------------------------------
+    # F181: ASAP sembol havuzu
+    # ------------------------------------------------------------------
+    async def _get_asap_pool(self, strat_cfg: dict):
+        """ASAP icin 30 coinlik havuz sec. 4 filtre: hacim, pump, ATR, blocked."""
+        import time as _t_asap
+
+        now = _t_asap.time()
+        refresh_h = float(strat_cfg.get("poolRefreshHours", 4))
+        cache = getattr(self, "_asap_pool_cache", {"ts": 0, "symbols": []})
+        if cache.get("symbols") and (now - cache.get("ts", 0)) < refresh_h * 3600:
+            return cache["symbols"]
+
+        n_target = int(strat_cfg.get("symbolCount", 30))
+        min_vol = float(strat_cfg.get("minVolume24h", 10_000_000))
+        atr_min = float(strat_cfg.get("atrMinPct", 2.0))
+        atr_max = float(strat_cfg.get("atrMaxPct", 6.0))
+        max_move = float(strat_cfg.get("maxMove24hPct", 15.0))
+        interval = strat_cfg.get("interval", "15m")
+
+        # 1. Ticker al
+        try:
+            tickers = await asyncio.to_thread(self.client.futures_ticker)
+        except Exception as e:
+            print(f"[ASAP-POOL] ticker hata: {e}")
+            return cache.get("symbols") or []
+
+        # 2. On filtre (hacim + pump)
+        blocked = self._load_blocked_symbols()
+        candidates = []
+        for t in tickers:
+            sym = t.get("symbol", "")
+            if not sym.endswith("USDT"):
+                continue
+            if sym in blocked:
+                continue
+            try:
+                vol_24h = float(t.get("quoteVolume", 0) or 0)
+                chg = abs(float(t.get("priceChangePercent", 0) or 0))
+                last = float(t.get("lastPrice", 0) or 0)
+            except Exception:
+                continue
+            if last <= 0:
+                continue
+            if vol_24h < min_vol:
+                continue
+            if chg > max_move:
+                continue
+            candidates.append((sym, vol_24h))
+
+        # Hacme gore sirala, ATR filtresi icin genis havuz (n*3)
+        candidates.sort(key=lambda x: x[1], reverse=True)
+        pre = [c[0] for c in candidates[:max(n_target * 3, n_target)]]
+
+        # 3. ATR filtresi (position_manager uzerinden)
+        pm = getattr(self, "position_manager", None)
+        passed = []
+        if pm and hasattr(pm, "_get_atr_pct_for_symbol"):
+            _f188_none = 0
+            _f188_low = 0
+            _f188_high = 0
+            _f188_err = 0
+            _f188_logged = 0
+            for sym in pre:
+                if len(passed) >= n_target:
+                    break
+                try:
+                    atr_pct = await pm._get_atr_pct_for_symbol(
+                        sym, ttl_sec=300, interval=interval
+                    )
+                except Exception as _ex188:
+                    _f188_err += 1
+                    if _f188_logged < 5:
+                        print(f"[ASAP-POOL-DBG] {sym} HATA: {_ex188}")
+                        _f188_logged += 1
+                    continue
+                if atr_pct is None:
+                    _f188_none += 1
+                    if _f188_logged < 5:
+                        print(f"[ASAP-POOL-DBG] {sym} ATR=None")
+                        _f188_logged += 1
+                    continue
+                # Ilk 10 degeri logla
+                if _f188_logged < 10:
+                    print(f"[ASAP-POOL-DBG] {sym} atr%={atr_pct:.3f}")
+                    _f188_logged += 1
+                if atr_min <= atr_pct <= atr_max:
+                    passed.append(sym)
+                elif atr_pct < atr_min:
+                    _f188_low += 1
+                else:
+                    _f188_high += 1
+            print(f"[ASAP-POOL-DBG] red: low(<{atr_min})={_f188_low} "
+                  f"high(>{atr_max})={_f188_high} none={_f188_none} err={_f188_err} "
+                  f"passed={len(passed)}")
+        else:
+            print("[ASAP-POOL] position_manager yok, ATR filtresi atlandi")
+            passed = pre[:n_target]
+
+        if not passed:
+            print(f"[ASAP-POOL] Hic coin gecemedi (pre={len(pre)}, hedef={n_target})")
+            return cache.get("symbols") or []
+
+        self._asap_pool_cache = {"ts": now, "symbols": passed}
+        print(f"[ASAP-POOL] {len(passed)} coin secildi (hedef {n_target}, "
+              f"on filtre {len(pre)} aday):")
+        for s in passed[:10]:
+            print(f"         - {s}")
+        if len(passed) > 10:
+            print(f"         ... +{len(passed)-10} daha")
+        return passed
+
     async def run_strategy(self, strategy_name: str, strat_cfg: dict, candle_cache: dict):
         strategy = self._create_strategy(strategy_name, strat_cfg)
         if not strategy:
@@ -549,7 +713,14 @@ class StrategyEngine:
                 print(f"[TEST-N] {strategy_name} test_symbol='{test_val}' gecersiz (sadece sayi), normal tarama")
 
         if scan_symbols is None:
-            scan_symbols = self.symbols
+            # F181: ASAP icin ozel havuz (30 coin, filtreli)
+            if strategy_name == "ASAP":
+                scan_symbols = await self._get_asap_pool(strat_cfg)
+                if not scan_symbols:
+                    print(f"[ASAP-POOL] Havuz bos, {strategy_name} tarama atlandi")
+                    return
+            else:
+                scan_symbols = self.symbols
 
         BATCH_SIZE = 3
         for batch_start in range(0, len(scan_symbols), BATCH_SIZE):
@@ -709,6 +880,62 @@ class StrategyEngine:
                     self.last_signal_candle[signal_key] = candle_time
                     return
 
+                # F193b: ASAP icin maxPosPerSymbol kontrolu
+                if strategy_name == "ASAP":
+                    try:
+                        _f193b_max = int(strat_cfg.get("maxPosPerSymbol", 2))
+                        if _f193b_max > 0:
+                            _conn = get_db_connection()
+                            _row = _conn.execute(
+                                "SELECT COUNT(*) FROM active_trades WHERE symbol = ? AND strategy_name = 'ASAP'",
+                                (symbol,)
+                            ).fetchone()
+                            _conn.close()
+                            _cnt = _row[0] if _row else 0
+                            if _cnt >= _f193b_max:
+                                _reason = f"Max poz/sembol ({_cnt}/{_f193b_max})"
+                                print(f"[F193b] {symbol} {_reason} -> sinyal atlandi")
+                                self._save_signal_to_db(
+                                    signal_id, symbol, strategy_name, result["signal"],
+                                    current_price, qty, base_order, candle_time, created_ms,
+                                    opened=0, skip_reason=_reason
+                                )
+                                self.last_signal_candle[signal_key] = candle_time
+                                return
+                    except Exception as _e193b:
+                        print(f"[F193b] maxPos kontrol hatasi: {_e193b}")
+
+                # F194c: ASAP icin cooldown + maxPos kontrol
+                if strategy_name == "ASAP":
+                    try:
+                        _ok, _rem, _rsn = asap_check_cooldown(symbol)
+                        if not _ok:
+                            _r = f"Cooldown ({_rsn}) {_rem}s"
+                            print(f"[F194c] {symbol} {_r}")
+                            self.last_signal_candle[signal_key] = candle_time
+                            return
+                        _mx = int(strat_cfg.get("maxPosPerSymbol", 1))
+                        if _mx > 0:
+                            _c = get_db_connection()
+                            _row = _c.execute(
+                                "SELECT COUNT(*) FROM active_trades WHERE symbol = ? AND strategy_name = 'ASAP'",
+                                (symbol,)
+                            ).fetchone()
+                            _c.close()
+                            _cnt = _row[0] if _row else 0
+                            if _cnt >= _mx:
+                                _r = f"Max poz/sembol ({_cnt}/{_mx})"
+                                print(f"[F194c] {symbol} {_r}")
+                                self._save_signal_to_db(
+                                    signal_id, symbol, strategy_name, result["signal"],
+                                    current_price, qty, base_order, candle_time, created_ms,
+                                    opened=0, skip_reason=_r
+                                )
+                                self.last_signal_candle[signal_key] = candle_time
+                                return
+                    except Exception as _e194c:
+                        print(f"[F194c] kontrol hatasi: {_e194c}")
+
                 # ⚡ A1/A2: Risk limit kontrolu
                 # FIX F95b: Grid tabanli stratejiler icin Cross %50/50 atlanir
                 _side_calc = "BUY" if result["signal"] == "LONG" else "SELL"
@@ -813,6 +1040,16 @@ class StrategyEngine:
                                 opened=1, skip_reason=None
                             )
                             self.stats["signals_found"] += 1
+                            # F193b: ASAP on_entry
+                            if strategy_name == "ASAP":
+                                try:
+                                    _ec = asap_inc_entry(symbol)
+                                    _cd3 = int(strat_cfg.get("cooldownAfter3rdEntry", 180)) * 60
+                                    if _ec >= 3:
+                                        asap_set_cooldown(symbol, _cd3, f"entry3({_ec})")
+                                        print(f"[F193b] {symbol} entry#{_ec} -> cooldown {int(_cd3/60)} dk")
+                                except Exception as _e193b2:
+                                    print(f"[F193b] on_entry hatasi: {_e193b2}")
                         except Exception as oe:
                             print(f"[!] Emir açma hatası {symbol}: {oe}")
                             self._save_signal_to_db(
@@ -853,6 +1090,142 @@ class StrategyEngine:
     # ------------------------------------------------------------------
     # DÖNGÜ 1: Sinyal tarama
     # ------------------------------------------------------------------
+    async def _reconcile_loop(self):
+        """F125b: Her 60 sn'de DB ile Binance'i karsilastir, hayaletleri sil."""
+        await asyncio.sleep(20)
+        strike_count = {}
+        max_strikes = 3
+        
+        # F125b-hb: Ilk heartbeat hemen
+        print("[RECONCILE] Loop basladi (heartbeat)")
+        
+        while self.is_running:
+            try:
+                if not self.config.get("active", False):
+                    await asyncio.sleep(30)
+                    continue
+                
+                # F125b-hb: Her tick'te heartbeat
+                print(f"[RECONCILE] Tick calisiyor...")
+                
+                try:
+                    positions = await asyncio.to_thread(
+                        self.order_manager.client.futures_position_information
+                    )
+                    binance_syms = {
+                        p['symbol'] for p in positions
+                        if float(p.get("positionAmt", 0) or 0) != 0
+                    }
+                except Exception as _be:
+                    print(f"[RECONCILE] Binance hata: {str(_be)[:100]}")
+                    await asyncio.sleep(60)
+                    continue
+                
+                # F127: DB'yi Binance'ten guncelle (boyut + avg_price)
+                try:
+                    _pos_map = {p['symbol']: p for p in positions if float(p.get("positionAmt", 0) or 0) != 0}
+                    _conn_sync = get_db_connection()
+                    _updates = 0
+                    for _sym, _p in _pos_map.items():
+                        try:
+                            _amt = abs(float(_p.get("positionAmt", 0) or 0))
+                            _entry = float(_p.get("entryPrice", 0) or 0)
+                            if _amt <= 0 or _entry <= 0:
+                                continue
+                            _notional = _amt * _entry
+                            
+                            # DB'deki mevcut degerle karsilastir
+                            _row = _conn_sync.execute(
+                                "SELECT id, total_vol, avg_price FROM active_trades WHERE symbol = ?",
+                                (_sym,)
+                            ).fetchone()
+                            if not _row:
+                                continue
+                            
+                            _db_vol = float(_row['total_vol'] or 0)
+                            _db_avg = float(_row['avg_price'] or 0)
+                            
+                            # %1'den fazla fark varsa guncelle
+                            _vol_diff = abs(_notional - _db_vol) / max(_db_vol, 0.01)
+                            _avg_diff = abs(_entry - _db_avg) / max(_db_avg, 0.000001)
+                            
+                            if _vol_diff > 0.003 or _avg_diff > 0.003:  # F128: %1 -> %0.3
+                                _conn_sync.execute(
+                                    "UPDATE active_trades SET total_vol = ?, avg_price = ? WHERE symbol = ?",
+                                    (round(_notional, 4), _entry, _sym)
+                                )
+                                _updates += 1
+                                print(f"[F127] {_sym} | vol: {_db_vol:.2f} -> {_notional:.2f} | "
+                                      f"avg: {_db_avg:.6f} -> {_entry:.6f}")
+                        except Exception as _se:
+                            print(f"[F127] {_sym} hata: {str(_se)[:80]}")
+                    
+                    if _updates > 0:
+                        _conn_sync.commit()
+                        print(f"[F127] {_updates} pozisyon senkron edildi")
+                    _conn_sync.close()
+                except Exception as _fe:
+                    print(f"[F127] sync hata: {str(_fe)[:100]}")
+                
+                conn = get_db_connection()
+                rows = conn.execute(
+                    "SELECT id, symbol, strategy_name FROM active_trades"
+                ).fetchall()
+                
+                ghosts = []
+                for r in rows:
+                    sym = r['symbol']
+                    if sym not in binance_syms:
+                        strike_count[sym] = strike_count.get(sym, 0) + 1
+                        print(f"[RECONCILE] {sym} strike {strike_count[sym]}/{max_strikes}")
+                        if strike_count[sym] >= max_strikes:
+                            ghosts.append((r['id'], sym))
+                    else:
+                        strike_count.pop(sym, None)
+                
+                if ghosts:
+                    import time as _t_f136c
+                    _now_f136c = int(_t_f136c.time())
+                    for gid, sym in ghosts:
+                        # F136: DELETE oncesi history'ye yaz
+                        try:
+                            _row_g = conn.execute("SELECT * FROM active_trades WHERE id=?", (gid,)).fetchone()
+                            if _row_g:
+                                _pg = dict(_row_g)
+                                _avg_g = float(_pg.get("avg_price") or 0)
+                                _vol_g = float(_pg.get("total_vol") or 0)
+                                _tt_g = _pg.get("trade_type", "BUY")
+                                conn.execute(
+                                    """INSERT INTO trade_history
+                                       (symbol, trade_type, total_vol, entry_price, initial_price, exit_price,
+                                        pnl_amount, pnl_pct, entry_time, exit_time,
+                                        strategy_name, dca_count, close_reason, leverage, funding_fee, commission)
+                                       VALUES (?, ?, ?, ?, ?, ?, 0, 0, ?, ?, ?, ?, 'GHOST-CLEANUP', ?, 0, 0)""",
+                                    (sym, _tt_g, _vol_g, _avg_g,
+                                     _pg.get("initial_price") or _avg_g, _avg_g,
+                                     _pg.get("entry_time"), _now_f136c,
+                                     _pg.get("strategy_name") or "UNKNOWN", _pg.get("dca_count") or 0,
+                                     _pg.get("leverage") or 1)
+                                )
+                        except Exception as _hg:
+                            print(f"[F136] {sym} history hata: {str(_hg)[:80]}")
+                        conn.execute("DELETE FROM active_trades WHERE id=?", (gid,))
+                        strike_count.pop(sym, None)
+                    conn.commit()
+                    print(f"[RECONCILE] {len(ghosts)} hayalet silindi + history: {[g[1] for g in ghosts]}")
+                else:
+                    # F125b-hb: Her tick'te ozet
+                    print(f"[RECONCILE] OK - Binance={len(binance_syms)} DB={len(rows)} strike={len(strike_count)}")
+                
+                conn.close()
+                
+            except asyncio.CancelledError:
+                return
+            except Exception as e:
+                print(f"[RECONCILE] hata: {str(e)[:120]}")
+            
+            await asyncio.sleep(60)
+
     async def _scan_loop(self):
         while self.is_running:
             try:
@@ -1015,9 +1388,11 @@ class StrategyEngine:
 
         self._scan_task = asyncio.create_task(self._scan_loop())
         self._position_task = asyncio.create_task(self._position_loop())
+        # F125b: Otomatik reconcile
+        self._reconcile_task = asyncio.create_task(self._reconcile_loop())
 
         try:
-            await asyncio.gather(self._scan_task, self._position_task)
+            await asyncio.gather(self._scan_task, self._position_task, self._reconcile_task)
         except asyncio.CancelledError:
             pass
         except Exception as e:
@@ -1029,6 +1404,11 @@ class StrategyEngine:
             self._scan_task.cancel()
         if self._position_task and not self._position_task.done():
             self._position_task.cancel()
+        # F125b
+        try:
+            if hasattr(self, '_reconcile_task') and self._reconcile_task and not self._reconcile_task.done():
+                self._reconcile_task.cancel()
+        except: pass
 
     # ------------------------------------------------------------------
     # Durum bilgisi

@@ -15,6 +15,14 @@ class OrderManager:
         self.client = client
         self.symbol = symbol
         self.test_mode = test_mode
+        # F123: Race condition onleme
+        # Global lock: ayni anda tek emir acilis karari
+        self._open_lock = None  # Lazy init (event loop gerekli)
+        # Sembol bazli lock'lar (her sembol icin ayri)
+        self._symbol_locks = {}
+        # F123c: Global threading lock - TUM emir acilislari sirayla
+        import threading as _threading
+        self._thread_lock = _threading.Lock()
 
     def get_commission_rate(self, symbol: str = None) -> dict:
         """
@@ -86,7 +94,97 @@ class OrderManager:
             print(f"[MARGIN] {symbol} hata: {str(e)[:100]}")
             return False
 
+
+
+    def _f140_verify_position(self, symbol, expected_side, retries=3):
+        """F140: Emir sonrasi Binance'te pozisyon var mi? (retry ile)"""
+        import time as _t
+        for i in range(retries):
+            try:
+                positions = self.client.futures_position_information(symbol=symbol)
+                for p in positions:
+                    if p.get("symbol") == symbol:
+                        amt = float(p.get("positionAmt", 0) or 0)
+                        if amt != 0:
+                            # Beklenen yon ile uyusuyor mu?
+                            actual_side = "BUY" if amt > 0 else "SELL"
+                            if actual_side == expected_side:
+                                return True, p
+                            else:
+                                print(f"[F140] {symbol} YON UYUMSUZ: beklenen={expected_side}, gercek={actual_side}")
+                                return False, p
+            except Exception as _e:
+                if i == 0:
+                    print(f"[F140] {symbol} verify hata: {str(_e)[:80]}")
+            _t.sleep(1)
+        return False, None
+    
+    def _f140_cancel_tp_sl(self, symbol):
+        """F140: Binance'teki varsayilan TP/SL emirlerini IPTAL et."""
+        try:
+            orders = self.client.futures_get_open_orders(symbol=symbol)
+            cancelled = 0
+            for o in orders:
+                # Sadece TP/SL/STOP tiplerini iptal et
+                _type = o.get("type", "").upper()
+                if any(k in _type for k in ["TAKE_PROFIT", "STOP", "TRAILING"]):
+                    try:
+                        self.client.futures_cancel_order(symbol=symbol, orderId=o["orderId"])
+                        cancelled += 1
+                    except Exception:
+                        pass
+            if cancelled > 0:
+                print(f"[F140] {symbol} {cancelled} TP/SL emri iptal edildi")
+            return cancelled
+        except Exception as _e:
+            print(f"[F140] {symbol} TP/SL iptal hata: {str(_e)[:80]}")
+            return 0
+
+    def _get_symbol_lock(self, symbol: str):
+        """F123: Sembol bazli asyncio.Lock dondurur (lazy init)."""
+        import asyncio
+        if self._open_lock is None:
+            try:
+                self._open_lock = asyncio.Lock()
+            except RuntimeError:
+                # Event loop yoksa (senkron cagri) None dondur
+                return None
+        if symbol not in self._symbol_locks:
+            self._symbol_locks[symbol] = asyncio.Lock()
+        return self._symbol_locks[symbol]
+
+    def _has_open_position(self, symbol: str) -> bool:
+        """F123: Binance'te sembol icin acik pozisyon var mi? (DB'ye ek kontrol)"""
+        try:
+            pos_list = self.client.futures_position_information(symbol=symbol)
+            for p in pos_list:
+                if p.get("symbol") == symbol:
+                    amt = float(p.get("positionAmt", 0) or 0)
+                    if amt != 0:
+                        return True
+            return False
+        except Exception as e:
+            print(f"[F123] Binance pozisyon sorgu hatasi ({symbol}): {e}")
+            return False  # Hata durumunda izin ver (fallback)
+
     def open_dca_position(self, side: str, base_amount_usdt: float = 10.0, strategy_name: str = None,
+                          leverage: int = 5, pt_enabled: int = 0, pt_percent: float = 50,
+                          pt_keep_dca: int = 1, use_limit_order: bool = False,
+                          limit_timeout_sec: int = 5, fallback_market: bool = True):
+        """
+        F123c: Global threading.Lock ile sarmalanmis versiyon.
+        Ayni anda sadece 1 pozisyon acilabilir (tum stratejiler arasinda).
+        """
+        with self._thread_lock:
+            return self.open_dca_position_locked(
+                side=side, base_amount_usdt=base_amount_usdt,
+                strategy_name=strategy_name, leverage=leverage,
+                pt_enabled=pt_enabled, pt_percent=pt_percent,
+                pt_keep_dca=pt_keep_dca, use_limit_order=use_limit_order,
+                limit_timeout_sec=limit_timeout_sec, fallback_market=fallback_market
+            )
+
+    def open_dca_position_locked(self, side: str, base_amount_usdt: float = 10.0, strategy_name: str = None,
                           leverage: int = 1, dca_levels: int = 3, step_pct: float = 1.0, tp_pct: float = 1.5, sl_pct: float = 3.0,
                           pt_enabled: int = 0, pt_percent: float = 50, pt_keep_dca: int = 1,
                           use_limit_order: bool = True, limit_timeout_sec: int = 3, fallback_market: bool = True):
@@ -110,6 +208,15 @@ class OrderManager:
                 "symbol": self.symbol,
                 "message": "Aynı sembolde açık pozisyon var"
             }
+
+        # F123: DB'de yok ama Binance'te olabilir (race condition kalintisi)
+        if not self.test_mode and self._has_open_position(self.symbol):
+            print(f"[F123-DUP-PREVENT] {self.symbol} Binance'te pozisyon var (DB'de yok)! Emir reddedildi.")
+            return {
+                "status": "duplicate",
+                "symbol": self.symbol,
+                "message": "Binance'te zaten pozisyon var (ghost pozisyon)"
+            }
         
         price_prec, qty_prec = self.get_symbol_precision(self.symbol)
         ticker = self.client.futures_symbol_ticker(symbol=self.symbol)
@@ -119,6 +226,14 @@ class OrderManager:
         strat = strategy_name or "UNKNOWN"
         leverage = max(1, int(leverage))
         margin = base_amount_usdt / leverage if leverage > 0 else base_amount_usdt
+
+        # F154: qty TANI log
+        _notional_expected = qty * current_price
+        print(f"[F154-DBG] {self.symbol} | base={base_amount_usdt:.4f} | price={current_price:.8f} | "
+              f"qty={qty} | expected_notional={_notional_expected:.4f} | strat={strat}")
+        if _notional_expected > base_amount_usdt * 1.5:
+            print(f"[F154-UYARI] {self.symbol} qty cok fazla! base={base_amount_usdt:.2f} "
+                  f"ama notional={_notional_expected:.2f}")
 
         if self.test_mode:
             # ⚡ LIMIT + Fallback simulasyonu
@@ -186,24 +301,12 @@ class OrderManager:
                 entry_price = float(order.get("avgPrice") or current_price)
                 entry_is_maker = 0
 
-            tp_side = "SELL" if side == "BUY" else "BUY"
-            tp_price = round(entry_price * (1 + (tp_pct / 100) if side == "BUY" else 1 - (tp_pct / 100)), price_prec)
-            self.client.futures_create_order(
-                symbol=self.symbol,
-                side=tp_side,
-                type="TAKE_PROFIT_MARKET",
-                stopPrice=tp_price,
-                closePosition=True
-            )
-
-            sl_price = round(entry_price * (1 - (sl_pct / 100) if side == "BUY" else 1 + (sl_pct / 100)), price_prec)
-            self.client.futures_create_order(
-                symbol=self.symbol,
-                side=tp_side,
-                type="STOP_MARKET",
-                stopPrice=sl_price,
-                closePosition=True
-            )
+            # F141: Binance TP/SL emirlerini GONDERME
+            # Bot kendi TP/SL/PT/TTP'sini position_manager icinde yonetiyor.
+            # Iki sistem cakistigi icin Binance TP'si tetiklenince bot haberdar olmuyordu.
+            tp_price = 0
+            sl_price = 0
+            print(f"[F141] {self.symbol} Binance TP/SL atlandi (bot kendi yonetecek)")
 
             self._save_to_db(
                 self.symbol, side, base_amount_usdt, entry_price, 0, strat,
@@ -216,8 +319,8 @@ class OrderManager:
                 "symbol": self.symbol,
                 "strategy": strat,
                 "entry_price": entry_price,
-                "tp": tp_price,
-                "sl": sl_price,
+                "tp": 0,  # F141: Binance TP kapatildi
+                "sl": 0,  # F141: Binance SL kapatildi
                 "leverage": leverage
             }
 
@@ -227,7 +330,23 @@ class OrderManager:
     # ==========================================================
     # GRID REEL: Seviye pozisyonu acma
     # ==========================================================
-    def open_grid_position(self, side: str, base_amount_usdt: float = 5.0,
+    def open_grid_position(self, side: str, base_amount_usdt: float = 5.0, strategy_name: str = None,
+                           leverage: int = 5, grid_group_id: str = None, grid_level: int = 0,
+                           grid_side: str = None, grid_entry_price: float = 0,
+                           grid_tp_price: float = 0, use_limit_order: bool = False,
+                           limit_timeout_sec: int = 5, fallback_market: bool = True):
+        """F123c: Global threading.Lock ile sarmalanmis grid versiyonu."""
+        with self._thread_lock:
+            return self.open_grid_position_locked(
+                side=side, base_amount_usdt=base_amount_usdt,
+                strategy_name=strategy_name, leverage=leverage,
+                grid_group_id=grid_group_id, grid_level=grid_level,
+                grid_side=grid_side, grid_entry_price=grid_entry_price,
+                grid_tp_price=grid_tp_price, use_limit_order=use_limit_order,
+                limit_timeout_sec=limit_timeout_sec, fallback_market=fallback_market
+            )
+
+    def open_grid_position_locked(self, side: str, base_amount_usdt: float = 5.0,
                            strategy_name: str = "DYNAMIC_GRID_REEL",
                            leverage: int = 1,
                            grid_group_id: str = None,
@@ -390,17 +509,8 @@ class OrderManager:
             if grid_tp_price and grid_tp_price > 0:
                 tp_side = "SELL" if side == "BUY" else "BUY"
                 tp_price_rounded = round(grid_tp_price, price_prec)
-                try:
-                    self.client.futures_create_order(
-                        symbol=self.symbol,
-                        side=tp_side,
-                        type="TAKE_PROFIT_MARKET",
-                        stopPrice=tp_price_rounded,
-                        closePosition=True
-                    )
-                    print(f"[GRID-TP] {self.symbol} L{grid_level} TP emri @ {tp_price_rounded}")
-                except Exception as te:
-                    print(f"[!] Grid TP emri hatasi {self.symbol}: {te}")
+                # F141b: Binance GRID TP emri kaldirildi (bot yonetir)
+                print(f"[F141b] {self.symbol} L{grid_level} GRID TP atlandi")
 
             ok = self._save_grid_to_db(
                 symbol=self.symbol,
@@ -532,6 +642,19 @@ class OrderManager:
     # MANUEL EMIR - Kullanici tarafindan manuel acilan pozisyon
     # ==========================================================
     def open_manual_position(self, side: str, base_amount_usdt: float = 100.0,
+                             strategy_name: str = None, leverage: int = 5,
+                             order_mode: str = "market", pt_enabled: int = 0,
+                             pt_percent: float = 50, pt_keep_dca: int = 1):
+        """F123c: Global threading.Lock ile sarmalanmis manuel versiyon."""
+        with self._thread_lock:
+            return self.open_manual_position_locked(
+                side=side, base_amount_usdt=base_amount_usdt,
+                strategy_name=strategy_name, leverage=leverage,
+                order_mode=order_mode, pt_enabled=pt_enabled,
+                pt_percent=pt_percent, pt_keep_dca=pt_keep_dca
+            )
+
+    def open_manual_position_locked(self, side: str, base_amount_usdt: float = 100.0,
                              order_mode: str = "market",
                              leverage: int = 1,
                              limit_price: float = 0,
@@ -646,11 +769,8 @@ class OrderManager:
                         else entry_price * (1 - take_profit/100),
                         price_prec
                     )
-                    self.client.futures_create_order(
-                        symbol=self.symbol, side=tp_side,
-                        type="TAKE_PROFIT_MARKET",
-                        stopPrice=tp_price, closePosition=True
-                    )
+                    # F141b: Binance TP emri kaldirildi
+                    print(f"[F141b] {self.symbol} MANUAL TP atlandi")
                 except Exception as _te:
                     print(f"[!] TP emri hatasi: {_te}")
 
@@ -661,11 +781,8 @@ class OrderManager:
                         else entry_price * (1 + stop_loss/100),
                         price_prec
                     )
-                    self.client.futures_create_order(
-                        symbol=self.symbol, side=tp_side,
-                        type="STOP_MARKET",
-                        stopPrice=sl_price, closePosition=True
-                    )
+                    # F141b: Binance SL emri kaldirildi
+                    print(f"[F141b] {self.symbol} MANUAL SL atlandi")
                 except Exception as _se:
                     print(f"[!] SL emri hatasi: {_se}")
 
@@ -900,7 +1017,10 @@ class OrderManager:
             avg_price = float(status.get("avgPrice", 0) or 0)
 
             if order_status == "FILLED":
-                print(f"[LIMIT] DOLDU | avg={avg_price} | MAKER")
+                print(f"[LIMIT] DOLDU | avg={avg_price} | MAKER | executedQty={executed_qty}/{qty}")
+                # F154: gercek dolum beklenen qty'den fazla mi?
+                if executed_qty > qty * 1.02:
+                    print(f"[F154-UYARI] {symbol} LIMIT executedQty({executed_qty}) > qty({qty})!")
                 return (True, avg_price if avg_price > 0 else limit_price, True, "LIMIT FILLED")
 
             if order_status in ("NEW", "PARTIALLY_FILLED"):
@@ -924,7 +1044,12 @@ class OrderManager:
 
                 if executed_qty > 0 and mkt_price > 0:
                     final_avg = ((avg_price * executed_qty) + (mkt_price * remaining)) / qty
-                    print(f"[LIMIT] Partial+Market | avg={final_avg:.6f}")
+                    _total_exec = executed_qty + remaining
+                    print(f"[LIMIT] Partial+Market | avg={final_avg:.6f} | "
+                          f"limit_exec={executed_qty} mkt_qty={remaining} total={_total_exec}/{qty}")
+                    if _total_exec > qty * 1.02:
+                        print(f"[F154-UYARI] {symbol} PARTIAL+MARKET toplam qty fazla! "
+                              f"limit={executed_qty} + market={remaining} = {_total_exec} > {qty}")
                     return (True, final_avg, False, "PARTIAL + MARKET")
                 elif mkt_price > 0:
                     print(f"[LIMIT] MARKET FALLBACK @ {mkt_price}")
@@ -955,9 +1080,18 @@ class OrderManager:
         Test modunda sadece log yazar (DB position_manager tarafindan guncellenir).
         Gercek modda Binance'e reduceOnly MARKET emri gonderir.
         """
+        # F143: test_mode debug + SIMULATE_ORDERS kontrolu
+        import os as _os_f143
+        _sim_env_f143 = _os_f143.environ.get("SIMULATE_ORDERS", "false").strip().lower() == "true"
+        print(f"[F143-EXEC] {symbol} partial_close_position | test_mode={self.test_mode} | "
+              f"SIMULATE_ORDERS={_sim_env_f143} | close_usdt={close_usdt} | price={current_price}")
         if self.test_mode:
             print(f"[TEST PARTIAL] {symbol} {close_usdt:.2f} USDT kismi kapatma (fiyat: {current_price})")
-            return {"status": "success", "mode": "TEST", "symbol": symbol, "closed_usdt": close_usdt}
+            if not _sim_env_f143:
+                print(f"[F143-UYARI] {symbol} test_mode=True ama SIMULATE_ORDERS=false! "
+                      f"Binance'e GERCEK emir GONDERILMEDI.")
+            return {"status": "success", "mode": "TEST", "symbol": symbol,
+                    "closed_usdt": close_usdt, "verified_reduction_qty": 0.0}
         
         try:
             _, qty_prec = self.get_symbol_precision(symbol)
@@ -990,6 +1124,21 @@ class OrderManager:
             oid_f97 = result.get("orderId")
             exit_price_f97, exec_qty_f97 = self._wait_fill_and_get_price(symbol, oid_f97)
 
+            # F143: Binance pozisyon deltasi doğrulamasi
+            _verified_f143 = 0.0
+            try:
+                _pos_after_f143 = self.client.futures_position_information(symbol=symbol)
+                _p_after_f143 = next((p for p in _pos_after_f143 if p['symbol'] == symbol), None)
+                if _p_after_f143:
+                    _amt_after_f143 = abs(float(_p_after_f143['positionAmt']))
+                    _verified_f143 = abs(amt) - _amt_after_f143
+                    print(f"[F143-VERIFY] {symbol} amt_once={abs(amt)} amt_sonra={_amt_after_f143} "
+                          f"delta={_verified_f143:.8f}")
+                else:
+                    print(f"[F143-VERIFY] {symbol} pozisyon sonrasi okunamadi")
+            except Exception as _ve_f143:
+                print(f"[F143-VERIFY] {symbol} dogrulama hatasi: {_ve_f143}")
+
             print(f"[PARTIAL] {symbol} kapatildi: {close_qty} adet ({close_usdt:.2f} USDT) | fill: {exit_price_f97}")
             return {
                 "status": "success",
@@ -999,6 +1148,7 @@ class OrderManager:
                 "closed_usdt": close_usdt,
                 "exit_price": exit_price_f97,
                 "executed_qty": exec_qty_f97,
+                "verified_reduction_qty": _verified_f143,
                 "order": result,
             }
         

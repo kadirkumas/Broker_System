@@ -37,9 +37,65 @@ if not ENV_PATH.exists():
 
 load_dotenv(dotenv_path=ENV_PATH, override=True)
 
+
+# ══════════════════════════════════════════════════════════════════
+# F147: Trade history LRU cache (100 coin olcegi icin)
+# ══════════════════════════════════════════════════════════════════
+import threading as _threading_f147
+
+_HIST_CACHE_F147 = {}
+_HIST_CACHE_LOCK_F147 = _threading_f147.Lock()
+_HIST_CACHE_TTL_F147 = 15        # saniye
+_HIST_CACHE_CAP_F147 = 300       # maksimum entry (100 coin + history varyantlari)
+
+
+def _f147_cache_get(key):
+    with _HIST_CACHE_LOCK_F147:
+        ent = _HIST_CACHE_F147.get(key)
+        if ent and (time.time() - ent[0]) < _HIST_CACHE_TTL_F147:
+            return ent[1]
+        return None
+
+
+def _f147_cache_put(key, value):
+    with _HIST_CACHE_LOCK_F147:
+        _HIST_CACHE_F147[key] = (time.time(), value)
+        if len(_HIST_CACHE_F147) > _HIST_CACHE_CAP_F147:
+            # En eski %20'yi temizle
+            n_drop = _HIST_CACHE_CAP_F147 // 5
+            oldest = sorted(_HIST_CACHE_F147.items(),
+                            key=lambda kv: kv[1][0])[:n_drop]
+            for k, _ in oldest:
+                _HIST_CACHE_F147.pop(k, None)
+
+
+def _f147_indexes_ensure():
+    """F147: composite index'leri bir kez olustur."""
+    try:
+        _c = get_db_connection()
+        _c.execute("CREATE INDEX IF NOT EXISTS idx_history_symbol_exit "
+                   "ON trade_history(symbol, exit_time DESC)")
+        _c.execute("CREATE INDEX IF NOT EXISTS idx_history_exit "
+                   "ON trade_history(exit_time DESC)")
+        _c.commit()
+        _c.close()
+        print("[F147] history indexleri hazir")
+    except Exception as _e147:
+        print(f"[F147] index hata: {_e147}")
+
+
+# Startup'ta bir kez calistir
+try:
+    _f147_indexes_ensure()
+except Exception:
+    pass
+
+
 API_KEY = os.getenv("BINANCE_API_KEY")
 API_SECRET = os.getenv("BINANCE_API_SECRET")
 USE_TESTNET = os.getenv("BINANCE_TESTNET", "true").lower() == "true"
+# F117: SIMULATE_ORDERS env - true ise emirler simule edilir, false ise Binance'e gonderilir
+SIMULATE_ORDERS = os.getenv("SIMULATE_ORDERS", "false").lower() == "true"
 
 # ⚡ Web arayuz sifre korumasi
 ADMIN_USERNAME = os.getenv("ADMIN_USERNAME", "admin").strip()
@@ -79,8 +135,47 @@ from backend import telegram_notifier
 # ----------------------------------------------------------------------
 # BINANCE CLIENT + MOTORLAR
 # ----------------------------------------------------------------------
-client = Client(API_KEY, API_SECRET, testnet=USE_TESTNET)
-order_manager = OrderManager(client, symbol="BTCUSDT", test_mode=True)
+def _create_binance_client(max_retries=5, delay_sec=10):
+    """F132: Binance client olustur, 502/503 alirsa retry."""
+    import time as _t
+    last_err = None
+    for attempt in range(1, max_retries + 1):
+        try:
+            # F134: ping=False - Spot testnet down olsa bile client olusur
+            # Ilk futures cagrisi FUTURES testnet'e otomatik baglanir
+            try:
+                c = Client(API_KEY, API_SECRET, testnet=USE_TESTNET, ping=False)
+            except TypeError:
+                # Eski surum ping param yoksa - fallback subclass
+                _orig_init = Client.__init__
+                def _patched_init(self, *args, **kwargs):
+                    kwargs['ping'] = False
+                    try:
+                        _orig_init(self, *args, **kwargs)
+                    except TypeError:
+                        kwargs.pop('ping', None)
+                        _orig_init(self, *args, **kwargs)
+                Client.__init__ = _patched_init
+                c = Client(API_KEY, API_SECRET, testnet=USE_TESTNET)
+            print(f"[F132] Binance client OK (deneme {attempt})")
+            return c
+        except Exception as _e:
+            last_err = _e
+            _msg = str(_e)[:120]
+            print(f"[F132] Client deneme {attempt}/{max_retries} HATA: {_msg}")
+            if attempt < max_retries:
+                _t.sleep(delay_sec)
+    print(f"[F132] [UYARI] {max_retries} denemede client olusturulamadi. Son hata: {last_err}")
+    print(f"[F132] Backend offline modda baslayacak. /api/health endpointi bos donebilir.")
+    return None
+
+
+client = _create_binance_client()
+if client is None:
+    print("[F132] [UYARI] Binance client None! OrderManager olusturulamiyor.")
+    order_manager = None
+else:
+    order_manager = OrderManager(client, symbol="BTCUSDT", test_mode=SIMULATE_ORDERS)  # F117: SIMULATE_ORDERS env
 position_manager = PositionManager(client, order_manager=order_manager)
 bot = StrategyEngine(client, order_manager=order_manager, position_manager=position_manager)
 
@@ -828,9 +923,15 @@ async def close_all_trades():
 @app.post("/api/trade/close-all-force")
 async def close_all_trades_force():
     """
-    FIX B4: Bot durdurma - TUM pozisyonlari kapatir.
-    Sira: (1) emir iptal (2) pozisyon reduceOnly MARKET (3) DB temizle.
+    F119 - Binance-driven close-all-force.
+    SORUN COZUMU: Once Binance API'den TUM acik pozisyonlari cek
+    (DB symbol listesine guvenmiyoruz), sonra hepsini parcalara bolerek kapat.
+    Max qty limitini otomatik handle eder.
     """
+    import math as _math
+    import asyncio as _aio
+
+    # 1) DB sayilari (rapor icin)
     conn = get_db_connection()
     n_classic = conn.execute(
         "SELECT COUNT(*) FROM active_trades WHERE COALESCE(is_grid_position,0)=0"
@@ -838,64 +939,203 @@ async def close_all_trades_force():
     n_grid = conn.execute(
         "SELECT COUNT(*) FROM active_trades WHERE is_grid_position=1"
     ).fetchone()[0]
-    symbols = [r["symbol"] for r in conn.execute(
+    db_symbols = [r["symbol"] for r in conn.execute(
         "SELECT DISTINCT symbol FROM active_trades"
     ).fetchall()]
 
     is_real = hasattr(order_manager, "client") and not getattr(order_manager, "test_mode", False)
-    closed_pos = 0
+
+    if not is_real:
+        # Test modu: sadece DB temizle
+        conn.execute("DELETE FROM active_trades")
+        conn.commit()
+        conn.close()
+        return {
+            "status": "success",
+            "closed_classic": n_classic,
+            "closed_grid": n_grid,
+            "total": n_classic + n_grid,
+            "mode": "test",
+            "message": "Test modu - sadece DB temizlendi",
+        }
+
+    # 2) Binance'ten TUM acik pozisyonlari cek (F119!)
+    print("[CLOSE-ALL-FORCE] F119: Binance'ten TUM pozisyonlar cekiliyor...")
+    try:
+        all_positions = order_manager.client.futures_position_information()
+    except Exception as _e:
+        return {"status": "error", "message": f"Binance pozisyon sorgu: {_e}"}
+
+    open_pos = [p for p in all_positions if float(p.get("positionAmt", 0)) != 0]
+    print(f"[CLOSE-ALL-FORCE] Binance'te {len(open_pos)} acik pozisyon bulundu")
+
+    # DB disi (hayalet) pozisyonlar
+    ghost_syms = [p['symbol'] for p in open_pos if p['symbol'] not in db_symbols]
+    if ghost_syms:
+        print(f"[CLOSE-ALL-FORCE] HAYALET pozisyonlar (DB disi): {len(ghost_syms)}")
+        for s in ghost_syms[:10]:
+            print(f"   - {s}")
+
+    # 3) Exchange info cache (maxQty icin)
+    try:
+        _exchange_info = order_manager.client.futures_exchange_info()
+        _sym_map = {s['symbol']: s for s in _exchange_info['symbols']}
+    except Exception as _e:
+        print(f"[CLOSE-ALL-FORCE] Exchange info uyari: {_e}")
+        _sym_map = {}
+
+    # 4) Acik emirleri iptal et (Binance'ten TUM)
     cancelled = 0
-
-    if is_real:
-        for sym in symbols:
+    try:
+        all_orders = order_manager.client.futures_get_open_orders()
+        for _o in all_orders:
             try:
-                try:
-                    order_manager.client.futures_cancel_all_open_orders(symbol=sym)
-                    cancelled += 1
-                except Exception as _ce:
-                    print(f"[CLOSE-ALL-FORCE] {sym} emir iptal hatasi: {_ce}")
+                order_manager.client.futures_cancel_order(symbol=_o['symbol'], orderId=_o['orderId'])
+                cancelled += 1
+            except Exception:
+                pass
+        print(f"[CLOSE-ALL-FORCE] {cancelled} acik emir iptal edildi")
+    except Exception as _e:
+        print(f"[CLOSE-ALL-FORCE] Emir iptal uyari: {_e}")
 
-                try:
-                    positions = order_manager.client.futures_position_information(symbol=sym)
-                    pos = next(
-                        (p for p in positions if p["symbol"] == sym and float(p["positionAmt"]) != 0),
-                        None
-                    )
-                    if pos:
-                        amt = float(pos["positionAmt"])
-                        close_side = "SELL" if amt > 0 else "BUY"
+    # 5) Her pozisyonu MARKET reduceOnly ile kapat (maxQty handling ile)
+    closed_pos = 0
+    failed = 0
+    closed_syms = []
+
+    for _p in open_pos:
+        _sym = _p['symbol']
+        _amt = float(_p['positionAmt'])
+        if _amt == 0:
+            continue
+
+        _side = "SELL" if _amt > 0 else "BUY"
+        _total_qty = abs(_amt)
+
+        # maxQty ve stepSize bul
+        _max_qty = None
+        _step = None
+        _sym_info = _sym_map.get(_sym)
+        if _sym_info:
+            for _f in _sym_info['filters']:
+                if _f['filterType'] == 'MARKET_LOT_SIZE':
+                    _max_qty = float(_f['maxQty'])
+                    _step = float(_f['stepSize'])
+                    break
+            if not _max_qty:
+                for _f in _sym_info['filters']:
+                    if _f['filterType'] == 'LOT_SIZE':
+                        _max_qty = float(_f['maxQty'])
+                        _step = float(_f['stepSize'])
+                        break
+
+        try:
+            if _max_qty and _step and _total_qty > _max_qty:
+                # Parcalara bol
+                _chunk = _math.floor(_max_qty * 0.9 / _step) * _step
+                _remaining = _total_qty
+                _iter = 0
+                _ok = True
+                while _remaining > 0 and _iter < 50:
+                    _iter += 1
+                    _this_qty = min(_chunk, _remaining)
+                    _this_qty = _math.floor(_this_qty / _step) * _step
+                    if _this_qty <= 0:
+                        break
+                    try:
                         order_manager.client.futures_create_order(
-                            symbol=sym,
-                            side=close_side,
-                            type="MARKET",
-                            quantity=abs(amt),
-                            reduceOnly=True,
+                            symbol=_sym, side=_side, type="MARKET",
+                            quantity=_this_qty, reduceOnly=True
                         )
-                        closed_pos += 1
-                        print(f"[CLOSE-ALL-FORCE] {sym} pozisyon kapatildi (amt={amt})")
-                except Exception as _pe:
-                    print(f"[CLOSE-ALL-FORCE] {sym} poz kapatma hatasi: {_pe}")
-            except Exception as _e:
-                print(f"[CLOSE-ALL-FORCE] {sym} genel hata: {_e}")
+                        _remaining -= _this_qty
+                    except Exception as _ce:
+                        print(f"[CLOSE-ALL-FORCE] {_sym} parca hata: {str(_ce)[:100]}")
+                        _ok = False
+                        break
+                if _ok:
+                    closed_pos += 1
+                    closed_syms.append(_sym)
+                    print(f"[CLOSE-ALL-FORCE] {_sym} pozisyon kapatildi (parcali, amt={_amt})")
+                else:
+                    failed += 1
+            else:
+                # Tek emir yeterli
+                order_manager.client.futures_create_order(
+                    symbol=_sym, side=_side, type="MARKET",
+                    quantity=_total_qty, reduceOnly=True
+                )
+                closed_pos += 1
+                closed_syms.append(_sym)
+                print(f"[CLOSE-ALL-FORCE] {_sym} pozisyon kapatildi (amt={_amt})")
+        except Exception as _pe:
+            failed += 1
+            print(f"[CLOSE-ALL-FORCE] {_sym} HATA: {str(_pe)[:120]}")
 
-    # DB temizligi en son
+    # 6) DB temizligi (F136: once history'ye yaz)
+    try:
+        import time as _t_f136
+        _now_f136 = int(_t_f136.time())
+        _rows_f136 = conn.execute("SELECT * FROM active_trades").fetchall()
+        for _r in _rows_f136:
+            try:
+                _pos = dict(_r)
+                _avg = float(_pos.get("avg_price") or 0)
+                _vol = float(_pos.get("total_vol") or 0)
+                _ttype = _pos.get("trade_type", "BUY")
+                _strat = _pos.get("strategy_name") or "UNKNOWN"
+                _lev = _pos.get("leverage") or 1
+                # Gercek exit fiyatini Binance'ten al (varsa)
+                _exit = 0
+                try:
+                    _bp = binance_positions.get(_pos['symbol'])
+                    if _bp:
+                        _exit = _bp.get("mark_price") or 0
+                except Exception:
+                    pass
+                if _exit <= 0:
+                    _exit = _avg
+                # PnL hesabi (mark'a gore)
+                if _ttype == "BUY":
+                    _pnl_pct = (_exit - _avg) / _avg if _avg > 0 else 0
+                else:
+                    _pnl_pct = (_avg - _exit) / _avg if _avg > 0 else 0
+                _pnl_usdt = _vol * _pnl_pct
+                conn.execute(
+                    """INSERT INTO trade_history
+                       (symbol, trade_type, total_vol, entry_price, initial_price, exit_price,
+                        pnl_amount, pnl_pct, entry_time, exit_time,
+                        strategy_name, dca_count, close_reason, leverage, funding_fee, commission)
+                       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'CLOSE-ALL-FORCE', ?, 0, 0)""",
+                    (_pos['symbol'], _ttype, _vol, _avg,
+                     _pos.get("initial_price") or _avg, _exit,
+                     _pnl_usdt, _pnl_pct * 100, _pos.get("entry_time"), _now_f136,
+                     _strat, _pos.get("dca_count") or 0, _lev)
+                )
+            except Exception as _e_h:
+                print(f"[F136] {_pos.get('symbol','?')} history hata: {str(_e_h)[:80]}")
+        print(f"[F136] {len(_rows_f136)} pozisyon trade_history'ye yazildi (CLOSE-ALL-FORCE)")
+    except Exception as _e_h_all:
+        print(f"[F136] history kayit genel hata: {_e_h_all}")
+    
     conn.execute("DELETE FROM active_trades")
+    conn.execute("DELETE FROM grid_state")
     conn.commit()
     conn.close()
 
-    total_count = n_classic + n_grid
-    print(f"[CLOSE-ALL-FORCE] DB: {n_classic} klasik + {n_grid} grid = {total_count}")
-    print(f"[CLOSE-ALL-FORCE] Binance: {cancelled} emir iptal, {closed_pos} poz kapandi (real={is_real})")
+    print(f"[CLOSE-ALL-FORCE] OZET: {closed_pos} kapandi, {failed} basarisiz, DB {n_classic+n_grid} silindi")
 
     return {
         "status": "success",
         "closed_classic": n_classic,
         "closed_grid": n_grid,
-        "total": total_count,
-        "symbols": symbols,
+        "total": n_classic + n_grid,
+        "binance_found": len(open_pos),
+        "binance_closed": closed_pos,
+        "binance_failed": failed,
+        "ghost_positions": len(ghost_syms),
+        "symbols": closed_syms[:50],
         "cancelled_orders": cancelled,
-        "closed_positions": closed_pos,
-        "mode": "real" if is_real else "test",
+        "mode": "real",
     }
 
 
@@ -923,6 +1163,45 @@ async def get_active_trades_with_pnl():
             t["unrealized_pnl_pct"] = 0.0
             t["current_price"] = 0.0
         return trades
+
+    # F124: Binance gercek notional (DB total_vol yerine gercek pozisyon)
+    binance_positions = {}
+    try:
+        _pos_list = await asyncio.to_thread(order_manager.client.futures_position_information)
+        # F139: DB'de olmayan snapshot/ghost pozisyonlarini atla
+        _db_syms = {t.get("symbol") for t in trades}
+        _all_open = [p for p in _pos_list if float(p.get("positionAmt", 0) or 0) != 0]
+        _extra = len(_all_open) - len([p for p in _all_open if p.get("symbol") in _db_syms])
+        if _extra > 0:
+            print(f"[F139] {len(_all_open)} Binance poz / {len(_db_syms)} DB kaydi "
+                  f"({_extra} snapshot-ignore)")
+        for _p in _pos_list:
+            _amt = float(_p.get("positionAmt", 0) or 0)
+            if _amt != 0:
+                _sym = _p.get("symbol")
+                # F139: DB'de yoksa atla
+                if _sym not in _db_syms:
+                    continue
+                _mark = float(_p.get("markPrice", 0) or 0)
+                _entry = float(_p.get("entryPrice", 0) or 0)
+                binance_positions[_sym] = {
+                    "amt": abs(_amt),
+                    "signed_amt": _amt,
+                    "mark_price": _mark,
+                    "entry_price": _entry,
+                    "notional_actual": abs(_amt) * _mark if _mark > 0 else 0,
+                    "notional_at_entry": abs(_amt) * _entry if _entry > 0 else 0,
+                    "side": "BUY" if _amt > 0 else "SELL",
+                    # F131: Binance'in hazir alanlari
+                    "unrealized_profit": float(_p.get("unRealizedProfit", 0) or 0),
+                    "liquidation_price": float(_p.get("liquidationPrice", 0) or 0),
+                    "initial_margin": float(_p.get("initialMargin", 0) or 0),
+                    "leverage": int(_p.get("leverage", 0) or 0),
+                    "margin_type": _p.get("marginType", "") or "",
+                    "break_even_price": float(_p.get("breakEvenPrice", 0) or 0),
+                }
+    except Exception as _be:
+        print(f"[F124] Binance pozisyon sorgu hatasi: {str(_be)[:100]}")
     # F85: config'ten SL degerlerini al (strateji bazli)
     try:
         _cfg_all = load_config()
@@ -934,6 +1213,27 @@ async def get_active_trades_with_pnl():
         sym = t.get("symbol", "")
         cur = price_map.get(sym)
 
+        # F124: Binance'teki gercek notional'i ekle
+        _bp = binance_positions.get(sym)
+        if _bp:
+            t["notional_actual"] = round(_bp["notional_actual"], 4)
+            t["notional_at_entry"] = round(_bp["notional_at_entry"], 4)
+            t["qty_actual"] = _bp["amt"]
+            t["binance_mark_price"] = _bp["mark_price"]
+            t["binance_entry_price"] = _bp["entry_price"]
+            t["on_binance"] = True
+            # F131: Binance hazir alanlari
+            t["binance_unrealized_profit"] = _bp["unrealized_profit"]
+            t["binance_liquidation_price"] = _bp["liquidation_price"]
+            t["binance_initial_margin"] = _bp["initial_margin"]
+            t["binance_leverage"] = _bp["leverage"]
+            t["binance_margin_type"] = _bp["margin_type"]
+            t["binance_break_even_price"] = _bp["break_even_price"]
+        else:
+            t["notional_actual"] = float(t.get("total_vol") or 0)
+            t["qty_actual"] = 0
+            t["on_binance"] = False
+
         # F85: SL + LIQ hesabi (cur olmasa da yapilabilir)
         try:
             _avg = float(t.get("avg_price") or 0)
@@ -942,13 +1242,20 @@ async def get_active_trades_with_pnl():
             _strat_name = t.get("strategy_name") or ""
 
             if _avg > 0:
-                # LIQ hesabi (maintenance margin ~%0.5)
-                _maint = 0.005
-                if _ttype == "BUY":  # LONG
-                    _liq = _avg * (1 - 1.0/_lev + _maint)
-                else:  # SHORT
-                    _liq = _avg * (1 + 1.0/_lev - _maint)
-                t["liq_price"] = round(max(0, _liq), 10)
+                # FIX F101: Cross modda per-position LIQ gosterme (yaniltici)
+                _margin_mode = _cfg_all.get("margin_mode", "cross")
+                if _margin_mode == "isolated":
+                    # ISOLATED: per-position LIQ hesabi (maintenance ~%0.5)
+                    _maint = 0.005
+                    if _ttype == "BUY":  # LONG
+                        _liq = _avg * (1 - 1.0/_lev + _maint)
+                    else:  # SHORT
+                        _liq = _avg * (1 + 1.0/_lev - _maint)
+                    t["liq_price"] = round(max(0, _liq), 10)
+                else:
+                    # CROSS: hesap bazli, per-position gosterme
+                    t["liq_price"] = None
+                    t["liq_price_note"] = "cross_mode"
 
                 # SL hesabi: config'ten, LIQ-safe cap'li
                 _s_cfg = _strats_cfg.get(_strat_name, {}) or {}
@@ -997,14 +1304,37 @@ async def get_active_trades():
 
 
 @app.get("/api/trade/history")
-async def get_trade_history(limit: int = 100):
+async def get_trade_history(limit: int = 100, symbol: str = None):
+    """F147: symbol filtresi + LRU cache (15 sn TTL).
+
+    - symbol verilirse: SADECE o sembolun history'si (100 coin olcegi icin kritik)
+    - symbol yoksa: eski davranis (son N kayit)
+    - Ayni (symbol, limit) 15 sn icinde tekrarlanirsa cache'den doner
+    """
+    _sym_f147 = (symbol or "").strip().upper() or None
+    _key_f147 = f"{_sym_f147 or '_ALL_'}:{limit}"
+
+    _cached_f147 = _f147_cache_get(_key_f147)
+    if _cached_f147 is not None:
+        return _cached_f147
+
     conn = get_db_connection()
-    rows = conn.execute(
-        "SELECT * FROM trade_history ORDER BY exit_time DESC LIMIT ?",
-        (limit,)
-    ).fetchall()
+    if _sym_f147:
+        rows = conn.execute(
+            "SELECT * FROM trade_history WHERE symbol = ? "
+            "ORDER BY exit_time DESC LIMIT ?",
+            (_sym_f147, limit)
+        ).fetchall()
+    else:
+        rows = conn.execute(
+            "SELECT * FROM trade_history ORDER BY exit_time DESC LIMIT ?",
+            (limit,)
+        ).fetchall()
     conn.close()
-    return [dict(r) for r in rows]
+
+    result = [dict(r) for r in rows]
+    _f147_cache_put(_key_f147, result)
+    return result
 
 
 # ----------------------------------------------------------------------
