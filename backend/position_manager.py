@@ -11,6 +11,7 @@ class PositionManager:
         self.client = client
         self.order_manager = order_manager
         self.trailing_state = {}
+        self._closing_locks = {}
 
     # ------------------------------------------------------------------
     # AI TTP - Kademeli Trailing Helpers
@@ -96,10 +97,12 @@ class PositionManager:
                     "dcaMaxSteps": 3,
                     "dcaMomentumFactor": 2.0,
                     "dcaVolMultiplier": 1.3,
+                    "dcaStepScale": 1.5,  # F333: Adim Carpani
                     "interval": "15m"}
         if strategy_name and strategy_name in strategies_config:
             cfg = strategies_config[strategy_name]
             return {
+            "maxHoldHours": (strategies_config.get(strategy_name, {}) or {}).get("maxHoldHours", 72),
                 "takeProfit": float(cfg.get("takeProfit", defaults["takeProfit"])),
                 "trailing": float(cfg.get("trailing", defaults["trailing"])),
                 "trailingSteps": cfg.get("trailingSteps", defaults["trailingSteps"]),
@@ -117,6 +120,7 @@ class PositionManager:
                 "dcaMaxSteps": int(cfg.get("dcaMaxSteps", defaults["dcaMaxSteps"])),
                 "dcaMomentumFactor": float(cfg.get("dcaMomentumFactor", defaults["dcaMomentumFactor"])),
                 "dcaVolMultiplier": float(cfg.get("dcaVolMultiplier", defaults["dcaVolMultiplier"])),
+                "dcaStepScale": float(cfg.get("dcaStepScale", defaults["dcaStepScale"])),
                 "interval": str(cfg.get("interval", defaults["interval"])),
             }
         return defaults
@@ -296,8 +300,13 @@ class PositionManager:
         _dyn_early_f153 = bool(sCfg.get("dcaDynamic", False))
         if _dyn_early_f153:
             _min_dist_cfg_f153 = float(sCfg.get("dcaMinDistancePct", 2.0))
-            next_step_pct = _min_dist_cfg_f153 / 100.0
-            print(f"[F153-DYN] {symbol} dinamik mod | alt kapi=%{_min_dist_cfg_f153:.2f} (statik liste atlandi)")
+            _step_scale = float(sCfg.get("dcaStepScale", 1.5))
+            
+            # F333: Bilesik Adim Carpani (Her kademede mesafe artar)
+            _effective_step_pct = _min_dist_cfg_f153 * (_step_scale ** dca_count)
+            next_step_pct = _effective_step_pct / 100.0
+            
+            print(f"[F333-DYN] {symbol} dinamik mod | adim carpani={_step_scale} | kademe={dca_count} | mesafe=%{_effective_step_pct:.2f}")
         else:
             next_step_pct = steps[dca_count] / 100
 
@@ -529,6 +538,13 @@ class PositionManager:
                 if _qty <= 0:
                     print(f"[DCA-EXEC] {symbol} qty=0 (step_vol={step_vol}, price={_live_price}), atlandi")
                     return False
+
+                # F218a - MinNotional (Dust) Kalkani
+                _min_notional = 5.0
+                _calc_notional = _qty * _live_price
+                if _calc_notional < _min_notional:
+                    print(f"[DCA-SKIP] {symbol} DCA iptal: Hesaplanan tutar {_calc_notional:.2f} USDT < MinNotional {_min_notional} USDT")
+                    return False
                 
                 # 3) Emir yonu: pozisyon yonu ile AYNI (DCA ek alim)
                 _dca_side = trade_type  # BUY pozisyon -> BUY DCA, SELL pozisyon -> SELL DCA
@@ -758,7 +774,8 @@ class PositionManager:
                     print(f"[F97] {symbol} partial close hatasi: {result_f97}")
                     # F126: Pozisyon Binance'te yoksa DB'den sil (kök çözüm)
                     _msg = str(result_f97.get("message", "")).lower()
-                    if "bulunamadi" in _msg or "not found" in _msg or "does not exist" in _msg:
+                    # F274: -2022 ReduceOnly hatasi da pozisyonun olmadigini gosterir
+                    if "bulunamadi" in _msg or "not found" in _msg or "does not exist" in _msg or "-2022" in _msg or "reduceonly" in _msg:
                         print(f"[F126] {symbol} Binance'te yok! DB temizleniyor...")
                         try:
                             _c = get_db_connection()
@@ -840,7 +857,7 @@ class PositionManager:
                 print(f"[F97] {symbol} partial close exception: {_e_f97}")
                 # F126: Exception'da da ayni kontrol
                 _msg2 = str(_e_f97).lower()
-                if "bulunamadi" in _msg2 or "not found" in _msg2 or "does not exist" in _msg2:
+                if "bulunamadi" in _msg2 or "not found" in _msg2 or "does not exist" in _msg2 or "-2022" in _msg2 or "reduceonly" in _msg2:
                     print(f"[F126] {symbol} (exception) Binance'te yok, DB temizleniyor...")
                     try:
                         _c2 = get_db_connection()
@@ -931,6 +948,7 @@ class PositionManager:
                     net_pnl=net_pnl,
                     reason=reason,
                     dca_count=dca_count,
+                    leverage=trade.get("leverage", 1) if 'trade' in locals() else leverage,
                 ))
         except Exception as _e:
             print(f"[TG] Kismi TP bildirim hatasi: {_e}")
@@ -1041,9 +1059,16 @@ class PositionManager:
         exit_time = int(time.time())
         funding_fee = await self._get_funding_fee(symbol, trade["entry_time"], exit_time)
         
+        # F250: Adaletli Funding Dagitimi
+        # Gecmiste PT yapildiysa, toplam funding'i hacimlere oranla
+        _pt_vol = trade.get("pt_volume", 0) or 0
+        _tot_vol = total_vol + _pt_vol
+        _funding_ratio = total_vol / _tot_vol if _tot_vol > 0 else 1.0
+        _funding_ttp = funding_fee * _funding_ratio
+
         # net_pnl = brut - komisyon + funding
         # (funding negatifse duser, pozitifse ekler)
-        net_pnl = gross_pnl - commission + funding_fee
+        net_pnl = gross_pnl - commission + _funding_ttp
         # F194d: ASAP kapanis -> cooldown
         if trade.get("strategy_name") == "ASAP":
             try:
@@ -1106,6 +1131,8 @@ class PositionManager:
              net_pnl, pnl_pct * 100, trade["entry_time"], exit_time,
              strategy_name, dca_count, reason, leverage, funding_fee, commission)
         )
+        # F273: Kapanis basariliysa aktif pozisyonu DB'den SIL (Mukerrer kapanisi onler)
+        conn.execute("DELETE FROM active_trades WHERE symbol = ?", (symbol,))
         conn.commit()
         conn.close()
 
@@ -1130,6 +1157,7 @@ class PositionManager:
                     net_pnl=net_pnl,
                     reason=reason,
                     dca_count=dca_count,
+                    leverage=trade.get("leverage", 1) if 'trade' in locals() else leverage,
                 ))
         except Exception as _e:
             print(f"[TG] Kapanış bildirim hatası: {_e}")
@@ -1343,6 +1371,7 @@ class PositionManager:
                     net_pnl=net_pnl,
                     reason=f"{reason} L{grid_level}",
                     dca_count=0,
+                    leverage=pos.get("leverage", 1),
                 ))
         except Exception as _e:
             print(f"[TG] Grid close bildirim hatasi: {_e}")
@@ -1392,6 +1421,12 @@ class PositionManager:
 
             tp_pct = params["takeProfit"] / 100
             sl_pct = params["stopLoss"] / 100
+            # F203c: slEnabled=false ise SL TAMAMEN devre disi
+            # F221: ASAP icin varsayilan SL KAPALI (default False)
+            _default_sl = False if strategy_name == "ASAP" else True
+            _f203c_sl_enabled = bool(params.get("slEnabled", _default_sl))
+            if not _f203c_sl_enabled:
+                sl_pct = 0.0
             # F170c: SL mesafesi = DCA mesafesi x K (K default 1.5)
             # Boylece SL, sonraki DCA seviyesinin ALTINDA kalir
             # F171: Dinamik DCA mesafesi (cache) | fallback: config dcaMinDistancePct
@@ -1399,8 +1434,8 @@ class PositionManager:
             if hasattr(self, "_dca_last_step") and symbol in self._dca_last_step:
                 _f170c_dca_dist = float(self._dca_last_step[symbol])
             _f170c_k = float(params.get("slDcaMultiplier", 1.5))
-            _f170c_old_sl_pct = sl_pct
-            sl_pct = (_f170c_dca_dist * _f170c_k) / 100.0
+            # F346: F170c DCA ezmesi kullanici istegiyle KALDIRILDI
+            pass
             # Log throttle: sembol basi 5 dk
             if not hasattr(self, "_f170c_log"):
                 self._f170c_log = {}
@@ -1424,7 +1459,7 @@ class PositionManager:
                 _liq_pct_sl = (100.0 / _lev_sl) - 1.0
                 # SL = LIQ'in %85'i (emniyet payi)
                 _auto_sl_pct = (_liq_pct_sl * 0.85) / 100.0
-                if _f170_liq_safe and sl_pct > _auto_sl_pct:
+                if False and sl_pct > _auto_sl_pct:
                     _old_sl = sl_pct * 100
                     sl_pct = _auto_sl_pct
                     # Ayni pozisyon icin 1 kez log
@@ -1491,8 +1526,8 @@ class PositionManager:
                 if _f180_entry_ts > 0:
                     import time as _t_f180
                     _f180_age_h = (_t_f180.time() - _f180_entry_ts) / 3600.0
-                    if _f180_age_h >= _f180_max_h and profit_pct < 0:
-                        print(f"[F180] {symbol} TIME-EXIT: yas={_f180_age_h:.1f}s >= {_f180_max_h}s "
+                    if _f180_age_h >= _f180_max_h and profit_pct >= 0:  # F236: Zarari kapama, basabasa gelince kapat
+                        print(f"[F180] {symbol} BREAK-EVEN EXIT: yas={_f180_age_h:.1f}s >= {_f180_max_h}s "
                               f"pnl={profit_pct*100:.2f}% -> KAPAT")
                         await self._execute_close(
                             symbol, current_price,
@@ -1519,13 +1554,33 @@ class PositionManager:
             except Exception as _e_sl:
                 print(f"[SL-DCA] history parse hatasi ({symbol}): {_e_sl}")
 
-            # F170b (Secenek B): sl_base_price her zaman dolu (initial veya son DCA)
-            if trade_type == "BUY":
-                sl_trigger = sl_base_price * (1 - sl_pct)
-                sl_hit = current_price <= sl_trigger
+            # F283: Likidasyon (LIQ) Tabanli Evrensel SL
+            # F293: Kullanici manuel SL girdiyse onu kullan, yoksa LIQ tabanliyi kullan
+            _user_sl_pct = float(params.get("stopLoss", 0))
+            if _user_sl_pct > 0:
+                _final_sl_pct = _user_sl_pct / 100.0
             else:
-                sl_trigger = sl_base_price * (1 + sl_pct)
-                sl_hit = current_price >= sl_trigger
+                _final_sl_pct = sl_pct # F346: Dogrudan config stopLoss degeri
+
+            sl_hit = False
+            if _f203c_sl_enabled and _final_sl_pct > 0:
+                _liq_price = float(pos.get("liquidation_price") or 0)
+
+                
+                if _liq_price <= 0:
+                    # F345: Matematiksel fallback TAMAMEN KALDIRILDI. API 0 donerse SL atlanir.
+                    continue
+                
+                # F329: SL'i KESINLIKLE LIQ fiyatina gore hesapla
+                if trade_type == "BUY":
+                    sl_trigger = _liq_price * (1 + _final_sl_pct)
+                    sl_hit = current_price <= sl_trigger
+                else:
+                    sl_trigger = _liq_price * (1 - _final_sl_pct)
+                    sl_hit = current_price >= sl_trigger
+                    
+                # Debug logu (kontrol icin)
+                # print(f"[F329-SL] {symbol} LIQ={_liq_price:.6f} SL_PCT={_final_sl_pct} Trigger={sl_trigger:.6f}")
 
             if sl_hit:
                 # Gercek zarar yuzdesi (avg_price bazli, rapor icin)
@@ -1604,9 +1659,14 @@ class PositionManager:
                         print(f"[PARTIAL-TP] {symbol} tetiklendi: %{pt_percent_val:.0f} "
                               f"({pt_close_vol:.2f} USDT) | Kar: {profit_pct*100:.2f}%")
                     
-                    pt_result = await self._execute_partial_close(
-                        symbol, current_price, pt_close_vol, pt_percent_val, reason
-                    )
+                    self._closing_locks[symbol] = True
+                    # F252: PT islemi sirasinda bu sembolu kilitle
+                    try:
+                        pt_result = await self._execute_partial_close(
+                            symbol, current_price, pt_close_vol, pt_percent_val, reason
+                        )
+                    finally:
+                        self._closing_locks[symbol] = False
                     
                     if pt_result == "RECONCILED":
                         # F126: Pozisyon Binance'te yoktu, DB'den silindi
@@ -1654,14 +1714,22 @@ class PositionManager:
                         state["hwm"] = current_price
                     trigger = state["hwm"] * (1 - _cur_trail)
                     if current_price <= trigger:
-                        await self._execute_close(symbol, current_price,
-                                                  f"AI-TTP ({profit_pct*100:.2f}%)")
-                        self.trailing_state.pop(position_key, None)
+                        self._closing_locks[symbol] = True
+                        try:
+                            await self._execute_close(symbol, current_price,
+                                                      f"AI-TTP ({profit_pct*100:.2f}%)")
+                            self.trailing_state.pop(position_key, None)
+                        finally:
+                            self._closing_locks[symbol] = False
                 else:
                     if current_price < state["hwm"]:
                         state["hwm"] = current_price
                     trigger = state["hwm"] * (1 + _cur_trail)
                     if current_price >= trigger:
-                        await self._execute_close(symbol, current_price,
-                                                  f"AI-TTP ({profit_pct*100:.2f}%)")
-                        self.trailing_state.pop(position_key, None)
+                        self._closing_locks[symbol] = True
+                        try:
+                            await self._execute_close(symbol, current_price,
+                                                      f"AI-TTP ({profit_pct*100:.2f}%)")
+                            self.trailing_state.pop(position_key, None)
+                        finally:
+                            self._closing_locks[symbol] = False

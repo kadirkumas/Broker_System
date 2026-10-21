@@ -373,6 +373,7 @@ scp -i "%SSH_KEY%" ^
     "%LOCAL_DIR%\backend\telegram_notifier.py" ^
     "%LOCAL_DIR%\backend\bot_config.json" ^
     "%LOCAL_DIR%\backend\bot_config.default.json" ^
+    "%LOCAL_DIR%\backend\blocked_symbols.txt" ^
     "%SSH_USER%@%SSH_IP%:~/Broker_System/backend/"
 if errorlevel 1 (echo     [X] Backend scp HATA^! & set SYNC_ERR=1)
 

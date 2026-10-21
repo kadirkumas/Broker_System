@@ -1373,14 +1373,19 @@ class StrategyEngine:
         # ⚡ REPLICA KORUMASI: Cloud'da hicbir zaman tarama baslatma
         import os as _os
         _mode = _os.getenv("SYNC_MODE", "standalone").strip().lower()
+
+        # F208: REPLICA olsa bile sembol listesini doldur (mobile API icin)
+        try:
+            await self.refresh_symbol_list()
+        except Exception as _e208:
+            print(f"[F208] refresh_symbol_list hata: {_e208}")
+
         if _mode == "replica":
-            print("[REPLICA-GUARD] Strategy Engine REPLICA modunda - tarama BASLATILMADI")
+            print("[REPLICA-GUARD] Strategy Engine REPLICA modunda - tarama BASLATILMADI (sembol listesi hazir)")
             return
 
         self.is_running = True
         print("[*] Strategy Engine başlatıldı.")
-
-        await self.refresh_symbol_list()
 
         # ⚡ Test modunda yanlislikla kilitlenmis PT flag'lerini temizle
         if self.position_manager and hasattr(self.position_manager, '_reset_stuck_pt_flags'):

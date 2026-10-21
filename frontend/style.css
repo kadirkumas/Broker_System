@@ -5878,3 +5878,42 @@ body.trade-panel-fullscreen {
 #btp-tbody-positions > tr > td:nth-child(7) {
     border-right: none;
 }
+
+
+/* F210c: BTP arama kutusu temizle butonu (border icinde) */
+.btp-search-wrap {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+}
+.btp-search-wrap .search-input,
+.btp-search-wrap input#btp-search-input {
+    padding-right: 28px !important;
+    box-sizing: border-box !important;
+}
+.btp-search-clear {
+    position: absolute;
+    right: 15px;
+    top: 50%;
+    transform: translateY(-50%);
+    color: #848e9c;
+    font-size: 12px;
+    font-weight: 700;
+    cursor: pointer;
+    padding: 0;
+    user-select: none;
+    line-height: 1;
+    display: none;
+    width: 14px;
+    height: 14px;
+    text-align: center;
+    align-items: center;
+    justify-content: center;
+}
+.btp-search-clear:hover {
+    color: #EAECEF;
+}
+/* Bos degilse X'i goster */
+.btp-search-wrap input:not(:placeholder-shown) + .btp-search-clear {
+    display: flex;
+}

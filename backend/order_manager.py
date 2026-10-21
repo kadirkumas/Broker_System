@@ -292,6 +292,11 @@ class OrderManager:
                     return {"status": "error", "message": msg}
                 entry_is_maker = 1 if is_maker else 0
             else:
+                # F218b - MinNotional (Dust) Kalkani
+                _calc_notional = qty * current_price
+                if _calc_notional < 5.0:
+                    print(f"[F218b] {self.symbol} Ana Pozisyon Iptal: Tutar {_calc_notional:.2f} USDT < 5.0 USDT")
+                    return {"status": "error", "message": "MinNotional < 5.0 USDT"}
                 order = self.client.futures_create_order(
                     symbol=self.symbol,
                     side=side,
@@ -499,6 +504,11 @@ class OrderManager:
                     return {"status": "error", "message": msg}
                 entry_is_maker = 1 if is_maker else 0
             else:
+                # F218b - MinNotional (Dust) Kalkani
+                _calc_notional = qty * current_price
+                if _calc_notional < 5.0:
+                    print(f"[F218b] {self.symbol} Grid Pozisyon Iptal: Tutar {_calc_notional:.2f} USDT < 5.0 USDT")
+                    return {"status": "error", "message": "MinNotional < 5.0 USDT"}
                 order = self.client.futures_create_order(
                     symbol=self.symbol, side=side, type="MARKET", quantity=qty
                 )
@@ -732,6 +742,11 @@ class OrderManager:
                     print(f"[!] Leverage ayarlanamadi: {le}")
 
             if order_mode == "market":
+                # F218b - MinNotional (Dust) Kalkani
+                _calc_notional = qty * current_price
+                if _calc_notional < 5.0:
+                    print(f"[F218b] {self.symbol} Market Emir Iptal: Tutar {_calc_notional:.2f} USDT < 5.0 USDT")
+                    return {"status": "error", "message": "MinNotional < 5.0 USDT"}
                 order = self.client.futures_create_order(
                     symbol=self.symbol, side=side, type="MARKET", quantity=qty
                 )
@@ -741,6 +756,11 @@ class OrderManager:
             elif order_mode == "limit":
                 if limit_price <= 0:
                     return {"status": "error", "message": "Limit fiyat gerekli"}
+                # F218b - MinNotional (Dust) Kalkani
+                _calc_notional = qty * limit_price
+                if _calc_notional < 5.0:
+                    print(f"[F218b] {self.symbol} Limit Emir Iptal: Tutar {_calc_notional:.2f} USDT < 5.0 USDT")
+                    return {"status": "error", "message": "MinNotional < 5.0 USDT"}
                 order = self.client.futures_create_order(
                     symbol=self.symbol, side=side, type="LIMIT",
                     timeInForce="GTC", quantity=qty, price=limit_price
@@ -1002,6 +1022,11 @@ class OrderManager:
 
             limit_price = round(best_bid if side == "BUY" else best_ask, price_prec)
 
+            # F218b - MinNotional (Dust) Kalkani
+            _calc_notional = qty * limit_price
+            if _calc_notional < 5.0:
+                print(f"[F218b] {symbol} Fallback Emir Iptal: Tutar {_calc_notional:.2f} USDT < 5.0 USDT")
+                return (False, 0, False, "MinNotional < 5.0 USDT")
             order = self.client.futures_create_order(
                 symbol=symbol, side=side, type="LIMIT",
                 timeInForce="GTC", quantity=qty, price=limit_price

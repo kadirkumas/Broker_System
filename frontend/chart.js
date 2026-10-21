@@ -352,15 +352,20 @@ window._f196_countFiltered = async function(searchQ, stratFilter) {
         ]);
         let posArr = await posRes.json();
         let histArr = await histRes.json();
-        const dailyArr = await dailyRes.json();
+        let dailyArr = await dailyRes.json();
 
+        // F269: API objesi donuyorsa diziyi cek
+        if (posArr && !Array.isArray(posArr)) posArr = posArr.trades || posArr.data || posArr.active_trades || [];
         if (!Array.isArray(posArr)) posArr = [];
+
+        if (histArr && !Array.isArray(histArr)) histArr = histArr.trades || histArr.data || histArr.history || [];
         if (!Array.isArray(histArr)) histArr = [];
 
-        // Strateji filtresi
-        const _sf = (stratFilter && stratFilter !== 'all')
-            ? (arr) => arr.filter(t => (t.strategy_name || t.strategy || '') === stratFilter)
-            : (arr) => arr;
+        if (dailyArr && !Array.isArray(dailyArr)) dailyArr = dailyArr.data || dailyArr.trades || dailyArr.history || [];
+        if (!Array.isArray(dailyArr)) dailyArr = [];
+
+        // F269: Tablo ile eslesmesi icin strateji filtresi gecici olarak kaldirildi
+        const _sf = (arr) => arr;
 
         // SearchQ filtresi
         const _sq = searchQ
@@ -532,10 +537,28 @@ window._hasVisibleDGR = function(idx) {
     return true;  // Her zaman true - trades hep gorunur
 };
 
+// F210: Arama kutusu temizle
+window.clearBtpSearch = function() {
+    var inp = document.getElementById('btp-search-input');
+    if (!inp) return;
+    inp.value = '';
+    // input event tetikle -> mevcut listener'lar filtreyi sifirlar
+    try {
+        inp.dispatchEvent(new Event('input', { bubbles: true }));
+    } catch (e) {
+        // Eski tarayicilar icin fallback
+        if (window.refreshBottomPanel) window.refreshBottomPanel();
+    }
+    inp.focus();
+};
+
 window.BotUI = { clearAll: function(idx) { let cObj = chartsData[idx]; if (!cObj) return; cObj.strategyMarkers = []; window.clearTradeLabels(idx); if (cObj.series) cObj.series.setMarkers([]); } };
 window.toggleBottomTradePanel = function() { const panel = document.getElementById('bottom-trade-panel'); const btn = document.getElementById('btp-toggle-btn'); if (panel.classList.contains('collapsed')) { panel.classList.remove('collapsed'); if (btn) btn.innerHTML = '▼ Gizle'; } else { panel.classList.add('collapsed'); if (btn) btn.innerHTML = '▲ Göster'; } };
 
 window.switchBtpTab = function(target) {
+    // F216: son sekmeyi kaydet
+    try { localStorage.setItem('cryptoBtpTab_v1', target); } catch (e) {}
+
     document.getElementById('tab-positions').classList.remove('active'); document.getElementById('tab-history').classList.remove('active'); document.getElementById('tab-daily').classList.remove('active');
     document.getElementById(`tab-${target}`).classList.add('active');
     document.getElementById('table-positions').style.display = target === 'positions' ? '' : 'none'; document.getElementById('table-history').style.display = target === 'history' ? '' : 'none'; document.getElementById('table-daily').style.display = target === 'daily' ? '' : 'none';
@@ -639,16 +662,18 @@ window.renderHistoricalTrades = async function() {
                 : `${t.total_vol.toFixed(2)} USDT`;
             
             const isActiveRow = ((t.symbol + '.P') === activeSymbol) ? 'active-coin-row' : '';
-            const isPartialRow = t.is_partial == 1;
-            const delCellHTML = isPartialRow
-                ? '<span title="Kısmi TP kapanışı - ana işleme bağlıdır" style="font-size:11px; color:#5d6471; cursor:help;">🔗</span>'
-                : `<span class="btn-del-trade" onclick="window.deleteTradePermanently(${t.id}, event)" title="Bu işlemi kalıcı sil">✖</span>`;
+            // F260: Kirmizi X her zaman grubun ilk satirinda (en ustte) olsun
+            const isFirstInGroup = (t._grp_pos === 0 || t._grp_pos === undefined);
+            // F263: X yoksa ayni genislikte bosluk tutucu koy (hizalama icin)
+            const delCellHTML = isFirstInGroup
+                ? `<span class="btn-del-trade" style="color:#F6465D; font-weight:bold; display:inline-block; width:14px; text-align:center;" onclick="window.deleteTradePermanently(${t.id}, event)" title="Bu işlemi kalıcı sil">✖</span>`
+                : '<span style="display:inline-block; width:14px;"></span>';
             
             const _grpCls = (t._grp_size > 1) ? (t._grp_pos === 0 ? ' trade-group-first' : ' trade-group-child') : '';
             html += `<tr class="${isActiveRow}${_grpCls}">
                 <td class="center">
                     ${delCellHTML}
-                    <span title="${reasonFull}" style="font-size:10px; padding:2px 5px; background:rgba(252,213,53,0.1); color:#fcd535; border-radius:3px; cursor:help; margin-left:4px;">${reasonShort}</span>
+                    <span title="${reasonFull}" style="font-size:10px; padding:2px 5px; background:rgba(252,213,53,0.1); color:#fcd535; border-radius:3px; cursor:help; display:inline-block;">${reasonShort}</span>
                 </td>
                 <td class="left" style="font-weight:600; cursor:pointer; color:#79a0ff;" onclick="window.jumpToSymbolWithTrades('${t.symbol}.P')">${t._grp_pos > 0 ? '<span class="f27-branch">└─</span>' : ''}${t.symbol}</td>
                 <td class="left ${tagClass}">${tagText}${window.getStrategyDot(t.strategy_name)}</td>
@@ -778,10 +803,22 @@ window.renderDailyTrades = async function() {
                 ? `<span style="display:inline-flex; align-items:center; justify-content:flex-end; gap:6px;"><span>${t.total_vol.toFixed(2)} USDT</span><span style="font-size:10px; color:#fcd535; font-weight:600; padding:1px 5px; background:rgba(252,213,53,0.12); border-radius:3px; white-space:nowrap;">DCA:${t.dca_count}</span></span>`
                 : `${t.total_vol.toFixed(2)} USDT`;
 
+            // F265: Eksik olan reason degiskenlerini tanimla
+            const reasonFull = t.close_reason || '';
+            let reasonShort = reasonFull;
+            if (reasonFull.includes('AI-TTP') || reasonFull.includes('TRAILING')) reasonShort = 'TTP';
+            else if (reasonFull.includes('STOP')) reasonShort = 'SL';
+            else if (reasonFull.includes('TAKE') || reasonFull.includes('PARTIAL')) reasonShort = 'PT';
+
             const _dGrpCls = (t._grp_size > 1) ? (t._grp_pos === 0 ? ' trade-group-first' : ' trade-group-child') : '';
             html += `<tr class="${isActiveRow}${_dGrpCls}">
-                <td class="center">${(t.is_partial == 1) ? '<span title="Kısmi TP kapanışı - ana işleme bağlıdır" style="font-size:11px; color:#5d6471; cursor:help;">🔗</span>' : `<span class="btn-del-trade" onclick="window.deleteTradePermanently(${t.id}, event)" title="Sil">✖</span>`}</td>
-                <td class="left" style="font-weight:600; cursor:pointer; color:#79a0ff;" onclick="window.changeSymbol('${t.symbol}.P')">${t._grp_pos > 0 ? '<span class="f27-branch">└─</span>' : ''}${t.symbol}</td>
+                <td class="center">
+                    ${(t._grp_pos === 0 || t._grp_pos === undefined) 
+                        ? `<span class="btn-del-trade" style="color:#F6465D; font-weight:bold; display:inline-block; width:14px; text-align:center;" onclick="window.deleteTradePermanently(${t.id}, event)" title="Sil">✖</span>` 
+                        : '<span style="display:inline-block; width:14px;"></span>'}
+                    <span title="${reasonFull}" style="font-size:10px; padding:2px 5px; background:rgba(252,213,53,0.1); color:#fcd535; border-radius:3px; cursor:help; display:inline-block;">${reasonShort}</span>
+                </td>
+                <td class="left" style="font-weight:600; cursor:pointer; color:#79a0ff;" onclick="window.changeSymbol('${t.symbol}.P')">${t.symbol}</td>
                 <td class="left ${tagClass}">${tagText}${window.getStrategyDot(t.strategy_name)}</td>
                 <td class="right">${volCell}</td>
                 <td class="right" style="color:#848e9c;">${window.formatPrice(t.initial_price || t.entry_price)}</td>
@@ -815,6 +852,13 @@ window.togglePosSort = function(col) {
         window.positionsSortCol = col;
         window.positionsSortDir = 'desc';
     }
+    // F217: siralamayi kaydet
+    try {
+        localStorage.setItem('cryptoPosSort_v1', JSON.stringify({
+            col: window.positionsSortCol,
+            dir: window.positionsSortDir
+        }));
+    } catch (e) {}
     window.updatePosSortIcons();
     window.renderBottomTrades();
 };
@@ -1009,18 +1053,8 @@ window.renderBottomTrades = async function() {
         posArray.forEach(p => {
             const isActiveRow = (p.displaySymbol === activeSymbol) ? 'active-coin-row' : '';
             
-            // ⚡ LIQ fiyatı hesabı (kaldıraç bazlı, yaklaşık)
-            const _lev = p.leverage || 1;
-            const _MAINT = 0.005;  // %0.5 maintenance margin (yaklaşık)
-            let liqPrice = 0;
-            if (_lev > 1 && p.avgPrice > 0) {
-                if (p.type === 'LONG') {
-                    liqPrice = p.avgPrice * (1 - 1/_lev + _MAINT);
-                } else {
-                    liqPrice = p.avgPrice * (1 + 1/_lev - _MAINT);
-                }
-                if (liqPrice <= 0) liqPrice = 0;
-            }
+        let liqPrice = parseFloat(p.liquidationPrice) || 0;
+        let liqDisplay = liqPrice > 0 ? (liqPrice < 1 ? liqPrice.toFixed(6) : liqPrice.toFixed(2)) : '-';
             
             const diffSec = Math.max(0, Math.floor(Date.now() / 1000) - p.entryTime);
             const d = Math.floor(diffSec / 86400), h = Math.floor((diffSec % 86400) / 3600), m = Math.floor((diffSec % 3600) / 60);
@@ -5451,7 +5485,7 @@ document.addEventListener('keydown', function(e) {
         "Marjin": "Bu pozisyon icin hesabinizda kilitlenen gercek teminat = Ilk Islem / Kaldiracli.",
         "Hedef Kâr": "Pozisyon bu kar yuzdesine ulastiginda Izleyen Stop aktif olur. Ornek: 1.5 = %1.5 kar.",
         "İzleyen Stop": "Fiyat tepe noktasindan bu yuzde kadar geri cekilirse pozisyon kapatilir. Kari korur.",
-        "Stop Loss": "Fiyat girise gore bu yuzde ters giderse pozisyon otomatik kapanir. Zarari sinirlar.",
+        "Stop Loss": "Kaldıraca göre tahmini LIQ uzaklığı: 2x: %49.5 | 3x: %32.8 | 4x: %24.5 | 5x: %19.5 | 10x: %9.5 | 20x: %4.5. Girdiğiniz SL % değeri, bu LIQ noktasının hemen önüne eklenir.",
         "DCA Aktif": "Kademeli alim. Fiyat ters giderse ek alim yapar ve ortalama maliyeti dusurur.",
         "Hacim Çarpanı": "Her DCA kademesinde eklenecek hacim carpani. 1.2 = her kademe 1.2x onceki hacim.",
         "Düşüş Adımları": "Her DCA kademesinin hangi yuzde dususte tetiklenecegi. Ornek: 5,10,15,20.",
@@ -6095,7 +6129,7 @@ window.onBtStrategyChange = function() {
         <div class="bt-param-row"><label>Kaldıraç</label><input type="number" id="btp-leverage" value="${params.leverage || 1}"></div>
         <div class="bt-param-row"><label>Hedef Kâr (%)</label><input type="number" id="btp-takeProfit" value="${params.takeProfit || 1.5}" step="0.1"></div>
         <div class="bt-param-row"><label>🎯 AI TTP</label><input type="text" id="btp-trailingSteps" value="${params.trailingSteps || '1.5:0.3, 2.5:0.2, 4:0.12, 6:0.07, 10:0.03'}" style="font-family:monospace;font-size:11px;"></div>
-        <div class="bt-param-row"><label>Stop Loss (%)</label><input type="number" id="btp-stopLoss" value="${params.stopLoss || 3}" step="0.1"></div>
+        <div class="bt-param-row"><label>Stop Loss (%)</label><input type="number" id="btp-stopLoss" title="Kaldıraca göre tahmini LIQ uzaklığı: 2x: %49.5 | 3x: %32.8 | 4x: %24.5 | 5x: %19.5 | 10x: %9.5 | 20x: %4.5. Girdiğiniz SL % değeri, bu LIQ noktasının hemen önüne eklenir." value="${params.stopLoss || 3}" step="0.1"></div>
         <div class="bt-param-row"><label>DCA Aktif</label>
             <select id="btp-useDCA">
                 <option value="true" ${params.useDCA ? 'selected' : ''}>Evet</option>
@@ -7916,7 +7950,7 @@ window.dismissCriticalOverlay = function() {
                 + '<div class="bt-param-row" style="grid-column: span 3;"><label>🎯 AI TTP</label>'
                 + '<input type="text" id="btp-trailingSteps" value="' + (sc.trailingSteps || '1.5:0.3, 2.5:0.2, 4:0.12, 6:0.07, 10:0.03') + '" style="font-family:monospace;font-size:11px;" title="Kademeli izleyen stop: kar%:trail% (ornek: 1.5:0.3, 2.5:0.2)"></div>'
                 + '<div class="bt-param-row"><label>Stop Loss (%)</label>'
-                + '<input type="number" id="btp-stopLoss" value="' + (sc.stopLoss != null ? sc.stopLoss : 3) + '" step="0.1"></div>'
+                + '<input type="number" id="btp-stopLoss" title="Kaldıraca göre tahmini LIQ uzaklığı: 2x: %49.5 | 3x: %32.8 | 4x: %24.5 | 5x: %19.5 | 10x: %9.5 | 20x: %4.5. Girdiğiniz SL % değeri, bu LIQ noktasının hemen önüne eklenir." value="' + (sc.stopLoss != null ? sc.stopLoss : 3) + '" step="0.1"></div>'
                 + '<div class="bt-param-row"><label>DCA Aktif</label>'
                 + '<select id="btp-useDCA">'
                 + '<option value="true" ' + (sc.useDCA ? 'selected' : '') + '>Evet</option>'
@@ -11407,6 +11441,13 @@ window._groupSortedTrades = function(sortedTrades) {
                 _lastStatus = s;
 
                 if (s.is_over_limit) {
+                    // F211: Absurt deger koruma (balance 0 -> risk_pct 2.6M)
+                    if (s.risk_pct > 1000 || s.balance_unknown) {
+                        console.warn('[F211] Absurt risk degeri, siren gosterilmiyor:',
+                                     s.risk_pct, 'balance_unknown:', s.balance_unknown);
+                        hideOverlay();
+                        return;
+                    }
                     if (shouldDismiss()) {
                         // Sessizce bekle, siren gosterme
                         return;
@@ -11507,7 +11548,7 @@ console.log('[F64] quickClosePosition hazir');
                     var sym = t.symbol.endsWith('.P') ? t.symbol : t.symbol + '.P';
                     bySymbol[sym] = {
                         sl: parseFloat(t.sl_price) || null,
-                        liq: parseFloat(t.liq_price) || null,
+                        liq: parseFloat(t.binance_liquidation_price) || null,
                         avg: parseFloat(t.avg_price) || null,
                         type: t.trade_type || 'BUY',
                     };
@@ -11525,14 +11566,8 @@ console.log('[F64] quickClosePosition hazir');
     }
 
     function clearSlLiqLines(idx) {
-        var cObj = (typeof chartsData !== 'undefined') ? chartsData[idx] : null;
-        if (!cObj || !cObj.chart) return;
-
-        var arr = window._slLiqSeries[idx] || [];
-        arr.forEach(function(s) {
-            try { cObj.chart.removeSeries(s); } catch(e) {}
-        });
-        window._slLiqSeries[idx] = [];
+        // F308: Cizim kodu tamamen kaldirildi. Hicbir sey cizmeyecek.
+        return;
     }
 
     function drawSlLiqLines(idx) {
@@ -11552,13 +11587,26 @@ console.log('[F64] quickClosePosition hazir');
 
         var newSeries = [];
 
-        // 1) LIQ cizgisi (kirmizi, kesikli) - F88 toggle
+
+        // F317: Kisaltilmis SL ve LIQ cizgileri (Sadece son 30 mum)
+        if (!window._slLiqSeries) window._slLiqSeries = {};
+        if (!window._slLiqSeries[idx]) window._slLiqSeries[idx] = [];
+        
+        // Onceki cizgileri temizle
+        window._slLiqSeries[idx].forEach(function(s) { try { cObj.chart.removeSeries(s); } catch(e){} });
+        window._slLiqSeries[idx] = [];
+
+        var _lastCandleTime = cObj.rawCandles[cObj.rawCandles.length - 1].time;
+        var _shortStartTime = cObj.rawCandles[Math.max(0, cObj.rawCandles.length - 30)].time;
+
+        // 1) LIQ Cizgisi
+        console.log('[F321-DEBUG] LIQ verisi:', { symbol: sym, liq: data.liq, showLiq: window._chartShowLiq });
         if (data.liq && data.liq > 0 && window._chartShowLiq !== false) {
             try {
                 var liqSeries = cObj.chart.addLineSeries({
                     color: 'rgba(246, 70, 93, 0.75)',
                     lineWidth: 1,
-                    lineStyle: 2,  // dashed
+                    lineStyle: 2,
                     crosshairMarkerVisible: false,
                     lastValueVisible: true,
                     priceLineVisible: false,
@@ -11566,22 +11614,21 @@ console.log('[F64] quickClosePosition hazir');
                     autoscaleInfoProvider: function() { return null; },
                 });
                 liqSeries.setData([
-                    { time: startTime, value: data.liq },
-                    { time: endTime, value: data.liq },
+                    { time: _shortStartTime, value: data.liq },
+                    { time: _lastCandleTime, value: data.liq },
                 ]);
-                newSeries.push(liqSeries);
-            } catch(e) {
-                console.warn('[F86] LIQ seri hatasi:', e);
-            }
+                window._slLiqSeries[idx].push(liqSeries);
+            } catch(e) { console.error('LIQ cizim hatasi', e); }
         }
 
-        // 2) SL cizgisi (turuncu, kesikli) - F88 toggle
-        if (data.sl && data.sl > 0 && window._chartShowSl !== false) {
+        // 2) SL Cizgisi
+        var _slVal = data.sl || data.sl_price;
+        if (_slVal && _slVal > 0 && window._chartShowSl !== false) {
             try {
                 var slSeries = cObj.chart.addLineSeries({
-                    color: 'rgba(255, 152, 0, 0.85)',
-                    lineWidth: 1,
-                    lineStyle: 2,  // dashed
+                    color: 'rgba(252, 213, 53, 0.85)',
+                    lineWidth: 1.5,
+                    lineStyle: 2,
                     crosshairMarkerVisible: false,
                     lastValueVisible: true,
                     priceLineVisible: false,
@@ -11589,16 +11636,13 @@ console.log('[F64] quickClosePosition hazir');
                     autoscaleInfoProvider: function() { return null; },
                 });
                 slSeries.setData([
-                    { time: startTime, value: data.sl },
-                    { time: endTime, value: data.sl },
+                    { time: _shortStartTime, value: _slVal },
+                    { time: _lastCandleTime, value: _slVal },
                 ]);
-                newSeries.push(slSeries);
-            } catch(e) {
-                console.warn('[F86] SL seri hatasi:', e);
-            }
+                window._slLiqSeries[idx].push(slSeries);
+            } catch(e) { console.error('SL cizim hatasi', e); }
         }
 
-        window._slLiqSeries[idx] = newSeries;
     }
 
     // Hook: changeSymbol / updateSingleChart sonrasi ciz
@@ -11682,6 +11726,15 @@ console.log('[F64] quickClosePosition hazir');
                 elSl.addEventListener('change', function() {
                     window._chartShowSl = elSl.checked;
                     localStorage.setItem(LS_SL, elSl.checked ? '1' : '0');
+                    // F314: Salter kapandiysa cizgileri zorla sil
+                    if (!window._chartShowSl && typeof chartsData !== 'undefined') {
+                        chartsData.forEach(cObj => {
+                            if (cObj && cObj.slPriceLine) {
+                                try { cObj.series.removePriceLine(cObj.slPriceLine); } catch(e){}
+                                cObj.slPriceLine = null;
+                            }
+                        });
+                    }
                     updateAllCharts();
                     console.log('[F88] SL toggle:', elSl.checked);
                 });
@@ -11695,6 +11748,15 @@ console.log('[F64] quickClosePosition hazir');
                 elLiq.addEventListener('change', function() {
                     window._chartShowLiq = elLiq.checked;
                     localStorage.setItem(LS_LIQ, elLiq.checked ? '1' : '0');
+                    // F314: Salter kapandiysa cizgileri zorla sil
+                    if (!window._chartShowLiq && typeof chartsData !== 'undefined') {
+                        chartsData.forEach(cObj => {
+                            if (cObj && cObj.liqPriceLine) {
+                                try { cObj.series.removePriceLine(cObj.liqPriceLine); } catch(e){}
+                                cObj.liqPriceLine = null;
+                            }
+                        });
+                    }
                     updateAllCharts();
                     console.log('[F88] LIQ toggle:', elLiq.checked);
                 });
@@ -12270,4 +12332,238 @@ console.log('[F64] quickClosePosition hazir');
     if (!install()) {
         setTimeout(install, 1000);
     }
+})();
+
+
+/* ============================================================
+   F216: Alt panel sekme kaliciligi
+   ============================================================ */
+(function() {
+    'use strict';
+    
+    function restoreBtpTab() {
+        if (typeof window.switchBtpTab !== 'function') {
+            setTimeout(restoreBtpTab, 300);
+            return;
+        }
+        
+        var saved = 'positions';
+        try {
+            saved = localStorage.getItem('cryptoBtpTab_v1') || 'positions';
+        } catch (e) {}
+        
+        if (saved !== 'positions' && saved !== 'history' && saved !== 'daily') {
+            saved = 'positions';
+        }
+        
+        console.log('[F216] Alt panel sekme yukleniyor:', saved);
+        try {
+            window.switchBtpTab(saved);
+        } catch (e) {
+            console.warn('[F216] switchBtpTab hatasi:', e);
+        }
+    }
+    
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', function() {
+            setTimeout(restoreBtpTab, 500);
+        });
+    } else {
+        setTimeout(restoreBtpTab, 500);
+    }
+})();
+
+
+/* ============================================================
+   F217: Pozisyon tab siralamasini geri yukle
+   ============================================================ */
+(function() {
+    'use strict';
+    
+    function restorePosSort() {
+        var saved = null;
+        try {
+            var raw = localStorage.getItem('cryptoPosSort_v1');
+            if (raw) saved = JSON.parse(raw);
+        } catch (e) {}
+        
+        if (saved && saved.col && saved.dir) {
+            window.positionsSortCol = saved.col;
+            window.positionsSortDir = saved.dir;
+            console.log('[F217] Siralama yuklendi:', saved.col, saved.dir);
+        }
+    }
+    
+    // Pozisyon tab aktifse yeniden render tetikle
+    function refreshIfActive() {
+        restorePosSort();
+        var posTab = document.getElementById('tab-positions');
+        if (posTab && posTab.classList.contains('active')) {
+            if (typeof window.renderBottomTrades === 'function') {
+                window.renderBottomTrades();
+            }
+        }
+    }
+    
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', function() {
+            setTimeout(refreshIfActive, 600);
+        });
+    } else {
+        setTimeout(refreshIfActive, 600);
+    }
+})();
+
+// F298: Bot Ayarlari (bot-config-modal) icin ozel ESC destegi (Fix)
+document.addEventListener('keydown', function(e) {
+    if (e.key === 'Escape') {
+        var m = document.getElementById('bot-config-modal');
+        if (m && m.classList.contains('active')) {
+            // F298: style.display degistirmek yerine orijinal fonksiyonu cagir
+            if (typeof window.closeBotConfigModal === 'function') {
+                window.closeBotConfigModal();
+            } else {
+                m.classList.remove('active');
+            }
+            console.log('[F298] Bot Ayarlari ESC ile kapatildi.');
+        }
+    }
+}, true); // Capture phase (input odaktayken de calisir)
+
+/* DCA-SCALE-TOOLTIP v1 */
+// =============================================================
+// DCA Adım Çarpanı için zengin hover tooltip
+// =============================================================
+(function() {
+    'use strict';
+
+    var TIP_ID = 'dca-scale-tooltip';
+
+    function _ensureTip() {
+        var tip = document.getElementById(TIP_ID);
+        if (tip) return tip;
+
+        tip = document.createElement('div');
+        tip.id = TIP_ID;
+        tip.style.cssText = [
+            'position: fixed',
+            'z-index: 999999',
+            'max-width: 480px', // Tablo genişliği için biraz daha geniş
+            'padding: 14px 16px',
+            'background: #0b0e14',
+            'color: #d1d4dc',
+            'font-size: 11px',
+            'line-height: 1.5',
+            'border: 1px solid #fcd535', // Altın sarısı kenarlık
+            'border-radius: 8px',
+            'box-shadow: 0 8px 32px rgba(0,0,0,0.85), 0 0 20px rgba(252,213,53,0.15)',
+            'pointer-events: none',
+            'opacity: 0',
+            'transform: translateY(-6px)',
+            'transition: opacity 0.15s ease, transform 0.15s ease',
+            'font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Arial, sans-serif',
+            'display: none'
+        ].join(';');
+        document.body.appendChild(tip);
+        return tip;
+    }
+
+    function _buildContent() {
+        var tableHTML = `
+            <table style="width:100%; border-collapse:collapse; text-align:center; font-family:monospace; font-size:10.5px;">
+                <thead>
+                    <tr style="border-bottom:1px solid #2a2e39; color:#848e9c;">
+                        <th style="padding:4px 2px; text-align:left;">Çarpan</th>
+                        <th style="padding:4px 2px;">1. DCA</th>
+                        <th style="padding:4px 2px;">2. DCA</th>
+                        <th style="padding:4px 2px;">3. DCA</th>
+                        <th style="padding:4px 2px;">4. DCA</th>
+                        <th style="padding:4px 2px;">5. DCA</th>
+                        <th style="padding:4px 2px;">6. DCA</th>
+                        <th style="padding:4px 2px;">7. DCA</th>
+                        <th style="padding:4px 2px; color:#f23645; text-align:right;">TOPLAM</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr><td style="text-align:left; color:#79a0ff;">1.1</td><td>%5.0</td><td>%5.5</td><td>%6.05</td><td>%6.66</td><td>%7.32</td><td>%8.05</td><td>%8.86</td><td style="text-align:right; color:#f23645;">-%38.8</td></tr>
+                    <tr><td style="text-align:left; color:#79a0ff;">1.2</td><td>%5.0</td><td>%6.0</td><td>%7.20</td><td>%8.64</td><td>%10.4</td><td>%12.4</td><td>%14.9</td><td style="text-align:right; color:#f23645;">-%49.4</td></tr>
+                    <tr><td style="text-align:left; color:#79a0ff;">1.3</td><td>%5.0</td><td>%6.5</td><td>%8.45</td><td>%11.0</td><td>%14.3</td><td>%18.6</td><td>%24.1</td><td style="text-align:right; color:#f23645;">-%61.6</td></tr>
+                    <tr><td style="text-align:left; color:#79a0ff;">1.4</td><td>%5.0</td><td>%7.0</td><td>%9.80</td><td>%13.7</td><td>%19.2</td><td>%26.9</td><td>%37.6</td><td style="text-align:right; color:#f23645;">-%74.6</td></tr>
+                    <tr><td style="text-align:left; color:#79a0ff;">1.5</td><td>%5.0</td><td>%7.5</td><td>%11.2</td><td>%16.9</td><td>%25.3</td><td>%38.0</td><td>%56.9</td><td style="text-align:right; color:#f23645;">-%87.0</td></tr>
+                </tbody>
+            </table>
+        `;
+
+        return ''
+            + '<div style="font-weight:800; font-size:13px; color:#fcd535; margin-bottom:8px; letter-spacing:0.5px;">⚙️ DCA ADIM ÇARPANI</div>'
+            + '<div style="margin-bottom:10px; color:#a8b0bf;">Her kademede DCA mesafesinin kaç kat artacağını belirler. (Başlangıç: %5)</div>'
+            + '<div style="background:#131722; padding:8px; border-radius:6px; border:1px solid #2a2e39; margin-bottom:10px;">'
+            + tableHTML
+            + '</div>'
+            + '<div style="font-size:10px; color:#f23645; line-height:1.5;">'
+            + '⚠️ <b>Risk Uyarısı:</b> 5x kaldıraçta likidasyon mesafesi ~%19 civarındadır.<br>'
+            + '1.2 üzeri çarpanlarda 7. kademeye gelmeden likide olma riski vardır.'
+            + '</div>';
+    }
+
+    function _showTip(el) {
+        var tip = _ensureTip();
+        tip.innerHTML = _buildContent();
+        tip.style.display = 'block';
+        tip.style.opacity = '0';
+        tip.style.transform = 'translateY(-6px)';
+
+        var rect = el.getBoundingClientRect();
+        var tipRect = tip.getBoundingClientRect();
+
+        var top = rect.bottom + 10;
+        var left = rect.left - tipRect.width + rect.width; // Saga hizali
+
+        if (left < 10) left = 10;
+        if (left + tipRect.width > window.innerWidth - 10) {
+            left = window.innerWidth - tipRect.width - 10;
+        }
+        if (top + tipRect.height > window.innerHeight - 10) {
+            top = rect.top - tipRect.height - 10;
+        }
+
+        tip.style.left = left + 'px';
+        tip.style.top = top + 'px';
+
+        requestAnimationFrame(function() {
+            tip.style.opacity = '1';
+            tip.style.transform = 'translateY(0)';
+        });
+    }
+
+    function _hideTip() {
+        var tip = document.getElementById(TIP_ID);
+        if (!tip) return;
+        tip.style.opacity = '0';
+        tip.style.transform = 'translateY(-6px)';
+        setTimeout(function() {
+            if (tip.style.opacity === '0') {
+                tip.style.display = 'none';
+            }
+        }, 150);
+    }
+
+    // Event Delegation (Dinamik eklenen modal elemanlari icin)
+    document.addEventListener('mouseover', function(e) {
+        // Hem inputa hem de label'a hover yapildiginda calissin
+        if (e.target && (
+            (e.target.dataset && e.target.dataset.param === 'dcaStepScale') || 
+            (e.target.classList && e.target.classList.contains('dca-scale-label'))
+        )) {
+            _showTip(e.target);
+        }
+    });
+
+    document.addEventListener('mouseout', function(e) {
+        if (e.target && e.target.dataset && e.target.dataset.param === 'dcaStepScale') {
+            _hideTip();
+        }
+    });
+
+    console.log('[DCA-TIP] Hazir');
 })();

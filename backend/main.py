@@ -18,6 +18,7 @@ from fastapi.responses import FileResponse, RedirectResponse
 from starlette.staticfiles import StaticFiles as StarletteStaticFiles
 from binance.client import Client
 from dotenv import load_dotenv
+from backend.database import get_db_connection
 
 # ----------------------------------------------------------------------
 # .ENV DOSYASI
@@ -129,7 +130,7 @@ if not API_KEY or not API_SECRET:
 from backend.strategy_engine import StrategyEngine, load_config, save_config
 from backend.order_manager import OrderManager
 from backend.position_manager import PositionManager
-from backend.database import init_db, get_db_connection
+from backend.database import get_db_connection,  init_db, get_db_connection
 from backend import telegram_notifier
 
 # ----------------------------------------------------------------------
@@ -203,6 +204,14 @@ async def lifespan(app: FastAPI):
                 print("[REPLICA-GUARD] bot_config.active zaten False")
         except Exception as _e:
             print(f"[REPLICA-GUARD] Config override hatasi: {_e}")
+
+        # F208c: REPLICA modda da sembol listesini doldur (mobile API icin)
+        try:
+            print("[F208c] Sembol listesi doldurulyor...")
+            await bot.refresh_symbol_list()
+            print(f"[F208c] {len(bot.symbols or [])} sembol hazir")
+        except Exception as _e208c:
+            print(f"[F208c] Sembol listesi hata: {_e208c}")
 
         # Sync loop calissin (replica veri alir)
         sync_task = asyncio.create_task(_sync_loop()) if SYNC_ENABLED else None
@@ -326,13 +335,29 @@ class NoCacheStaticFiles(StarletteStaticFiles):
     async def get_response(self, path, scope):
         response = await super().get_response(path, scope)
         if response.status_code == 200:
-            response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
+            response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate, max-age=0, s-maxage=0"
             response.headers["Pragma"] = "no-cache"
             response.headers["Expires"] = "0"
+            response.headers["Vary"] = "Accept-Encoding"
         return response
 
 
 app.mount("/static", NoCacheStaticFiles(directory=str(FRONTEND_DIR)), name="static")
+
+
+# F207: FileResponse'lar icin no-cache header
+def _nocache_f207(response):
+    response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate, max-age=0, s-maxage=0"
+    response.headers["Pragma"] = "no-cache"
+    response.headers["Expires"] = "0"
+    response.headers["Vary"] = "Accept-Encoding"
+    return response
+
+
+def no_cache_file_response(path: str, media_type: str = None):
+    """FileResponse + cache header."""
+    resp = FileResponse(path, media_type=media_type) if media_type else FileResponse(path)
+    return _nocache_f207(resp)
 
 
 # ----------------------------------------------------------------------
@@ -369,13 +394,13 @@ async def dev_restart():
 @app.get("/m")
 async def mobile_index():
     """Mobil dashboard (izole)."""
-    return FileResponse(str(FRONTEND_DIR / "mobile" / "index.html"))
+    return no_cache_file_response(str(FRONTEND_DIR / "mobile" / "index.html"), media_type="text/html")
 
 
 @app.get("/mobile")
 async def mobile_index_alias():
     """Mobil dashboard alias."""
-    return FileResponse(str(FRONTEND_DIR / "mobile" / "index.html"))
+    return no_cache_file_response(str(FRONTEND_DIR / "mobile" / "index.html"), media_type="text/html")
 
 
 @app.get("/")
@@ -391,7 +416,7 @@ async def read_index(request: Request):
             return RedirectResponse(url="/m")
     except Exception as _e:
         print(f"[MOBILE-REDIRECT] hata: {_e}")
-    return FileResponse(str(FRONTEND_DIR / "index.html"))
+    return no_cache_file_response(str(FRONTEND_DIR / "index.html"), media_type="text/html")
 
 
 @app.get("/favicon.ico")
@@ -459,18 +484,38 @@ def _calc_risk_metrics_sync():
             used_margin += vol / lev
             trade_count += 1
 
-        # Bakiye
+        # Bakiye (F225: API Hatasinda Cache Kullan)
         try:
             balances = client.futures_account_balance()
             balance = 0.0
             for b in balances:
                 if b.get("asset") == "USDT":
                     balance = float(b.get("balance", 0))
+                    # Basarili cekimi cache'e kaydet (F225)
+                    globals()['_F225_LAST_BALANCE'] = balance
                     break
         except Exception:
-            balance = 0.0
+            # F225: API Hata verdiyse son bilinen bakiyeyi (cache) goster
+            balance = globals().get('_F225_LAST_BALANCE', 0.0)
+            if balance > 0:
+                print(f"[F225-WALLET] API Hatasi, Cache'den bakiye donuldu: {balance}")
 
-        equity = max(balance, 0.01)
+        # F211: Balance 0 veya negatifse hesaplama YAPMA (testnet 502/timeout)
+        # Aksi halde equity=0.01 -> risk_pct = 2,630,000% gibi sacma deger cikar
+        _f211_balance_ok = (balance > 1.0)
+        if not _f211_balance_ok:
+            return {
+                "used_margin": round(used_margin, 4),
+                "equity": 0,
+                "balance": round(balance, 4),
+                "unrealized": round(unrealized, 4),
+                "risk_pct": 0,
+                "trade_count": trade_count,
+                "_f211_balance_ok": False,
+                "_f211_note": "Bakiye okunamadi (testnet 502/timeout)",
+            }
+
+        equity = balance
         risk_pct = (used_margin / equity) * 100 if equity > 0 else 0
 
         return {
@@ -480,6 +525,7 @@ def _calc_risk_metrics_sync():
             "unrealized": round(unrealized, 4),
             "risk_pct": round(risk_pct, 2),
             "trade_count": trade_count,
+            "_f211_balance_ok": True,
         }
     except Exception as e:
         print(f"[RISK] Hesap hatasi: {e}")
@@ -502,7 +548,18 @@ async def risk_status():
         max_ratio = 60.0
 
     m["max_ratio"] = max_ratio
-    m["is_over_limit"] = m["risk_pct"] >= max_ratio
+
+    # F211: Sadece bakiye basariyla okunduysa limit kontrolu yap
+    _f211_ok = m.pop("_f211_balance_ok", True)
+    _f211_note = m.pop("_f211_note", None)
+    if _f211_ok:
+        m["is_over_limit"] = m["risk_pct"] >= max_ratio
+    else:
+        m["is_over_limit"] = False   # Bakiye okunamadi -> siren ACILMASIN
+        m["balance_unknown"] = True
+        if _f211_note:
+            m["note"] = _f211_note
+
     m["status"] = "critical" if m["is_over_limit"] else "ok"
 
     return m
@@ -1167,8 +1224,26 @@ async def get_active_trades_with_pnl():
 
     # F124: Binance gercek notional (DB total_vol yerine gercek pozisyon)
     binance_positions = {}
+    
+    # F245: API Rate Limit (IP Ban) Kalkani - 3 Saniyelik Hafiza
+    import time as _t_f245
+    global _F245_POS_CACHE
+    if '_F245_POS_CACHE' not in globals():
+        globals()['_F245_POS_CACHE'] = {"data": [], "ts": 0}
+        
+    _now_f245 = _t_f245.time()
+    _cached = globals()['_F245_POS_CACHE']
+    
     try:
-        _pos_list = await asyncio.to_thread(order_manager.client.futures_position_information)
+        if _now_f245 - _cached["ts"] < 3.0 and _cached["data"]:
+            # Hafizada guncel veri var, Binance'e gitme!
+            _pos_list = _cached["data"]
+        else:
+            # Hafiza bos veya suresi gecmis, Binance'e git
+            _pos_list = await asyncio.to_thread(order_manager.client.futures_position_information)
+            # Basarili olursa hafizaya kaydet
+            globals()['_F245_POS_CACHE']["data"] = _pos_list
+            globals()['_F245_POS_CACHE']["ts"] = _now_f245
         # F139: DB'de olmayan snapshot/ghost pozisyonlarini atla
         _db_syms = {t.get("symbol") for t in trades}
         _all_open = [p for p in _pos_list if float(p.get("positionAmt", 0) or 0) != 0]
@@ -1185,6 +1260,11 @@ async def get_active_trades_with_pnl():
                     continue
                 _mark = float(_p.get("markPrice", 0) or 0)
                 _entry = float(_p.get("entryPrice", 0) or 0)
+                
+                # F343: Sadece API degerini kullan (Matematik YOK)
+                _liq_val = float(_p.get("liquidationPrice", 0) or 0)
+
+                
                 binance_positions[_sym] = {
                     "amt": abs(_amt),
                     "signed_amt": _amt,
@@ -1195,7 +1275,7 @@ async def get_active_trades_with_pnl():
                     "side": "BUY" if _amt > 0 else "SELL",
                     # F131: Binance'in hazir alanlari
                     "unrealized_profit": float(_p.get("unRealizedProfit", 0) or 0),
-                    "liquidation_price": float(_p.get("liquidationPrice", 0) or 0),
+                    "liquidation_price": _liq_val,
                     "initial_margin": float(_p.get("initialMargin", 0) or 0),
                     "leverage": int(_p.get("leverage", 0) or 0),
                     "margin_type": _p.get("marginType", "") or "",
@@ -1263,14 +1343,18 @@ async def get_active_trades_with_pnl():
                 _sl_cfg_pct = float(_s_cfg.get("stopLoss", 65))
                 # LIQ-safe cap (F84 mantigi)
                 _liq_pct = (100.0 / _lev) - 1.0
-                _max_sl_pct = _liq_pct * 0.85
-                _sl_pct = min(_sl_cfg_pct, _max_sl_pct)
+                _sl_pct = _sl_cfg_pct # F346: Kırpma kaldirildi, config neyse o
 
-                if _ttype == "BUY":
-                    _sl_price = _avg * (1 - _sl_pct / 100.0)
+                # F353: Scope hatasi duzeltildi, Trade'in kendi LIQ fiyati kullaniliyor
+                _trade_liq = float(t.get("binance_liquidation_price") or 0)
+                if _trade_liq > 0:
+                    if _ttype == "BUY":
+                        _sl_price = _trade_liq * (1 + _sl_pct / 100.0)
+                    else:
+                        _sl_price = _trade_liq * (1 - _sl_pct / 100.0)
+                    t["sl_price"] = round(_sl_price, 10)
                 else:
-                    _sl_price = _avg * (1 + _sl_pct / 100.0)
-                t["sl_price"] = round(_sl_price, 10)
+                    t["sl_price"] = None
                 t["sl_pct_effective"] = round(_sl_pct, 2)
         except Exception as _e:
             print(f"[F85] SL/LIQ hesap hatasi {sym}: {_e}")

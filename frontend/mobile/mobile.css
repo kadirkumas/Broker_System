@@ -585,7 +585,7 @@ html, body {
     border-radius: 16px 16px 0 0;
     width: 100%;
     max-width: 500px;
-    max-height: 92vh;
+    max-height: 88vh;
     display: flex;
     flex-direction: column;
     animation: moSlideUp 0.25s ease;
@@ -600,12 +600,12 @@ html, body {
     display: flex;
     justify-content: space-between;
     align-items: center;
-    padding: 14px 16px;
+    padding: 10px 12px;
     border-bottom: 1px solid var(--border);
     flex-shrink: 0;
 }
 .mo-modal-hdr h3 {
-    font-size: 15px;
+    font-size: 14px;
     color: var(--text);
     margin: 0;
 }
@@ -620,10 +620,10 @@ html, body {
 }
 
 .mo-modal-body {
-    padding: 14px 16px;
+    padding: 10px 12px;
     display: flex;
     flex-direction: column;
-    gap: 12px;
+    gap: 8px;
     overflow-y: auto;
     flex: 1;
 }
@@ -631,10 +631,10 @@ html, body {
 .mo-field {
     display: flex;
     flex-direction: column;
-    gap: 5px;
+    gap: 3px;
 }
 .mo-field label {
-    font-size: 11px;
+    font-size: 10px;
     color: var(--text-mid);
     font-weight: 600;
     letter-spacing: 0.3px;
@@ -645,9 +645,9 @@ html, body {
     background: #1e222d;
     border: 1px solid var(--border);
     color: var(--text);
-    padding: 9px 11px;
+    padding: 6px 9px;
     border-radius: 6px;
-    font-size: 13px;
+    font-size: 12px;
     outline: none;
     transition: border-color 0.15s;
     font-family: inherit;
@@ -670,7 +670,7 @@ html, body {
 .mo-row-2 {
     display: grid;
     grid-template-columns: 1fr 1fr;
-    gap: 10px;
+    gap: 8px;
 }
 
 .mo-toggle-group {
@@ -683,7 +683,7 @@ html, body {
 }
 .mo-toggle-btn {
     flex: 1;
-    padding: 9px 10px;
+    padding: 7px 8px;
     background: transparent;
     color: var(--text-dim);
     border: none;
@@ -713,28 +713,28 @@ html, body {
 }
 
 .mo-section-title {
-    font-size: 10px;
+    font-size: 9px;
     font-weight: 800;
     color: var(--yellow);
     letter-spacing: 0.6px;
     text-transform: uppercase;
-    padding: 6px 0 3px;
+    padding: 4px 0 2px;
     border-top: 1px dashed var(--border);
-    margin-top: 2px;
+    margin-top: 1px;
 }
 
 .mo-summary {
     background: #131722;
     border: 1px solid var(--border);
     border-radius: 8px;
-    padding: 10px 12px;
+    padding: 7px 10px;
 }
 .mo-summary-row {
     display: flex;
     justify-content: space-between;
     align-items: center;
-    padding: 4px 0;
-    font-size: 12px;
+    padding: 2px 0;
+    font-size: 11px;
     color: var(--text-dim);
 }
 .mo-summary-row > span:last-child {
@@ -755,15 +755,15 @@ html, body {
 
 .mo-modal-footer {
     display: flex;
-    gap: 10px;
-    padding: 14px 16px;
+    gap: 8px;
+    padding: 10px 12px;
     border-top: 1px solid var(--border);
     flex-shrink: 0;
     background: #131722;
 }
 .mo-modal-footer .btn {
     flex: 1;
-    padding: 12px;
+    padding: 9px;
     border-radius: 10px;
     border: none;
     font-size: 13px;
@@ -1509,4 +1509,48 @@ html, body {
     border-radius: 3px;
     margin-left: 2px;
     font-family: monospace;
+}
+
+
+/* ============================================================
+   F204: Compact manuel emir — ekstra sıkıştırma
+   ============================================================ */
+.mo-modal-content { max-height: 88vh !important; }
+.mo-modal-body { padding: 10px 12px !important; gap: 7px !important; }
+.mo-modal-body > * { margin: 0 !important; }
+.mo-field { gap: 3px !important; }
+.mo-field label { font-size: 10px !important; margin-bottom: 1px !important; }
+.mo-input { padding: 6px 9px !important; font-size: 12px !important; min-height: 32px !important; }
+.mo-row-2 { gap: 7px !important; }
+.mo-toggle-group { padding: 2px !important; }
+.mo-toggle-btn { padding: 6px 8px !important; font-size: 11px !important; }
+.mo-section-title { padding: 3px 0 2px !important; margin-top: 0 !important; font-size: 9px !important; }
+.mo-summary { padding: 6px 9px !important; }
+.mo-summary-row { padding: 1px 0 !important; font-size: 11px !important; }
+.mo-summary-last { padding-top: 5px !important; margin-top: 2px !important; }
+.mo-modal-footer { padding: 9px 12px !important; gap: 7px !important; }
+.mo-modal-footer .btn { padding: 8px !important; font-size: 12px !important; }
+.mo-modal-hdr { padding: 8px 12px !important; }
+.mo-modal-hdr h3 { font-size: 13px !important; }
+.mo-symbol-list { max-height: 180px !important; }
+.mo-symbol-item { padding: 7px 12px !important; font-size: 12px !important; }
+
+
+/* ============================================================
+   F205: Mini TradingView chart (Manuel Emir modal)
+   ============================================================ */
+.mo-chart-wrap {
+    width: 100%;
+    height: 160px;
+    border-radius: 6px;
+    overflow: hidden;
+    background: #131722;
+    border: 1px solid var(--border);
+    margin-bottom: 8px;
+    flex-shrink: 0;
+}
+#mo-tv-chart {
+    width: 100%;
+    height: 100%;
+    background: #131722;
 }

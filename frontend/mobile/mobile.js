@@ -826,6 +826,46 @@ window.resetMobilePin = function() {
 
 
 
+// F205: Mini TradingView Binance chart
+window._moTVWidget = null;
+window.loadMOChart = function(symbol) {
+    if (typeof TradingView === 'undefined') {
+        console.warn('[F205] TradingView yuklenmemis');
+        return;
+    }
+    var container = document.getElementById('mo-tv-chart');
+    if (!container) return;
+
+    var cleanSym = String(symbol || 'BTCUSDT').replace('.P', '').toUpperCase();
+    // Futures USDT-M perpetual
+    var tvSymbol = 'BINANCE:' + cleanSym + '.P';
+
+    try {
+        container.innerHTML = '';
+        window._moTVWidget = new TradingView.widget({
+            container_id: 'mo-tv-chart',
+            autosize: true,
+            symbol: tvSymbol,
+            interval: '15',
+            timezone: 'Europe/Istanbul',
+            theme: 'dark',
+            style: '1',
+            locale: 'tr',
+            toolbar_bg: '#131722',
+            enable_publishing: false,
+            allow_symbol_change: false,
+            hide_side_toolbar: true,
+            hide_top_toolbar: true,
+            save_image: false,
+            studies: [],
+            show_popup_button: false
+        });
+        console.log('[F205] Chart yuklendi: ' + tvSymbol);
+    } catch (e) {
+        console.error('[F205] Chart hata:', e);
+    }
+};
+
 /* MO-MANUAL-ORDER v1 */
 // =============================================================
 // Manuel Emir - Mobile
@@ -923,8 +963,8 @@ window.resetMobilePin = function() {
             });
         }
 
-        // Max 30 goster
-        filtered = filtered.slice(0, 30);
+        // F206c: Limit YOK - izleme listesindeki hepsi gorunsun
+        // filtered = filtered.slice(0, 30);  // eski limit kaldirildi
         window._moFilteredSymbols = filtered;
         return filtered;
     };
@@ -976,6 +1016,8 @@ window.resetMobilePin = function() {
         if (hidden) hidden.value = sym;
         window._moSelectedSymbol = sym;
         if (list) list.style.display = 'none';
+        // F205: chart guncelle
+        if (window.loadMOChart) window.loadMOChart(sym);
         window.showMobileToast(sym + ' secildi', 'info');
     };
 
@@ -1058,6 +1100,8 @@ window.resetMobilePin = function() {
 
         window.updateManualPreview();
         window._loadManualSymbols();
+        // F205: mini chart yukle (varsayilan BTC)
+        setTimeout(function() { if (window.loadMOChart) window.loadMOChart('BTCUSDT'); }, 350);
 
         // F174: modal acilirken sembol listesi KAPALI
         var _symListF174 = document.getElementById('mo-symbol-list');

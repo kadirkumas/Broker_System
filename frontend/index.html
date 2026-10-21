@@ -216,7 +216,10 @@
                                 📆 Takvim
                             </span>
                             
-                            <input type="text" id="btp-search-input" placeholder="Sembol Ara..." class="search-input" style="width: 120px; padding: 4px 8px; font-size: 11px; margin-right: 15px;" oninput="refreshBottomPanel()">
+                            <div class="btp-search-wrap">
+                                <input type="text" id="btp-search-input" placeholder="Sembol Ara..." class="search-input" style="width: 120px; padding: 4px 8px; font-size: 11px; margin-right: 15px;" oninput="refreshBottomPanel()">
+                                <span class="btp-search-clear" id="btp-search-clear" onclick="window.clearBtpSearch && window.clearBtpSearch()" title="Temizle">✕</span>
+                            </div>
                             
                             <span class="btp-btn" id="btp-fullscreen-btn" onclick="window.toggleTradePanelFullscreen()" title="Tam ekran (F11 tarzi)" style="border: 1px solid #2b3139; padding: 4px 10px; border-radius: 4px; background: #131722; margin-left:6px; font-size:13px; cursor:pointer;">&#9974;</span>
                             <span class="btp-btn" id="btp-toggle-btn" onclick="toggleBottomTradePanel()" style="border: 1px solid #2b3139; padding: 4px 10px; border-radius: 4px; background: #131722; margin-left:6px;">▼ Gizle</span>
@@ -966,7 +969,7 @@
                                 <option value="active">Aktif</option>
                                 <option value="passive">Pasif</option>
                             </select>
-                            <span class="margin-preset-info">5x · 4 DCA</span>
+                            <span class="margin-preset-info">5x · 7 DCA</span>
                         </div>
                     </div>
                 </div>
@@ -1040,7 +1043,7 @@
                                 <input type="text" class="search-input strat-param" data-strategy="RSI_SCALPER" data-param="trailingSteps" value="1.5:0.3, 2.5:0.2, 4:0.12, 6:0.07, 10:0.03" style="font-family: monospace; font-size: 10.5px; text-align: left; width: 100%;">
                             </div>
                             <div class="cfg-row">
-                                <span class="cfg-label" data-tip="Fiyat girise gore bu yuzde ters giderse pozisyon otomatik kapanir. Zarari sinirlar.">Stop Loss (%)</span>
+                                <span class="cfg-label" data-tip="Kaldıraca göre tahmini LIQ uzaklığı: 2x: %49.5 | 3x: %32.8 | 4x: %24.5 | 5x: %19.5 | 10x: %9.5 | 20x: %4.5. Girdiğiniz SL % değeri, bu LIQ noktasının hemen önüne eklenir.">Stop Loss (%)</span>
                                 <input type="number" class="search-input strat-param" data-strategy="RSI_SCALPER" data-param="stopLoss" value="2.0" min="0.1" step="0.1">
                             </div>
                             <div class="cfg-subtitle">🔁 DCA (Kademeli Alım)</div>
@@ -1055,10 +1058,6 @@
                                 <span class="cfg-label" data-tip="Her DCA kademesinde eklenecek hacim carpani. 1.2 = her kademe 1.2x onceki hacim.">Hacim Çarpanı</span>
                                 <input type="number" class="search-input strat-param" data-strategy="RSI_SCALPER" data-param="volMultiplier" value="1.2" min="1" step="0.1">
                             </div>
-                            <div class="cfg-row">
-                                <span class="cfg-label" data-tip="Her DCA kademesinin hangi yuzde dususte tetiklenecegi. Ornek: 5,10,15,20.">Düşüş Adımları (%)</span>
-                                <input type="text" class="search-input strat-param" data-strategy="RSI_SCALPER" data-param="steps" value="5, 13, 25, 40, 60">
-                            </div>
 
                             <!-- DCA-DINAMIK-V1 -->
                             <div class="cfg-subtitle">⚙️ DCA Dinamik</div>
@@ -1070,20 +1069,16 @@
                                 </label>
                             </div>
                             <div class="cfg-row">
-                                <span class="cfg-label" data-tip="ATR bazli adim carpani. Buyuk deger = daha genis DCA araliklari. Ornek: 2.0 = ATR% x 2 x kademe.">ATR Çarpan</span>
-                                <input type="number" class="search-input strat-param" data-strategy="RSI_SCALPER" data-param="dcaAtrMultiplier" value="2.0" min="0.5" max="10" step="0.1">
-                            </div>
-                            <div class="cfg-row">
                                 <span class="cfg-label" data-tip="Minimum DCA adimi (%). ATR kucuk olsa bile adim bu degerin altina inemez.">Min Adım (%)</span>
                                 <input type="number" class="search-input strat-param" data-strategy="RSI_SCALPER" data-param="dcaMinStep" value="4" min="0.5" max="50" step="0.5">
                             </div>
                             <div class="cfg-row">
-                                <span class="cfg-label" data-tip="Dinamik modda maksimum DCA kademe sayisi. Statik listeden bagimsiz sinir.">Max Kademe</span>
-                                <input type="number" class="search-input strat-param" data-strategy="RSI_SCALPER" data-param="dcaMaxSteps" value="3" min="1" max="10" step="1">
+                                <span class="cfg-label dca-scale-label" style="cursor:help;">Adım Çarpanı</span>
+                                <input type="number" class="search-input strat-param" data-strategy="RSI_SCALPER" data-param="dcaStepScale" value="1.5" min="1" max="5" step="0.1">
                             </div>
                             <div class="cfg-row">
-                                <span class="cfg-label" data-tip="Momentum faktoru. Hizli dususte DCA bekleme suresini uzatir. Ornek: 2.0.">Momentum</span>
-                                <input type="number" class="search-input strat-param" data-strategy="RSI_SCALPER" data-param="dcaMomentumFactor" value="2.0" min="0" max="10" step="0.5">
+                                <span class="cfg-label" data-tip="Dinamik modda maksimum DCA kademe sayisi. Statik listeden bagimsiz sinir.">Max Kademe</span>
+                                <input type="number" class="search-input strat-param" data-strategy="RSI_SCALPER" data-param="dcaMaxSteps" value="3" min="1" max="10" step="1">
                             </div>
                             <div class="cfg-row">
                                 <span class="cfg-label" data-tip="Likidite koruma carpani. Kumulatif DCA mesafesi LIQ mesafesinin bu oranini gecmez. Ornek: 1.3.">LIQ Emniyet</span>
@@ -1220,7 +1215,7 @@
                                 <input type="text" class="search-input strat-param" data-strategy="DYNAMIC_GRID" data-param="trailingSteps" value="1.5:0.3, 2.5:0.2, 4:0.12, 6:0.07, 10:0.03" style="font-family: monospace; font-size: 10.5px; text-align: left; width: 100%;">
                             </div>
                             <div class="cfg-row">
-                                <span class="cfg-label">Stop Loss (%)</span>
+                                <span class="cfg-label" data-tip="Kaldıraca göre tahmini LIQ uzaklığı: 2x: %49.5 | 3x: %32.8 | 4x: %24.5 | 5x: %19.5 | 10x: %9.5 | 20x: %4.5. Girdiğiniz SL % değeri, bu LIQ noktasının hemen önüne eklenir.">Stop Loss (%)</span>
                                 <input type="number" class="search-input strat-param" data-strategy="DYNAMIC_GRID" data-param="stopLoss" value="8" min="0.1" step="0.1">
                             </div>
                             <div class="cfg-subtitle">🔁 DCA (Kademeli Alım)</div>
@@ -1235,10 +1230,6 @@
                                 <span class="cfg-label">Hacim Çarpanı</span>
                                 <input type="number" class="search-input strat-param" data-strategy="DYNAMIC_GRID" data-param="volMultiplier" value="1.2" min="1" step="0.1">
                             </div>
-                            <div class="cfg-row">
-                                <span class="cfg-label">Düşüş Adımları (%)</span>
-                                <input type="text" class="search-input strat-param" data-strategy="DYNAMIC_GRID" data-param="steps" value="5, 13, 25, 40, 60">
-                            </div>
 
                             <!-- DCA-DINAMIK-V1 -->
                             <div class="cfg-subtitle">⚙️ DCA Dinamik</div>
@@ -1250,20 +1241,16 @@
                                 </label>
                             </div>
                             <div class="cfg-row">
-                                <span class="cfg-label" data-tip="ATR bazli adim carpani. Buyuk deger = daha genis DCA araliklari. Ornek: 2.0 = ATR% x 2 x kademe.">ATR Çarpan</span>
-                                <input type="number" class="search-input strat-param" data-strategy="DYNAMIC_GRID" data-param="dcaAtrMultiplier" value="2.0" min="0.5" max="10" step="0.1">
-                            </div>
-                            <div class="cfg-row">
                                 <span class="cfg-label" data-tip="Minimum DCA adimi (%). ATR kucuk olsa bile adim bu degerin altina inemez.">Min Adım (%)</span>
                                 <input type="number" class="search-input strat-param" data-strategy="DYNAMIC_GRID" data-param="dcaMinStep" value="4" min="0.5" max="50" step="0.5">
                             </div>
                             <div class="cfg-row">
-                                <span class="cfg-label" data-tip="Dinamik modda maksimum DCA kademe sayisi. Statik listeden bagimsiz sinir.">Max Kademe</span>
-                                <input type="number" class="search-input strat-param" data-strategy="DYNAMIC_GRID" data-param="dcaMaxSteps" value="3" min="1" max="10" step="1">
+                                <span class="cfg-label dca-scale-label" style="cursor:help;">Adım Çarpanı</span>
+                                <input type="number" class="search-input strat-param" data-strategy="DYNAMIC_GRID" data-param="dcaStepScale" value="1.5" min="1" max="5" step="0.1">
                             </div>
                             <div class="cfg-row">
-                                <span class="cfg-label" data-tip="Momentum faktoru. Hizli dususte DCA bekleme suresini uzatir. Ornek: 2.0.">Momentum</span>
-                                <input type="number" class="search-input strat-param" data-strategy="DYNAMIC_GRID" data-param="dcaMomentumFactor" value="2.0" min="0" max="10" step="0.5">
+                                <span class="cfg-label" data-tip="Dinamik modda maksimum DCA kademe sayisi. Statik listeden bagimsiz sinir.">Max Kademe</span>
+                                <input type="number" class="search-input strat-param" data-strategy="DYNAMIC_GRID" data-param="dcaMaxSteps" value="3" min="1" max="10" step="1">
                             </div>
                             <div class="cfg-row">
                                 <span class="cfg-label" data-tip="Likidite koruma carpani. Kumulatif DCA mesafesi LIQ mesafesinin bu oranini gecmez. Ornek: 1.3.">LIQ Emniyet</span>
@@ -1355,7 +1342,7 @@
                                 <input type="text" class="search-input strat-param" data-strategy="EMA_TREND" data-param="trailingSteps" value="1.5:0.3, 2.5:0.2, 4:0.12, 6:0.07, 10:0.03" style="font-family: monospace; font-size: 10.5px; text-align: left; width: 100%;">
                             </div>
                             <div class="cfg-row">
-                                <span class="cfg-label" data-tip="Fiyat girise gore bu yuzde ters giderse pozisyon kapanir">Stop Loss (%)</span>
+                                <span class="cfg-label" data-tip="Kaldıraca göre tahmini LIQ uzaklığı: 2x: %49.5 | 3x: %32.8 | 4x: %24.5 | 5x: %19.5 | 10x: %9.5 | 20x: %4.5. Girdiğiniz SL % değeri, bu LIQ noktasının hemen önüne eklenir.">Stop Loss (%)</span>
                                 <input type="number" class="search-input strat-param" data-strategy="EMA_TREND" data-param="stopLoss" value="5" min="0.1" step="0.1">
                             </div>
                             <div class="cfg-subtitle">🔁 DCA (Kademeli Alım)</div>
@@ -1374,21 +1361,16 @@
                                 </label>
                             </div>
                             <div class="cfg-row">
-                                <span class="cfg-label" data-tip="ATR carpan">ATR Çarpan</span>
-                                <input type="number" class="search-input strat-param" data-strategy="EMA_TREND" data-param="dcaAtrMultiplier" value="2.0" min="0.5" max="10" step="0.1">
-                            </div>
-                            <div class="cfg-row">
                                 <span class="cfg-label" data-tip="Min DCA adimi (%)">Min Adım (%)</span>
                                 <input type="number" class="search-input strat-param" data-strategy="EMA_TREND" data-param="dcaMinStep" value="4" min="0.5" max="50" step="0.5">
                             </div>
                             <div class="cfg-row">
+                                <span class="cfg-label dca-scale-label" style="cursor:help;">Adım Çarpanı</span>
+                                <input type="number" class="search-input strat-param" data-strategy="EMA_TREND" data-param="dcaStepScale" value="1.5" min="1" max="5" step="0.1">
+                            </div>
+                            <div class="cfg-row">
                                 <span class="cfg-label" data-tip="Maks DCA kademe">Max Kademe</span>
                                 <input type="number" class="search-input strat-param" data-strategy="EMA_TREND" data-param="dcaMaxSteps" value="3" min="1" max="10" step="1">
-                            </div>
-
-                            <div class="cfg-row">
-                                <span class="cfg-label" data-tip="DCA momentum carpani. Fiyat momentumu arttikca DCA adim mesafesi kisalir. Ornek: 2 = momentum x2 etkisi.">Momentum</span>
-                                <input type="number" class="search-input strat-param" data-strategy="EMA_TREND" data-param="dcaMomentumFactor" value="2" min="0" max="10" step="0.1">
                             </div>
                             <div class="cfg-row">
                                 <span class="cfg-label" data-tip="Likidasyona yaklasirken DCA hacmini azaltan emniyet carpani. Yuksek deger = daha temkinli. Ornek: 1.3 = max %30 fazla hacim.">LIQ Emniyet</span>
@@ -1397,10 +1379,6 @@
                             <div class="cfg-row">
                                 <span class="cfg-label" data-tip="Her DCA kademesinde hacim carpani">Hacim Çarpanı</span>
                                 <input type="number" class="search-input strat-param" data-strategy="EMA_TREND" data-param="volMultiplier" value="1" min="1" step="0.1">
-                            </div>
-                            <div class="cfg-row">
-                                <span class="cfg-label" data-tip="Her DCA kademesinin tetiklenme yuzdesi">Düşüş Adımları (%)</span>
-                                <input type="text" class="search-input strat-param" data-strategy="EMA_TREND" data-param="steps" value="5, 13, 25, 40, 60">
                             </div>
                             <div class="cfg-row">
                                 <span class="cfg-label" data-tip="DCA min mesafe (%)">DCA Min Mesafe (%)</span>
@@ -1517,7 +1495,7 @@
                     <input type="text" class="search-input strat-param" data-strategy="DEEP_HUNTER" data-param="trailingSteps" value="1.5:0.3, 2.5:0.2, 4:0.12, 6:0.07, 10:0.03" style="font-family: monospace; font-size: 10.5px; text-align: left; width: 100%;">
                     </div>
                     <div class="cfg-row">
-                    <span class="cfg-label" data-tip="Fiyat girise gore bu yuzde ters giderse pozisyon kapanir">Stop Loss (%)</span>
+                    <span class="cfg-label" data-tip="Kaldıraca göre tahmini LIQ uzaklığı: 2x: %49.5 | 3x: %32.8 | 4x: %24.5 | 5x: %19.5 | 10x: %9.5 | 20x: %4.5. Girdiğiniz SL % değeri, bu LIQ noktasının hemen önüne eklenir.">Stop Loss (%)</span>
                     <input type="number" class="search-input strat-param" data-strategy="DEEP_HUNTER" data-param="stopLoss" value="50" min="1" step="1">
                     </div>
                     <div class="cfg-subtitle">🔁 DCA (Kademeli Alım)</div>
@@ -1532,10 +1510,6 @@
                     <span class="cfg-label" data-tip="Her DCA kademesinde hacim carpani">Hacim Çarpanı</span>
                     <input type="number" class="search-input strat-param" data-strategy="DEEP_HUNTER" data-param="volMultiplier" value="1" min="1" step="0.1">
                     </div>
-                    <div class="cfg-row">
-                    <span class="cfg-label" data-tip="Her DCA kademesinin tetiklenme yuzdesi">Düşüş Adımları (%)</span>
-                    <input type="text" class="search-input strat-param" data-strategy="DEEP_HUNTER" data-param="steps" value="5, 13, 25, 40, 60">
-                    </div>
 
                             <!-- DCA-DINAMIK-V1 -->
                             <div class="cfg-subtitle">⚙️ DCA Dinamik</div>
@@ -1547,20 +1521,16 @@
                                 </label>
                             </div>
                             <div class="cfg-row">
-                                <span class="cfg-label" data-tip="ATR bazli adim carpani. Buyuk deger = daha genis DCA araliklari. Ornek: 2.0 = ATR% x 2 x kademe.">ATR Çarpan</span>
-                                <input type="number" class="search-input strat-param" data-strategy="DEEP_HUNTER" data-param="dcaAtrMultiplier" value="2.0" min="0.5" max="10" step="0.1">
-                            </div>
-                            <div class="cfg-row">
                                 <span class="cfg-label" data-tip="Minimum DCA adimi (%). ATR kucuk olsa bile adim bu degerin altina inemez.">Min Adım (%)</span>
                                 <input type="number" class="search-input strat-param" data-strategy="DEEP_HUNTER" data-param="dcaMinStep" value="4" min="0.5" max="50" step="0.5">
                             </div>
                             <div class="cfg-row">
-                                <span class="cfg-label" data-tip="Dinamik modda maksimum DCA kademe sayisi. Statik listeden bagimsiz sinir.">Max Kademe</span>
-                                <input type="number" class="search-input strat-param" data-strategy="DEEP_HUNTER" data-param="dcaMaxSteps" value="3" min="1" max="10" step="1">
+                                <span class="cfg-label dca-scale-label" style="cursor:help;">Adım Çarpanı</span>
+                                <input type="number" class="search-input strat-param" data-strategy="DEEP_HUNTER" data-param="dcaStepScale" value="1.5" min="1" max="5" step="0.1">
                             </div>
                             <div class="cfg-row">
-                                <span class="cfg-label" data-tip="Momentum faktoru. Hizli dususte DCA bekleme suresini uzatir. Ornek: 2.0.">Momentum</span>
-                                <input type="number" class="search-input strat-param" data-strategy="DEEP_HUNTER" data-param="dcaMomentumFactor" value="2.0" min="0" max="10" step="0.5">
+                                <span class="cfg-label" data-tip="Dinamik modda maksimum DCA kademe sayisi. Statik listeden bagimsiz sinir.">Max Kademe</span>
+                                <input type="number" class="search-input strat-param" data-strategy="DEEP_HUNTER" data-param="dcaMaxSteps" value="3" min="1" max="10" step="1">
                             </div>
                             <div class="cfg-row">
                                 <span class="cfg-label" data-tip="Likidite koruma carpani. Kumulatif DCA mesafesi LIQ mesafesinin bu oranini gecmez. Ornek: 1.3.">LIQ Emniyet</span>
@@ -1811,7 +1781,7 @@
                                 <input type="text" class="search-input strat-param" data-strategy="ASAP" data-param="trailingSteps" value="1.5:0.3, 2.5:0.2, 4:0.12, 6:0.07, 10:0.03">
                             </div>
                             <div class="cfg-row">
-                                <span class="cfg-label" data-tip="Stop Loss. ASAP: 0 (YOK).">Stop Loss (%)</span>
+                                <span class="cfg-label" data-tip="Kaldıraca göre tahmini LIQ uzaklığı: 2x: %49.5 | 3x: %32.8 | 4x: %24.5 | 5x: %19.5 | 10x: %9.5 | 20x: %4.5. Girdiğiniz SL % değeri, bu LIQ noktasının hemen önüne eklenir.">Stop Loss (%)</span>
                                 <input type="number" class="search-input strat-param" data-strategy="ASAP" data-param="stopLoss" value="0" min="0" step="0.1">
                             </div>
                         </div>
@@ -1836,12 +1806,12 @@
                                 <label class="switch"><input type="checkbox" class="strat-param" data-strategy="ASAP" data-param="dcaDynamic" checked><span class="slider round"></span></label>
                             </div>
                             <div class="cfg-row">
-                                <span class="cfg-label" data-tip="ATR carpani.">ATR Çarpan</span>
-                                <input type="number" class="search-input strat-param" data-strategy="ASAP" data-param="dcaAtrMultiplier" value="2.0" min="0.5" max="10" step="0.1">
-                            </div>
-                            <div class="cfg-row">
                                 <span class="cfg-label" data-tip="Minimum adim (%).">Min Adım (%)</span>
                                 <input type="number" class="search-input strat-param" data-strategy="ASAP" data-param="dcaMinStep" value="5" min="0.5" max="50" step="0.5">
+                            </div>
+                            <div class="cfg-row">
+                                <span class="cfg-label dca-scale-label" style="cursor:help;">Adım Çarpanı</span>
+                                <input type="number" class="search-input strat-param" data-strategy="ASAP" data-param="dcaStepScale" value="1.5" min="1" max="5" step="0.1">
                             </div>
                             <div class="cfg-row">
                                 <span class="cfg-label" data-tip="Maks DCA kademesi.">Max Kademe</span>
@@ -1850,10 +1820,6 @@
                             <div class="cfg-row">
                                 <span class="cfg-label" data-tip="Min kademe mesafesi (%).">Min Mesafe (%)</span>
                                 <input type="number" class="search-input strat-param" data-strategy="ASAP" data-param="dcaMinDistancePct" value="5" min="0.5" max="50" step="0.5">
-                            </div>
-                            <div class="cfg-row">
-                                <span class="cfg-label" data-tip="Momentum duzeltme.">Momentum</span>
-                                <input type="number" class="search-input strat-param" data-strategy="ASAP" data-param="dcaMomentumFactor" value="2.0" min="0" max="10" step="0.1">
                             </div>
                             <div class="cfg-row">
                                 <span class="cfg-label" data-tip="Iki DCA arasi min sure (dk).">Min Süre (dk)</span>

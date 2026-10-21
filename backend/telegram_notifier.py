@@ -79,21 +79,25 @@ async def notify_signal(symbol: str, strategy: str, signal_type: str, price: flo
 
 async def notify_close(
     symbol: str, trade_type: str, entry_price: float, exit_price: float,
-    pnl_pct: float, net_pnl: float, reason: str, dca_count: int = 0
+    pnl_pct: float, net_pnl: float, reason: str, dca_count: int = 0, leverage: int = 1
 ):
-    """Pozisyon kapanış bildirimi."""
+    """Pozisyon kapanış bildirimi (F226 - WINNER/LOSER)."""
     is_profit = net_pnl >= 0
-    emoji = "🥳" if is_profit else "😮"
     sign = "+" if is_profit else ""
     side = "LONG" if trade_type == "BUY" else "SHORT"
     dca_info = f" (DCA:{dca_count})" if dca_count > 0 else ""
     
-    # F115: sadelestirilmis format
+    status_header = f"🟢 <b>WINNER</b> ({reason})" if is_profit else f"🔴 <b>LOSER</b> ({reason})"
+    roe_pct = pnl_pct * leverage
+
     text = (
-        f"{emoji} <b>Kâr/Zarar:</b> {sign}{net_pnl:.4f} USDT\n"
-        f"<b>Profit:</b> {reason}\n"
-        f"<b>Sembol:</b> {symbol}{dca_info}\n"
-        f"<b>Yön:</b> {side}"
+        f"{status_header}\n"
+        f"\n"
+        f"📊 <b>Sembol:</b> {symbol}{dca_info}\n"
+        f"📈 <b>Yön:</b> {side} [{leverage}x]\n"
+        f"💰 <b>Giriş:</b> {_fmt_price(entry_price)} ➔ <b>Çıkış:</b> {_fmt_price(exit_price)}\n"
+        f"💵 <b>Kâr:</b> {sign}{pnl_pct:.2f}% (ROE: {sign}{roe_pct:.2f}%)\n"
+        f"💸 <b>Net Kâr:</b> {sign}{net_pnl:.4f} USDT"
     )
     return await send_telegram_message(text)
 
