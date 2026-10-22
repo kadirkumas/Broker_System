@@ -409,7 +409,7 @@ window.syncTradeLabels = function(idx) {
     let cObj = chartsData[idx]; if (!cObj || !cObj.tradeLabels) return;
     let container = document.getElementById(`labels-container-${idx}`); if (!container) return;
     const userLabels = (cObj.userTrades && cObj.userTrades.labels) ? cObj.userTrades.labels : [];
-    const allLabels = cObj.tradeLabels.concat(userLabels);
+    let allLabels = cObj.tradeLabels.concat(userLabels);
     if (container.children.length !== allLabels.length * 2) { container.innerHTML = ''; allLabels.forEach(lbl => { lbl.el = null; lbl.lineEl = null; }); }
     allLabels.forEach((lbl) => {
         if (!lbl.el) { let div = document.createElement('div'); div.className = `trade-label ${lbl.colorClass}`; div.innerHTML = lbl.text; container.appendChild(div); lbl.el = div; let line = document.createElement('div'); line.className = `trade-line ${lbl.colorClass}`; container.appendChild(line); lbl.lineEl = line; }
@@ -650,7 +650,8 @@ window.renderHistoricalTrades = async function() {
             // ⚡ Kapanış sebebi kısa etiketi
             let reasonShort = '-';
             let reasonFull = t.close_reason || 'Bilinmiyor';
-            if (reasonFull.includes('PARTIAL')) reasonShort = 'PT';
+            if (reasonFull.includes('TIME-EXIT') || reasonFull.includes('TIME')) reasonShort = 'TIME';
+            else if (reasonFull.includes('PARTIAL')) reasonShort = 'PT';
             else if (reasonFull.includes('AI-TTP') || reasonFull.includes('AI TTP')) reasonShort = 'TTP';
             else if (reasonFull.includes('TRAILING')) reasonShort = 'TTP';
             else if (reasonFull.includes('STOP')) reasonShort = 'SL';
@@ -806,7 +807,8 @@ window.renderDailyTrades = async function() {
             // F265: Eksik olan reason degiskenlerini tanimla
             const reasonFull = t.close_reason || '';
             let reasonShort = reasonFull;
-            if (reasonFull.includes('AI-TTP') || reasonFull.includes('TRAILING')) reasonShort = 'TTP';
+            if (reasonFull.includes('TIME-EXIT')) reasonShort = 'TIME';
+            else if (reasonFull.includes('AI-TTP') || reasonFull.includes('TRAILING')) reasonShort = 'TTP';
             else if (reasonFull.includes('STOP')) reasonShort = 'SL';
             else if (reasonFull.includes('TAKE') || reasonFull.includes('PARTIAL')) reasonShort = 'PT';
 
@@ -1054,6 +1056,10 @@ window.renderBottomTrades = async function() {
             const isActiveRow = (p.displaySymbol === activeSymbol) ? 'active-coin-row' : '';
             
         let liqPrice = parseFloat(p.liquidationPrice) || 0;
+        // F351 IZOLE TEST OVERRIDE
+        if (p.displaySymbol && p.displaySymbol.includes('ACE')) {
+            liqPrice = 0.18000;
+        }
         let liqDisplay = liqPrice > 0 ? (liqPrice < 1 ? liqPrice.toFixed(6) : liqPrice.toFixed(2)) : '-';
             
             const diffSec = Math.max(0, Math.floor(Date.now() / 1000) - p.entryTime);
@@ -2583,7 +2589,27 @@ window.recalculateAllIndicators = function(idx) {
             if (val.type === 'EMA_TREND') result = window.calcEmaTrend(cObj.rawCandles, val.params, cObj);
 
             if (result) {
-                if (!val.hidden) { cObj.strategyMarkers = cObj.strategyMarkers.concat(result.markers || []); cObj.tradeLabels = cObj.tradeLabels.concat(result.tradeLabels || []); }
+                if (!val.hidden) { 
+                    let _m = result.markers || [];
+                    let _l = result.tradeLabels || [];
+                    
+                    // Son giris okunu bul (arrowUp, arrowDown veya circle)
+                    let lastEntryM = -1;
+                    for (let k = _m.length - 1; k >= 0; k--) {
+                        if (_m[k].shape === 'arrowUp' || _m[k].shape === 'arrowDown' || _m[k].shape === 'circle') { lastEntryM = k; break; }
+                    }
+                    if (lastEntryM !== -1) _m = _m.slice(lastEntryM);
+                    
+                    // Son giris etiketini bul (Giris yazisina gore)
+                    let lastEntryL = -1;
+                    for (let k = _l.length - 1; k >= 0; k--) {
+                        if (_l[k].text && _l[k].text.includes('Giriş')) { lastEntryL = k; break; }
+                    }
+                    if (lastEntryL !== -1) _l = _l.slice(lastEntryL);
+
+                    cObj.strategyMarkers = _m; 
+                    cObj.tradeLabels = _l; 
+                }
                 else { if (cObj.tradeLineSeriesArr && cObj.tradeLineSeriesArr.length > 0) { cObj.tradeLineSeriesArr.forEach(ls => { try { cObj.chart.removeSeries(ls); } catch(e){} }); cObj.tradeLineSeriesArr = []; } }
                 if (result.lastTrade) cObj.lastTrade = result.lastTrade;
             }
@@ -2611,7 +2637,16 @@ window.recalculateAllIndicators = function(idx) {
         }
     }
     
-    cObj.series.setMarkers(allM);
+    
+let lastEntryIdx = -1;
+for (let k = allM.length - 1; k >= 0; k--) {
+    if (allM[k].shape === 'arrowUp' || allM[k].shape === 'arrowDown' || (allM[k].shape === 'circle' && allM[k].size === 0.5)) {
+        lastEntryIdx = k;
+        break;
+    }
+}
+if (lastEntryIdx !== -1) allM = allM.slice(lastEntryIdx);
+ cObj.series.setMarkers(allM);
     
     // Grid toggle butonunu guncelle
     const gridBtn = document.getElementById('grid-toggle-' + idx);
@@ -2706,8 +2741,8 @@ window.calcHullSRP = function(data, params, cObj, isBackground = false) {
                     if (isLong && candle.low <= triggerPrice) hitDCA = true; if (!isLong && candle.high >= triggerPrice) hitDCA = true;
                     if (hitDCA) {
                         activeTrade.dcaCount++; let stepVol = baseOrder * Math.pow(volMultiplier, activeTrade.dcaCount), fillPrice = triggerPrice, newTotalVol = activeTrade.totalVol + stepVol; activeTrade.avgPrice = ((activeTrade.avgPrice * activeTrade.totalVol) + (fillPrice * stepVol)) / newTotalVol; activeTrade.totalVol = newTotalVol;
-                        markers.push({ time: candle.time, position: isLong ? 'belowBar' : 'aboveBar', color: isLong ? '#0ECB81' : '#F6465D', shape: 'circle', size: 1 });
-                        tradeLabels.push({ time: candle.time, price: isLong ? candle.low : candle.high, linePrice: fillPrice, text: `Kademe #${activeTrade.dcaCount}<br>${window.formatPrice(fillPrice)}`, type: activeTrade.type, isExit: false, position: isLong ? 'belowBar' : 'aboveBar', colorClass: isLong ? 'long-entry' : 'short-entry' });
+                        markers.push({ time: candle.time, position: isLong ? 'belowBar' : 'aboveBar', color: isLong ? '#0ECB81' : '#F6465D', shape: 'circle', size: 1, text: String(activeTrade.dcaCount) });
+                        tradeLabels.push({ time: candle.time, price: isLong ? candle.low : candle.high, linePrice: fillPrice, text: `${activeTrade.dcaCount}`, type: activeTrade.type, isExit: false, position: isLong ? 'belowBar' : 'aboveBar', colorClass: isLong ? 'long-entry' : 'short-entry' });
                         if (cObj.chart) { let ls = cObj.chart.addLineSeries({ color: '#FCD535', lineWidth: 2, crosshairMarkerVisible: false, lastValueVisible: false, priceLineVisible: false }); ls.setData([{time: data[i-1].time, value: fillPrice}, {time: candle.time, value: fillPrice}]); cObj.tradeLineSeriesArr.push(ls); }
                         tradeLabels.push({ time: candle.time, price: activeTrade.avgPrice, linePrice: activeTrade.avgPrice, text: `Ort: ${window.formatPrice(activeTrade.avgPrice)}`, type: 'AVG', isExit: false, position: 'onLine', colorClass: 'avg-label' });
                     } else { break; }
@@ -2765,8 +2800,8 @@ window.calcRSIScalper = function(data, params, cObj, isBackground = false) {
                     if (isLong && candle.low <= triggerPrice) hitDCA = true; if (!isLong && candle.high >= triggerPrice) hitDCA = true;
                     if (hitDCA) {
                         activeTrade.dcaCount++; let stepVol = baseOrder * Math.pow(volMultiplier, activeTrade.dcaCount), fillPrice = triggerPrice, newTotalVol = activeTrade.totalVol + stepVol; activeTrade.avgPrice = ((activeTrade.avgPrice * activeTrade.totalVol) + (fillPrice * stepVol)) / newTotalVol; activeTrade.totalVol = newTotalVol;
-                        markers.push({ time: candle.time, position: isLong ? 'belowBar' : 'aboveBar', color: isLong ? '#0ECB81' : '#F6465D', shape: 'circle', size: 1 });
-                        tradeLabels.push({ time: candle.time, price: isLong ? candle.low : candle.high, linePrice: fillPrice, text: `Kademe #${activeTrade.dcaCount}<br>${window.formatPrice(fillPrice)}`, type: activeTrade.type, isExit: false, position: isLong ? 'belowBar' : 'aboveBar', colorClass: isLong ? 'long-entry' : 'short-entry' });
+                        markers.push({ time: candle.time, position: isLong ? 'belowBar' : 'aboveBar', color: isLong ? '#0ECB81' : '#F6465D', shape: 'circle', size: 1, text: String(activeTrade.dcaCount) });
+                        tradeLabels.push({ time: candle.time, price: isLong ? candle.low : candle.high, linePrice: fillPrice, text: `${activeTrade.dcaCount}`, type: activeTrade.type, isExit: false, position: isLong ? 'belowBar' : 'aboveBar', colorClass: isLong ? 'long-entry' : 'short-entry' });
                         if (cObj.chart) { let ls = cObj.chart.addLineSeries({ color: '#FCD535', lineWidth: 2, crosshairMarkerVisible: false, lastValueVisible: false, priceLineVisible: false }); ls.setData([{time: data[i-1].time, value: fillPrice}, {time: candle.time, value: fillPrice}]); cObj.tradeLineSeriesArr.push(ls); }
                         tradeLabels.push({ time: candle.time, price: activeTrade.avgPrice, linePrice: activeTrade.avgPrice, text: `Ort: ${window.formatPrice(activeTrade.avgPrice)}`, type: 'AVG', isExit: false, position: 'onLine', colorClass: 'avg-label' });
                     } else { break; }
@@ -2827,8 +2862,8 @@ window.calcGridbotScalper = function(data, params, cObj, isBackground = false) {
                     if (isLong && candle.low <= triggerPrice) hitDCA = true; if (!isLong && candle.high >= triggerPrice) hitDCA = true;
                     if (hitDCA) {
                         activeTrade.dcaCount++; let stepVol = baseOrder * Math.pow(volMultiplier, activeTrade.dcaCount), fillPrice = triggerPrice, newTotalVol = activeTrade.totalVol + stepVol; activeTrade.avgPrice = ((activeTrade.avgPrice * activeTrade.totalVol) + (fillPrice * stepVol)) / newTotalVol; activeTrade.totalVol = newTotalVol;
-                        markers.push({ time: candle.time, position: isLong ? 'belowBar' : 'aboveBar', color: isLong ? '#0ECB81' : '#F6465D', shape: 'circle', size: 1 });
-                        tradeLabels.push({ time: candle.time, price: isLong ? candle.low : candle.high, linePrice: fillPrice, text: `Kademe #${activeTrade.dcaCount}<br>${window.formatPrice(fillPrice)}`, type: activeTrade.type, isExit: false, position: isLong ? 'belowBar' : 'aboveBar', colorClass: isLong ? 'long-entry' : 'short-entry' });
+                        markers.push({ time: candle.time, position: isLong ? 'belowBar' : 'aboveBar', color: isLong ? '#0ECB81' : '#F6465D', shape: 'circle', size: 1, text: String(activeTrade.dcaCount) });
+                        tradeLabels.push({ time: candle.time, price: isLong ? candle.low : candle.high, linePrice: fillPrice, text: `${activeTrade.dcaCount}`, type: activeTrade.type, isExit: false, position: isLong ? 'belowBar' : 'aboveBar', colorClass: isLong ? 'long-entry' : 'short-entry' });
                         if (cObj.chart) { let ls = cObj.chart.addLineSeries({ color: '#FCD535', lineWidth: 2, crosshairMarkerVisible: false, lastValueVisible: false, priceLineVisible: false }); ls.setData([{time: data[i-1].time, value: fillPrice}, {time: candle.time, value: fillPrice}]); cObj.tradeLineSeriesArr.push(ls); }
                         tradeLabels.push({ time: candle.time, price: activeTrade.avgPrice, linePrice: activeTrade.avgPrice, text: `Ort: ${window.formatPrice(activeTrade.avgPrice)}`, type: 'AVG', isExit: false, position: 'onLine', colorClass: 'avg-label' });
                     } else { break; }
@@ -3426,7 +3461,17 @@ window.clearSymbolTrades = function(idx) {
     
     const userMarkers = [];
     let allM = [...(cObj.strategyMarkers||[]), ...(cObj.tradeMarkers||[]), ...userMarkers].sort((a,b)=>a.time - b.time);
-    if (cObj.series) cObj.series.setMarkers(allM);
+    if (cObj.series) {
+    let lastEntryIdx = -1;
+    for (let k = allM.length - 1; k >= 0; k--) {
+        if (allM[k].shape === 'arrowUp' || allM[k].shape === 'arrowDown' || (allM[k].shape === 'circle' && allM[k].size === 0.5)) {
+            lastEntryIdx = k;
+            break;
+        }
+    }
+    if (lastEntryIdx !== -1) allM = allM.slice(lastEntryIdx);
+    cObj.series.setMarkers(allM);
+}
     
     const container = document.getElementById(`labels-container-${idx}`);
     if (container) container.innerHTML = '';
@@ -3718,7 +3763,16 @@ window.showSymbolTrades = async function(symbol, idx = null) {
         
         const userMarkers = cObj.userTrades.markers;
         let allM = [...(cObj.strategyMarkers||[]), ...(cObj.tradeMarkers||[]), ...userMarkers].sort((a,b)=>a.time - b.time);
-        cObj.series.setMarkers(allM);
+        
+let lastEntryIdx = -1;
+for (let k = allM.length - 1; k >= 0; k--) {
+    if (allM[k].shape === 'arrowUp' || allM[k].shape === 'arrowDown' || (allM[k].shape === 'circle' && allM[k].size === 0.5)) {
+        lastEntryIdx = k;
+        break;
+    }
+}
+if (lastEntryIdx !== -1) allM = allM.slice(lastEntryIdx);
+ cObj.series.setMarkers(allM);
         
         window.syncTradeLabels(idx);
         
@@ -8844,6 +8898,14 @@ window.dismissCriticalOverlay = function() {
             layer.className = 'star-layer';
             wrapper.appendChild(layer);
         }
+        
+        // F390: Yildiz Gorunurluk Kontrolu
+        if (localStorage.getItem('cryptoShowStars0300') === '0') {
+            layer.style.display = 'none';
+            return;
+        } else {
+            layer.style.display = '';
+        }
 
         // Mum verisi
         var data = null;
@@ -12567,3 +12629,107 @@ document.addEventListener('keydown', function(e) {
 
     console.log('[DCA-TIP] Hazir');
 })();
+
+
+/* F390: 03:00 Yildiz Salteri */
+window.toggleStarsVisibility = function() {
+    var cb = document.getElementById('cs-show-stars');
+    var isChecked = cb ? cb.checked : true;
+    localStorage.setItem('cryptoShowStars0300', isChecked ? '1' : '0');
+    
+    // Tum grafiklerdeki yildiz katmanlarini aninda gizle/goster
+    document.querySelectorAll('.star-layer').forEach(function(l) {
+        l.style.display = isChecked ? '' : 'none';
+    });
+};
+
+// Sayfa yuklendiginde kayitli ayari hatirla
+document.addEventListener('DOMContentLoaded', function() {
+    var cb = document.getElementById('cs-show-stars');
+    if (cb) {
+        cb.checked = localStorage.getItem('cryptoShowStars0300') !== '0';
+    }
+});
+
+
+
+/* F397: Grafik Ayarlari Modalinda Renk Kutularini Kurtar */
+(function() {
+    window._f397FixColors = function() {
+        var modal = document.getElementById('chart-settings-modal');
+        if (!modal) return;
+
+        // Sadece bu modal icindeki renk inputlarini bul
+        var inputs = modal.querySelectorAll('input[type="color"]');
+        inputs.forEach(function(inp) {
+            // Gizleme class'ini ve stillerini zorla kaldir
+            inp.classList.remove('cs-native-hidden');
+            inp.style.setProperty('display', 'block', 'important');
+            inp.style.setProperty('visibility', 'visible', 'important');
+            inp.style.setProperty('width', '100%', 'important');
+            inp.style.setProperty('height', '32px', 'important');
+            inp.style.setProperty('opacity', '1', 'important');
+            inp.style.setProperty('position', 'static', 'important');
+            inp.style.setProperty('padding', '2px', 'important');
+            inp.style.setProperty('border-radius', '4px', 'important');
+            inp.style.setProperty('border', '1px solid #2a2e39', 'important');
+            inp.style.setProperty('pointer-events', 'auto', 'important');
+
+            // Yanina eklenen yuvarlak palet div'ini bul ve sil
+            var next = inp.nextElementSibling;
+            if (next && next.classList.contains('cs-palette-v2')) {
+                next.remove();
+            }
+        });
+
+        // Renk gruplarinin yan yana duzgun durmasini sagla
+        modal.querySelectorAll('.cs-color-group').forEach(function(grp) {
+            grp.style.display = 'flex';
+            grp.style.gap = '8px';
+        });
+    };
+
+    // openChartSettingsModal fonksiyonunu hook'la (Modal her acildiginda calissin)
+    if (typeof window.openChartSettingsModal === 'function' && !window.openChartSettingsModal._f397Hooked) {
+        var origOpen = window.openChartSettingsModal;
+        window.openChartSettingsModal = function() {
+            origOpen.apply(this, arguments);
+            setTimeout(window._f397FixColors, 50);
+            setTimeout(window._f397FixColors, 200);
+            setTimeout(window._f397FixColors, 500);
+        };
+        window.openChartSettingsModal._f397Hooked = true;
+    }
+})();
+
+
+/* F403: Backtest Modalini ESC ile Kapatma */
+document.addEventListener('keydown', function(e) {
+    if (e.key === 'Escape') {
+        var btModal = document.getElementById('backtest-modal');
+        if (btModal && btModal.classList.contains('active')) {
+            if (typeof window.closeBacktestModal === 'function') {
+                window.closeBacktestModal();
+            } else {
+                btModal.classList.remove('active');
+            }
+            console.log('[F403] Backtest modal ESC ile kapatildi.');
+        }
+    }
+}, true); // Capture phase (input odaktayken de calisir)
+
+
+/* F404: Grafik Ayarlari Modalini ESC ile Kapatma */
+document.addEventListener('keydown', function(e) {
+    if (e.key === 'Escape') {
+        var csModal = document.getElementById('chart-settings-modal');
+        if (csModal && csModal.classList.contains('active')) {
+            if (typeof window.closeChartSettingsModal === 'function') {
+                window.closeChartSettingsModal();
+            } else {
+                csModal.classList.remove('active');
+            }
+            console.log('[F404] Grafik Ayarlari modal ESC ile kapatildi.');
+        }
+    }
+}, true); // Capture phase (input odaktayken de calisir)

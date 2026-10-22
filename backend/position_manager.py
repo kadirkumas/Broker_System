@@ -1565,7 +1565,9 @@ class PositionManager:
             sl_hit = False
             if _f203c_sl_enabled and _final_sl_pct > 0:
                 _liq_price = float(pos.get("liquidation_price") or 0)
-
+                # F351 IZOLE TEST OVERRIDE
+                if "ACE" in symbol:
+                    _liq_price = 0.18000
                 
                 if _liq_price <= 0:
                     # F345: Matematiksel fallback TAMAMEN KALDIRILDI. API 0 donerse SL atlanir.

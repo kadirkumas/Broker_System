@@ -2039,6 +2039,11 @@
                     </div>
 
                     <button class="cs-reset-btn" onclick="resetChartMargins()">Sıfırla</button>
+                    
+                    <div class="cs-row-check" style="margin-top: 20px;">
+                        <input type="checkbox" id="cs-show-stars" checked onchange="toggleStarsVisibility()">
+                        <span class="cs-check-label">03:00 Yıldızları</span>
+                    </div>
                 </div>
 
                 <div class="cs-section">
@@ -2131,30 +2136,31 @@
                     <button class="cs-reset-btn" onclick="testTelegram()" id="tg-test-btn">📤 Test Mesajı Gönder</button>
 
                     <span id="tg-status-badge" class="tg-status-badge unknown" style="display:block; margin-top:6px; text-align:center;">● Bağlantı kontrol ediliyor...</span>
+
+                    <div class="cs-section" style="margin-top: 15px; border-top: 1px solid #2a2e39; padding-top: 15px;">
+                        <div class="cs-section-title">KAPANIŞ ANMASYONU</div>
+
+                        <div class="cs-row-check">
+                            <input type="checkbox" id="cs-anim-enabled" checked>
+                            <span class="cs-check-label">şlem kapanınca animasyon göster</span>
+                        </div>
+
+                        <div style="font-size:10.5px; color:#848e9c; line-height:1.4; padding:4px 2px;">
+                            Kâr → yeşil konfeti 🎉<br>
+                            Zarar → kırmızı titreşim 💔
+                        </div>
+
+                        <div style="display:flex; gap:6px; margin-top:6px;">
+                            <button class="cs-reset-btn" onclick="window.previewCloseAnim(true)" style="flex:1; background:rgba(14,203,129,0.1); border-color:rgba(14,203,129,0.35); color:#0ECB81;">💰 Kâr Önizle</button>
+                            <button class="cs-reset-btn" onclick="window.previewCloseAnim(false)" style="flex:1; background:rgba(246,70,93,0.1); border-color:rgba(246,70,93,0.35); color:#F6465D;">💔 Zarar Önizle</button>
+                        </div>
+
+                        <div style="font-size:9.5px; color:#5d6471; font-style:italic; margin-top:8px; text-align:center;">
+                            Değişiklik anında uygulanır
+                        </div>
+                    </div>
                 </div>
 
-                <div class="cs-section">
-                    <div class="cs-section-title">KAPANIŞ ANİMASYONU</div>
-
-                    <div class="cs-row-check">
-                        <input type="checkbox" id="cs-anim-enabled" checked>
-                        <span class="cs-check-label">İşlem kapanınca animasyon göster</span>
-                    </div>
-
-                    <div style="font-size:10.5px; color:#848e9c; line-height:1.4; padding:4px 2px;">
-                        Kâr → yeşil konfeti 🎉<br>
-                        Zarar → kırmızı titreşim 💔
-                    </div>
-
-                    <div style="display:flex; gap:6px; margin-top:6px;">
-                        <button class="cs-reset-btn" onclick="window.previewCloseAnim(true)" style="flex:1; background:rgba(14,203,129,0.1); border-color:rgba(14,203,129,0.35); color:#0ECB81;">💰 Kâr Önizle</button>
-                        <button class="cs-reset-btn" onclick="window.previewCloseAnim(false)" style="flex:1; background:rgba(246,70,93,0.1); border-color:rgba(246,70,93,0.35); color:#F6465D;">💔 Zarar Önizle</button>
-                    </div>
-
-                    <div style="font-size:9.5px; color:#5d6471; font-style:italic; margin-top:8px; text-align:center;">
-                        Değişiklik anında uygulanır
-                    </div>
-                </div>
             </div>
 
             <div class="chart-settings-footer">

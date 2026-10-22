@@ -202,5 +202,10 @@
       "maxPosPerSymbol": 1,
       "test_symbol": ""
     }
+  },
+  "telegram": {
+    "notify_signals": false,
+    "notify_closes": true,
+    "notify_delisting": false
   }
 }
