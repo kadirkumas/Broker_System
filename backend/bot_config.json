@@ -5,7 +5,7 @@
   "max_symbols": 300,
   "auto_close_delisted": true,
   "daily_max_loss": 15,
-  "max_open_positions": 40,
+  "max_open_positions": 100,
   "max_margin_ratio": 60,
   "max_long_ratio": 100,
   "max_short_ratio": 100,
@@ -36,7 +36,7 @@
       "leverage": 3,
       "takeProfit": 1.5,
       "trailingSteps": "1.5:0.3, 2.5:0.2, 4:0.12, 6:0.07, 10:0.03",
-      "stopLoss": 3,
+      "stopLoss": 5,
       "useDCA": false,
       "volMultiplier": 1,
       "dcaDynamic": true,
@@ -115,7 +115,7 @@
       "leverage": 3,
       "takeProfit": 1.5,
       "trailingSteps": "1.5:0.3, 2.5:0.2, 4:0.12, 6:0.07, 10:0.03",
-      "stopLoss": 3,
+      "stopLoss": 5,
       "useDCA": false,
       "volMultiplier": 1,
       "dcaDynamic": true,
@@ -175,7 +175,7 @@
       "leverage": 3,
       "takeProfit": 1.5,
       "trailingSteps": "1.5:0.3, 2.5:0.2, 4:0.12, 6:0.07, 10:0.03",
-      "stopLoss": 3,
+      "stopLoss": 5,
       "useDCA": false,
       "volMultiplier": 1.2,
       "steps": "5, 13, 25, 40, 60",
@@ -202,10 +202,5 @@
       "maxPosPerSymbol": 1,
       "test_symbol": ""
     }
-  },
-  "telegram": {
-    "notify_signals": false,
-    "notify_closes": true,
-    "notify_delisting": false
   }
 }

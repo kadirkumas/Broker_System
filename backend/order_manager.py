@@ -654,13 +654,24 @@ class OrderManager:
     def open_manual_position(self, side: str, base_amount_usdt: float = 100.0,
                              strategy_name: str = None, leverage: int = 5,
                              order_mode: str = "market", pt_enabled: int = 0,
-                             pt_percent: float = 50, pt_keep_dca: int = 1):
+                             pt_percent: float = 50, pt_keep_dca: int = 1,
+                             limit_price: float = 0,
+                             limit_timeout: int = 5,
+                             take_profit: float = 1.5,
+                             trailing_steps: str = "",
+                             stop_loss: float = 5.0):
         """F123c: Global threading.Lock ile sarmalanmis manuel versiyon."""
         with self._thread_lock:
             return self.open_manual_position_locked(
                 side=side, base_amount_usdt=base_amount_usdt,
-                strategy_name=strategy_name, leverage=leverage,
-                order_mode=order_mode, pt_enabled=pt_enabled,
+                leverage=leverage,
+                order_mode=order_mode,
+                limit_price=limit_price,
+                limit_timeout=limit_timeout,
+                take_profit=take_profit,
+                trailing_steps=trailing_steps,
+                stop_loss=stop_loss,
+                pt_enabled=pt_enabled,
                 pt_percent=pt_percent, pt_keep_dca=pt_keep_dca
             )
 

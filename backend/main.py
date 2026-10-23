@@ -215,6 +215,7 @@ async def lifespan(app: FastAPI):
 
         # Sync loop calissin (replica veri alir)
         sync_task = asyncio.create_task(_sync_loop()) if SYNC_ENABLED else None
+        _hourly_report_task = asyncio.create_task(_hourly_report_loop())  # F416
 
         try:
             yield
@@ -229,6 +230,7 @@ async def lifespan(app: FastAPI):
         # MASTER modu - normal akis
         task = asyncio.create_task(bot.start())
         sync_task = asyncio.create_task(_sync_loop()) if SYNC_ENABLED else None
+        _hourly_report_task = asyncio.create_task(_hourly_report_loop())  # F416
         try:
             yield
         finally:
@@ -949,11 +951,33 @@ async def trigger_trade(symbol: str = "BTCUSDT", side: str = "BUY"):
     return result
 
 
+@app.post("/api/telegram/hourly-report-now")
+async def telegram_hourly_report_now():
+    """F416 test: Saatlik raporu HEMEN gonder (saat basini beklemez)."""
+    try:
+        from backend.telegram_notifier import is_configured, send_telegram_message
+        if not is_configured():
+            return {"status": "error", "message": "Telegram ayarli degil (env: TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID)"}
+        report = await _build_hourly_report()
+        await send_telegram_message(report)
+        return {"status": "success", "length": len(report)}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
+
 @app.post("/api/trade/close")
 async def trigger_close(symbol: str = "BTCUSDT"):
     clean_symbol = symbol.replace(".P", "")
-    result = order_manager.close_position(symbol=clean_symbol)
-    return result
+    # F415: _execute_close uzerinden kapat -> trade_history INSERT + Telegram notify
+    # Not: _execute_close kendi icinden order_manager.close_position'i cagirir;
+    #      boylece borsaya TEK emir gider, cift emir OLMAZ.
+    result = await position_manager._execute_close(
+        clean_symbol, exit_price=0.0, reason="MANUAL", force=True
+    )
+    if result:
+        return {"status": "success", "symbol": clean_symbol, "detail": result}
+    return {"status": "warning", "symbol": clean_symbol,
+            "message": "Pozisyon DB'de bulunamadi veya kapatma basarisiz"}
 
 
 @app.post("/api/trade/close-all")
@@ -2287,6 +2311,136 @@ async def _sync_push_once() -> bool:
     except Exception as e:
         print(f"[SYNC] push exception: {e}")
         return False
+
+
+# ============================================================
+# F416: Saatlik Telegram Raporu
+# ============================================================
+async def _build_hourly_report() -> str:
+    """Saatlik Telegram raporu icin metin olustur (HTML)."""
+    import time as _t
+    from datetime import datetime as _dt
+    from backend.database import get_db_connection as _gdbc
+
+    now = int(_t.time())
+    day_ago = now - 86400
+
+    # 1) Bakiye (Binance client varsa)
+    total_balance = 0.0
+    available = 0.0
+    margin_used = 0.0
+    try:
+        if hasattr(order_manager, "client") and order_manager.client:
+            acc = order_manager.client.futures_account()
+            total_balance = float(acc.get("totalWalletBalance", 0) or 0)
+            available = float(acc.get("availableBalance", 0) or 0)
+            margin_used = float(acc.get("totalInitialMargin", 0) or 0)
+    except Exception as _e:
+        print(f"[HOURLY] bakiye hata: {_e}")
+
+    margin_ratio = (margin_used / total_balance * 100) if total_balance > 0 else 0.0
+
+    # 2) DB verileri
+    daily_pnl = 0.0
+    win_count = 0
+    total_count = 0
+    pos_count = 0
+
+    try:
+        conn = _gdbc()
+        r = conn.execute(
+            "SELECT COALESCE(SUM(pnl_amount), 0), COUNT(*), "
+            "SUM(CASE WHEN pnl_amount > 0 THEN 1 ELSE 0 END) "
+            "FROM trade_history WHERE exit_time >= ?", (day_ago,)
+        ).fetchone()
+        if r:
+            daily_pnl = float(r[0] or 0)
+            total_count = int(r[1] or 0)
+            win_count = int(r[2] or 0)
+        pr = conn.execute("SELECT COUNT(*) FROM active_trades").fetchone()
+        pos_count = int(pr[0] or 0) if pr else 0
+        conn.close()
+    except Exception as _e:
+        print(f"[HOURLY] db hata: {_e}")
+
+    # 3) Unrealized PnL (Binance)
+    pos_profit = 0
+    pos_loss = 0
+    unrealized = 0.0
+    try:
+        if hasattr(order_manager, "client") and order_manager.client:
+            positions = order_manager.client.futures_position_information()
+            for p in positions:
+                amt = float(p.get("positionAmt", 0) or 0)
+                if amt == 0:
+                    continue
+                upnl = float(p.get("unRealizedProfit", 0) or 0)
+                unrealized += upnl
+                if upnl > 0:
+                    pos_profit += 1
+                elif upnl < 0:
+                    pos_loss += 1
+    except Exception as _e:
+        print(f"[HOURLY] pnl hata: {_e}")
+
+    win_pct = (win_count / total_count * 100) if total_count > 0 else 0.0
+
+    if margin_ratio < 50:
+        margin_emoji = "\U0001F7E2"
+    elif margin_ratio < 80:
+        margin_emoji = "\U0001F7E1"
+    else:
+        margin_emoji = "\U0001F534"
+
+    sign_pnl = "+" if daily_pnl >= 0 else ""
+    sign_upnl = "+" if unrealized >= 0 else ""
+    ts = _dt.now().strftime("%d %b %H:%M")
+
+    return (
+        f"\U0001F4CA <b>SAATLIK RAPOR</b> \u2014 {ts}\n"
+        f"\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\n"
+        f"\U0001F4B0 Toplam    : {total_balance:,.2f} USDT\n"
+        f"\U0001F4B5 Kullan\u0131l\u0131r: {available:,.2f} USDT\n"
+        f"\U0001F4CA Marjin    : {margin_used:,.2f} USDT (%{margin_ratio:.1f}) {margin_emoji}\n"
+        f"\n"
+        f"\U0001F4B5 G\u00fcnl\u00fck PnL   : {sign_pnl}{daily_pnl:,.2f} USDT\n"
+        f"\u2705 Ba\u015far\u0131   : %{win_pct:.0f} ({win_count}/{total_count} k\u00e2rl\u0131)\n"
+        f"\n"
+        f"\U0001F4CA Toplam: {pos_count}  |  \U0001F7E2 {pos_profit} k\u00e2r  |  \U0001F534 {pos_loss} zarar\n"
+        f"\U0001F4B5 Unrealized: {sign_upnl}{unrealized:,.2f} USDT"
+    )
+
+
+async def _hourly_report_loop():
+    """Her tam saat basinda Telegram raporu gonder."""
+    import time as _t
+    await asyncio.sleep(5)
+    while True:
+        try:
+            now = _t.time()
+            next_hour = (int(now) // 3600 + 1) * 3600
+            wait = next_hour - now
+            print(f"[HOURLY] Sonraki rapor {wait:.0f}s sonra")
+            await asyncio.sleep(wait)
+
+            try:
+                from backend.telegram_notifier import is_configured, send_telegram_message
+                if not is_configured():
+                    print("[HOURLY] Telegram ayarli degil, atlandi")
+                    continue
+            except Exception as _e_imp:
+                print(f"[HOURLY] import hata: {_e_imp}")
+                continue
+
+            report = await _build_hourly_report()
+            try:
+                await send_telegram_message(report)
+                print(f"[HOURLY] Rapor gonderildi ({len(report)} char)")
+            except Exception as _e_send:
+                print(f"[HOURLY] gonderim hata: {_e_send}")
+        except Exception as e:
+            print(f"[HOURLY] loop hata: {e}")
+            await asyncio.sleep(60)
 
 
 async def _sync_loop():

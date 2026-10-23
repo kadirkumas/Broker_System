@@ -11,5 +11,6 @@
   "showBorder": true,
   "showWick": true,
   "showCandleBorder": true,
-  "activeTab": "futures"
+  "activeTab": "futures",
+  "savedInterval": "5m"
 }

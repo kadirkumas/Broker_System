@@ -2600,10 +2600,10 @@ window.recalculateAllIndicators = function(idx) {
                     }
                     if (lastEntryM !== -1) _m = _m.slice(lastEntryM);
                     
-                    // Son giris etiketini bul (Giris yazisina gore)
+                    // Son giris etiketini bul (LONG veya SHORT)
                     let lastEntryL = -1;
                     for (let k = _l.length - 1; k >= 0; k--) {
-                        if (_l[k].text && _l[k].text.includes('Giriş')) { lastEntryL = k; break; }
+                        if (_l[k].type === 'LONG' || _l[k].type === 'SHORT') { lastEntryL = k; break; }
                     }
                     if (lastEntryL !== -1) _l = _l.slice(lastEntryL);
 
@@ -2741,8 +2741,8 @@ window.calcHullSRP = function(data, params, cObj, isBackground = false) {
                     if (isLong && candle.low <= triggerPrice) hitDCA = true; if (!isLong && candle.high >= triggerPrice) hitDCA = true;
                     if (hitDCA) {
                         activeTrade.dcaCount++; let stepVol = baseOrder * Math.pow(volMultiplier, activeTrade.dcaCount), fillPrice = triggerPrice, newTotalVol = activeTrade.totalVol + stepVol; activeTrade.avgPrice = ((activeTrade.avgPrice * activeTrade.totalVol) + (fillPrice * stepVol)) / newTotalVol; activeTrade.totalVol = newTotalVol;
-                        markers.push({ time: candle.time, position: isLong ? 'belowBar' : 'aboveBar', color: isLong ? '#0ECB81' : '#F6465D', shape: 'circle', size: 1, text: String(activeTrade.dcaCount) });
-                        tradeLabels.push({ time: candle.time, price: isLong ? candle.low : candle.high, linePrice: fillPrice, text: `${activeTrade.dcaCount}`, type: activeTrade.type, isExit: false, position: isLong ? 'belowBar' : 'aboveBar', colorClass: isLong ? 'long-entry' : 'short-entry' });
+                        markers.push({ time: candle.time, position: isLong ? 'belowBar' : 'aboveBar', color: isLong ? '#0ECB81' : '#F6465D', shape: 'circle', size: 1 });
+                        tradeLabels.push({ time: candle.time, price: isLong ? candle.low : candle.high, linePrice: fillPrice, text: `Kademe #${activeTrade.dcaCount}<br>${window.formatPrice(fillPrice)}`, type: activeTrade.type, isExit: false, position: isLong ? 'belowBar' : 'aboveBar', colorClass: isLong ? 'long-entry' : 'short-entry' });
                         if (cObj.chart) { let ls = cObj.chart.addLineSeries({ color: '#FCD535', lineWidth: 2, crosshairMarkerVisible: false, lastValueVisible: false, priceLineVisible: false }); ls.setData([{time: data[i-1].time, value: fillPrice}, {time: candle.time, value: fillPrice}]); cObj.tradeLineSeriesArr.push(ls); }
                         tradeLabels.push({ time: candle.time, price: activeTrade.avgPrice, linePrice: activeTrade.avgPrice, text: `Ort: ${window.formatPrice(activeTrade.avgPrice)}`, type: 'AVG', isExit: false, position: 'onLine', colorClass: 'avg-label' });
                     } else { break; }
@@ -2800,8 +2800,8 @@ window.calcRSIScalper = function(data, params, cObj, isBackground = false) {
                     if (isLong && candle.low <= triggerPrice) hitDCA = true; if (!isLong && candle.high >= triggerPrice) hitDCA = true;
                     if (hitDCA) {
                         activeTrade.dcaCount++; let stepVol = baseOrder * Math.pow(volMultiplier, activeTrade.dcaCount), fillPrice = triggerPrice, newTotalVol = activeTrade.totalVol + stepVol; activeTrade.avgPrice = ((activeTrade.avgPrice * activeTrade.totalVol) + (fillPrice * stepVol)) / newTotalVol; activeTrade.totalVol = newTotalVol;
-                        markers.push({ time: candle.time, position: isLong ? 'belowBar' : 'aboveBar', color: isLong ? '#0ECB81' : '#F6465D', shape: 'circle', size: 1, text: String(activeTrade.dcaCount) });
-                        tradeLabels.push({ time: candle.time, price: isLong ? candle.low : candle.high, linePrice: fillPrice, text: `${activeTrade.dcaCount}`, type: activeTrade.type, isExit: false, position: isLong ? 'belowBar' : 'aboveBar', colorClass: isLong ? 'long-entry' : 'short-entry' });
+                        markers.push({ time: candle.time, position: isLong ? 'belowBar' : 'aboveBar', color: isLong ? '#0ECB81' : '#F6465D', shape: 'circle', size: 1 });
+                        tradeLabels.push({ time: candle.time, price: isLong ? candle.low : candle.high, linePrice: fillPrice, text: `Kademe #${activeTrade.dcaCount}<br>${window.formatPrice(fillPrice)}`, type: activeTrade.type, isExit: false, position: isLong ? 'belowBar' : 'aboveBar', colorClass: isLong ? 'long-entry' : 'short-entry' });
                         if (cObj.chart) { let ls = cObj.chart.addLineSeries({ color: '#FCD535', lineWidth: 2, crosshairMarkerVisible: false, lastValueVisible: false, priceLineVisible: false }); ls.setData([{time: data[i-1].time, value: fillPrice}, {time: candle.time, value: fillPrice}]); cObj.tradeLineSeriesArr.push(ls); }
                         tradeLabels.push({ time: candle.time, price: activeTrade.avgPrice, linePrice: activeTrade.avgPrice, text: `Ort: ${window.formatPrice(activeTrade.avgPrice)}`, type: 'AVG', isExit: false, position: 'onLine', colorClass: 'avg-label' });
                     } else { break; }
@@ -2862,8 +2862,8 @@ window.calcGridbotScalper = function(data, params, cObj, isBackground = false) {
                     if (isLong && candle.low <= triggerPrice) hitDCA = true; if (!isLong && candle.high >= triggerPrice) hitDCA = true;
                     if (hitDCA) {
                         activeTrade.dcaCount++; let stepVol = baseOrder * Math.pow(volMultiplier, activeTrade.dcaCount), fillPrice = triggerPrice, newTotalVol = activeTrade.totalVol + stepVol; activeTrade.avgPrice = ((activeTrade.avgPrice * activeTrade.totalVol) + (fillPrice * stepVol)) / newTotalVol; activeTrade.totalVol = newTotalVol;
-                        markers.push({ time: candle.time, position: isLong ? 'belowBar' : 'aboveBar', color: isLong ? '#0ECB81' : '#F6465D', shape: 'circle', size: 1, text: String(activeTrade.dcaCount) });
-                        tradeLabels.push({ time: candle.time, price: isLong ? candle.low : candle.high, linePrice: fillPrice, text: `${activeTrade.dcaCount}`, type: activeTrade.type, isExit: false, position: isLong ? 'belowBar' : 'aboveBar', colorClass: isLong ? 'long-entry' : 'short-entry' });
+                        markers.push({ time: candle.time, position: isLong ? 'belowBar' : 'aboveBar', color: isLong ? '#0ECB81' : '#F6465D', shape: 'circle', size: 1 });
+                        tradeLabels.push({ time: candle.time, price: isLong ? candle.low : candle.high, linePrice: fillPrice, text: `Kademe #${activeTrade.dcaCount}<br>${window.formatPrice(fillPrice)}`, type: activeTrade.type, isExit: false, position: isLong ? 'belowBar' : 'aboveBar', colorClass: isLong ? 'long-entry' : 'short-entry' });
                         if (cObj.chart) { let ls = cObj.chart.addLineSeries({ color: '#FCD535', lineWidth: 2, crosshairMarkerVisible: false, lastValueVisible: false, priceLineVisible: false }); ls.setData([{time: data[i-1].time, value: fillPrice}, {time: candle.time, value: fillPrice}]); cObj.tradeLineSeriesArr.push(ls); }
                         tradeLabels.push({ time: candle.time, price: activeTrade.avgPrice, linePrice: activeTrade.avgPrice, text: `Ort: ${window.formatPrice(activeTrade.avgPrice)}`, type: 'AVG', isExit: false, position: 'onLine', colorClass: 'avg-label' });
                     } else { break; }

@@ -1443,7 +1443,7 @@ class PositionManager:
             _now_f170c = _t_f170c.time()
             if _now_f170c - self._f170c_log.get(symbol, 0) >= 300:
                 self._f170c_log[symbol] = _now_f170c
-                print(f"[F171] {symbol} SL mesafe: %{_f170c_old_sl_pct*100:.2f} -> %{sl_pct*100:.2f} (next_step=%{_f170c_dca_dist:.2f} x K={_f170c_k})")
+                print(f"[F171] {symbol} SL mesafe: %{sl_pct*100:.2f} (next_step=%{_f170c_dca_dist:.2f} x K={_f170c_k})")
 
             # F170: F84 LIQ-safe cap config ile kontrol (varsayilan KAPALI)
             _f170_liq_safe = False
@@ -1604,7 +1604,7 @@ class PositionManager:
             if pt_percent_val is None:
                 pt_percent_val = 50
             
-            if pt_enabled and not pt_done_flag and not state["active"] and profit_pct >= tp_pct:
+            if pt_enabled and not pt_done_flag and profit_pct >= tp_pct:
                 pt_close_vol = pos["total_vol"] * (pt_percent_val / 100.0)
                 # F93: PT-DEBUG logunu 10 dk'da 1 bas
                 import time as _t_pt
